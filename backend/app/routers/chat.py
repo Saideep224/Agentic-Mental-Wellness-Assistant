@@ -1,0 +1,474 @@
+"""
+Chat router – send messages, list conversations, stream responses via SSE.
+"""
+
+import json
+import uuid
+import asyncio
+import logging
+from typing import AsyncGenerator
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sse_starlette.sse import EventSourceResponse
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from jose import JWTError, jwt
+
+from app.config import settings
+from app.database import get_db
+from app.models.user import User
+from app.models.conversation import Conversation, Message, MessageRole
+from app.models.emotional_profile import EmotionalProfile
+from app.routers.auth import get_current_user
+from app.schemas.chat import (
+    ChatMessageRequest,
+    MessageResponse,
+    ConversationResponse,
+    ConversationCreateRequest,
+)
+from app.agents.graph import run_agent_graph
+from app.memory.memory_manager import MemoryManager
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/chat", tags=["Chat"])
+
+
+def generate_emotional_title(message: str, emotion: str) -> str:
+    """Generate a poetic, emotionally meaningful chat title."""
+    emotion_lower = (emotion or "").lower()
+    
+    # Check for specific emotional signatures
+    if "exhaust" in emotion_lower or "burnout" in emotion_lower or "tired" in emotion_lower:
+        return "🌧 Feeling emotionally drained"
+    elif "lone" in emotion_lower or "withdr" in emotion_lower or "solit" in emotion_lower:
+        return "🌊 Quiet loneliness tonight"
+    elif "overthink" in emotion_lower or "spiral" in emotion_lower or "worry" in emotion_lower:
+        return "🌙 Late night overthinking"
+    elif "anx" in emotion_lower or "overwhelm" in emotion_lower or "fear" in emotion_lower:
+        return "💭 Fear about future"
+    elif "sad" in emotion_lower or "melancholy" in emotion_lower or "hurt" in emotion_lower or "grief" in emotion_lower:
+        return "🌧 Muted melancholy"
+    elif "happy" in emotion_lower or "joy" in emotion_lower or "thrive" in emotion_lower or "excit" in emotion_lower:
+        return "☀️ Finding sunshine"
+    elif "calm" in emotion_lower or "peace" in emotion_lower:
+        return "✨ Safe harbor"
+    
+    # Fallback to general keywords in message
+    msg_lower = message.lower()
+    if "sleep" in msg_lower or "night" in msg_lower:
+        return "🌙 Late night thoughts"
+    elif "work" in msg_lower or "job" in msg_lower or "stud" in msg_lower:
+        return "🍂 Stressful day"
+    elif "friend" in msg_lower or "people" in msg_lower or "bully" in msg_lower:
+        return "💭 Hurting connections"
+    
+    # Generic emotional fallbacks
+    emotion_titles = {
+        "anxiety": "🌪 Riding the wave",
+        "sadness": "☔ Rain of thoughts",
+        "overthinking": "🌀 Spiraling thoughts",
+        "burnout": "🍂 Mentally exhausted",
+        "loneliness": "🌌 Solitary reflections",
+        "neutral": "✨ Soft check-in",
+        "happy": "🌱 Small victories",
+    }
+    return emotion_titles.get(emotion_lower, "💬 Quiet catch-up")
+
+
+async def _get_or_create_conversation(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID | None,
+) -> Conversation:
+    """Return an existing conversation or create a new one."""
+    if conversation_id:
+        result = await db.execute(
+            select(Conversation).where(
+                Conversation.id == conversation_id,
+                Conversation.user_id == user_id,
+            )
+        )
+        conv = result.scalar_one_or_none()
+        if conv is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found",
+            )
+        return conv
+
+    conv = Conversation(user_id=user_id, title="New Conversation")
+    db.add(conv)
+    await db.flush()
+    await db.refresh(conv)
+    return conv
+
+
+async def _build_conversation_history(
+    db: AsyncSession, conversation_id: uuid.UUID, limit: int = 20
+) -> list[dict]:
+    """Load the last N messages in a conversation as dicts for the agents."""
+    result = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.desc())
+        .limit(limit)
+    )
+    messages = result.scalars().all()
+    return [
+        {"role": m.role.value, "content": m.content}
+        for m in reversed(messages)
+    ]
+
+
+async def _get_emotional_profile_dict(
+    db: AsyncSession, user_id: uuid.UUID
+) -> dict:
+    """Load the emotional profile as a plain dict (empty dict if none)."""
+    result = await db.execute(
+        select(EmotionalProfile).where(EmotionalProfile.user_id == user_id)
+    )
+    profile = result.scalar_one_or_none()
+    if profile is None:
+        return {}
+    return {
+        "personality_type": profile.personality_type,
+        "emotional_baseline": profile.emotional_baseline,
+        "comfort_preferences": profile.comfort_preferences,
+        "communication_style": profile.communication_style,
+    }
+
+
+@router.post("/message")
+async def send_message(
+    body: ChatMessageRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Send a user message and receive the response as JSON (non-streaming fallback).
+    """
+    # 1. Get or create conversation
+    conversation = await _get_or_create_conversation(
+        db, current_user.id, body.conversation_id
+    )
+
+    # 2. Save the user's message
+    user_msg = Message(
+        conversation_id=conversation.id,
+        role=MessageRole.user,
+        content=body.message,
+    )
+    db.add(user_msg)
+    await db.flush()
+
+    # 3. Build context for agents
+    history = await _build_conversation_history(db, conversation.id)
+    emotional_profile = await _get_emotional_profile_dict(db, current_user.id)
+
+    # Title will be updated dynamically after agents run
+
+    # 4. Run agent graph
+    try:
+        result = await run_agent_graph(
+            user_message=body.message,
+            user_id=str(current_user.id),
+            conversation_history=history,
+            emotional_profile=emotional_profile,
+        )
+
+        full_response = result.get("response", "I'm here for you. Could you tell me more?")
+        detected_emotion = result.get("detected_emotion", None)
+        mood_score = result.get("mood_score", None)
+
+        # Update conversation title from first message using detected emotion
+        if len(history) <= 1:
+            conversation.title = generate_emotional_title(body.message, detected_emotion or "neutral")
+            await db.flush()
+        agent_analysis = {
+            "emotion_analysis": result.get("emotion_analysis", {}),
+            "personality_analysis": result.get("personality_analysis", {}),
+            "context_analysis": result.get("context_analysis", {}),
+            "recommendations": result.get("recommendations", []),
+        }
+
+        # Store memory
+        try:
+            memory_mgr = MemoryManager()
+            metadata = {
+                "emotion": detected_emotion or "neutral",
+                "mood_score": mood_score or 0.5,
+                "message_type": result.get("router_decision", {}).get("message_type", "casual"),
+            }
+            memory_mgr.store_memory(
+                user_id=str(current_user.id),
+                content=body.message,
+                metadata=metadata,
+            )
+        except Exception as mem_err:
+            logger.warning(f"Failed to store memory: {mem_err}")
+
+        # Save assistant message to DB
+        assistant_msg = Message(
+            conversation_id=conversation.id,
+            role=MessageRole.assistant,
+            content=full_response,
+            emotion_detected=detected_emotion,
+            mood_score=mood_score,
+            agent_analysis=agent_analysis,
+            emotional_context=agent_analysis.get("emotion_analysis", {}),
+        )
+        db.add(assistant_msg)
+        
+        # Also update conversation emotional_tag
+        if detected_emotion:
+            conversation.emotional_tag = detected_emotion
+
+        await db.commit()
+
+        return {
+            "response": full_response,
+            "emotionDetected": detected_emotion,
+            "moodScore": mood_score,
+        }
+
+    except Exception as e:
+        logger.error(f"Agent graph error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="I encountered an error trying to process that. Could you try again?",
+        )
+
+
+@router.get("/{conversation_id}/stream")
+async def stream_message_sse(
+    conversation_id: uuid.UUID,
+    message: str,
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    GET endpoint for Server-Sent Events (SSE) streaming of chat responses.
+    Allows browsers to connect natively using the standard EventSource API.
+    """
+    # 1. Authenticate token
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired token",
+    )
+    try:
+        payload = jwt.decode(
+            token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]
+        )
+        user_id_str: str | None = payload.get("sub")
+        if user_id_str is None:
+            raise credentials_exception
+        user_id = uuid.UUID(user_id_str)
+    except (JWTError, ValueError):
+        raise credentials_exception
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    current_user = result.scalar_one_or_none()
+    if current_user is None:
+        raise credentials_exception
+
+    # 2. Get the conversation
+    conversation = await _get_or_create_conversation(db, current_user.id, conversation_id)
+
+    # 3. Save the user's message
+    user_msg = Message(
+        conversation_id=conversation.id,
+        role=MessageRole.user,
+        content=message,
+    )
+    db.add(user_msg)
+    await db.flush()
+
+    # 4. Build context
+    history = await _build_conversation_history(db, conversation.id)
+    emotional_profile = await _get_emotional_profile_dict(db, current_user.id)
+
+    # Title will be updated dynamically on stream done
+
+    await db.commit()
+
+    # 5. Event generator
+    async def event_generator() -> AsyncGenerator[dict, None]:
+        try:
+            result = await run_agent_graph(
+                user_message=message,
+                user_id=str(current_user.id),
+                conversation_history=history,
+                emotional_profile=emotional_profile,
+            )
+
+            full_response = result.get("response", "I'm here for you. Could you tell me more?")
+            detected_emotion = result.get("detected_emotion", None)
+            mood_score = result.get("mood_score", None)
+            agent_analysis = {
+                "emotion_analysis": result.get("emotion_analysis", {}),
+                "personality_analysis": result.get("personality_analysis", {}),
+                "context_analysis": result.get("context_analysis", {}),
+                "recommendations": result.get("recommendations", []),
+            }
+
+            # Store memory
+            try:
+                memory_mgr = MemoryManager()
+                metadata = {
+                    "emotion": detected_emotion or "neutral",
+                    "mood_score": mood_score or 0.5,
+                    "message_type": result.get("router_decision", {}).get("message_type", "casual"),
+                }
+                memory_mgr.store_memory(
+                    user_id=str(current_user.id),
+                    content=message,
+                    metadata=metadata,
+                )
+            except Exception as mem_err:
+                logger.warning(f"Failed to store memory: {mem_err}")
+
+            # Save assistant message
+            async with get_db_session() as save_db:
+                assistant_msg = Message(
+                    conversation_id=conversation.id,
+                    role=MessageRole.assistant,
+                    content=full_response,
+                    emotion_detected=detected_emotion,
+                    mood_score=mood_score,
+                    agent_analysis=agent_analysis,
+                    emotional_context=agent_analysis.get("emotion_analysis", {}),
+                )
+                save_db.add(assistant_msg)
+                
+                # Also update conversation emotional_tag and title
+                stmt = select(Conversation).where(Conversation.id == conversation.id)
+                conv_res = await save_db.execute(stmt)
+                db_conv = conv_res.scalar_one_or_none()
+                if db_conv:
+                    if detected_emotion:
+                        db_conv.emotional_tag = detected_emotion
+                    if len(history) <= 1:
+                        db_conv.title = generate_emotional_title(message, detected_emotion or "neutral")
+
+                await save_db.commit()
+                await save_db.refresh(assistant_msg)
+                msg_id = str(assistant_msg.id)
+
+            # Stream chunks
+            chunk_size = 12
+            for i in range(0, len(full_response), chunk_size):
+                chunk = full_response[i : i + chunk_size]
+                yield {
+                    "event": "message",
+                    "data": json.dumps({
+                        "type": "chunk",
+                        "content": chunk,
+                        "conversation_id": str(conversation.id),
+                    }),
+                }
+                await asyncio.sleep(0.03)
+
+            # Final done event
+            yield {
+                "event": "message",
+                "data": json.dumps({
+                    "type": "done",
+                    "message_id": msg_id,
+                    "conversation_id": str(conversation.id),
+                    "emotion_detected": detected_emotion,
+                    "mood_score": mood_score,
+                }),
+            }
+
+        except Exception as e:
+            logger.error(f"SSE stream error: {e}", exc_info=True)
+            yield {
+                "event": "error",
+                "data": json.dumps({
+                    "type": "error",
+                    "content": "I encountered an error trying to process that. Could you try again?",
+                }),
+            }
+
+    return EventSourceResponse(event_generator())
+
+
+def get_db_session():
+    """Standalone session context for saving messages outside the request lifecycle."""
+    from app.database import async_session_maker
+    return async_session_maker()
+
+
+@router.get("/conversations", response_model=list[ConversationResponse])
+async def list_conversations(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all conversations for the authenticated user, newest first."""
+    result = await db.execute(
+        select(
+            Conversation.id,
+            Conversation.title,
+            Conversation.created_at,
+            func.count(Message.id).label("message_count"),
+        )
+        .outerjoin(Message, Message.conversation_id == Conversation.id)
+        .where(Conversation.user_id == current_user.id)
+        .group_by(Conversation.id)
+        .order_by(Conversation.created_at.desc())
+    )
+    rows = result.all()
+    return [
+        ConversationResponse(
+            id=row.id,
+            title=row.title,
+            created_at=row.created_at,
+            message_count=row.message_count,
+        )
+        for row in rows
+    ]
+
+
+@router.get("/conversations/{conversation_id}/messages", response_model=list[MessageResponse])
+async def get_conversation_messages(
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all messages in a conversation, oldest first."""
+    # Verify ownership
+    conv_result = await db.execute(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+    )
+    if conv_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    result = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.asc())
+    )
+    return [MessageResponse.model_validate(m) for m in result.scalars().all()]
+
+
+@router.post("/conversations", response_model=ConversationResponse, status_code=201)
+async def create_conversation(
+    body: ConversationCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new empty conversation."""
+    conv = Conversation(user_id=current_user.id, title=body.title)
+    db.add(conv)
+    await db.flush()
+    await db.refresh(conv)
+    return ConversationResponse(
+        id=conv.id,
+        title=conv.title,
+        created_at=conv.created_at,
+        message_count=0,
+    )

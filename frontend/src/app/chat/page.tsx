@@ -204,7 +204,7 @@ export default function ChatPage() {
                     </div>
                   ) : (
                     conversations.map((convo) => (
-                      <button
+                      <div
                         key={convo.id}
                         onClick={() => {
                           if (editingId !== convo.id) {
@@ -295,7 +295,7 @@ export default function ChatPage() {
                         >
                           {formatDate(convo.createdAt)}
                         </p>
-                      </button>
+                      </div>
                     ))
                   )}
                 </div>

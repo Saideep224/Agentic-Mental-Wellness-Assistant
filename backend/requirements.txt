@@ -1,17 +1,26 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-sqlalchemy[asyncio]==2.0.36
-asyncpg==0.30.0
-alembic==1.14.1
-pydantic==2.10.4
-pydantic-settings==2.7.1
+# Esona Backend dependencies - Optimized for Render deployment on Python 3.11.9
+# Uses stable package versions to avoid pydantic-core and metadata-generation-failed issues
+
+fastapi==0.111.1
+uvicorn[standard]==0.30.1
+pydantic==2.8.2
+pydantic-settings==2.3.4
+python-dotenv==1.0.1
+
+# Database
+sqlalchemy==2.0.31
+asyncpg==0.29.0
+alembic==1.14.0
+
+# Authentication & Utilities
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.20
-openai==1.58.1
-langchain==0.3.14
-langchain-openai==0.3.0
-langgraph==0.2.60
-sse-starlette==2.2.1
-python-dotenv==1.0.1
-httpx==0.28.1
+python-multipart==0.0.9
+httpx==0.27.0
+sse-starlette==2.1.2
+
+# AI/ML & Orchestration
+openai==1.35.13
+langchain==0.2.6
+langchain-openai==0.1.9
+langgraph==0.1.4

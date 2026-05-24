@@ -8,6 +8,8 @@ import FloatingParticles from '@/components/ambient/FloatingParticles';
 import WaveAnimation from '@/components/ambient/WaveAnimation';
 
 
+
+
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
@@ -57,5 +59,4 @@ export default function RootLayout({
       </body>
     </html>
   );
-
 }

@@ -1,5 +1,5 @@
 """
-Chat router – send messages, list conversations, stream responses via SSE.
+Chat route – send messages, list conversations, stream responses via SSE.
 """
 
 import json
@@ -20,12 +20,13 @@ from app.database import get_db
 from app.models.user import User
 from app.models.conversation import Conversation, Message, MessageRole
 from app.models.emotional_profile import EmotionalProfile
-from app.routers.auth import get_current_user
+from app.routes.auth import get_current_user
 from app.schemas.chat import (
     ChatMessageRequest,
     MessageResponse,
     ConversationResponse,
     ConversationCreateRequest,
+    ConversationUpdateRequest,
 )
 from app.agents.graph import run_agent_graph
 from app.memory.memory_manager import MemoryManager
@@ -74,6 +75,48 @@ def generate_emotional_title(message: str, emotion: str) -> str:
         "happy": "🌱 Small victories",
     }
     return emotion_titles.get(emotion_lower, "💬 Quiet catch-up")
+
+
+async def generate_chat_title_llm(messages: list[dict]) -> str:
+    """Use LLM to generate a short, beautiful, and emotionally resonant title (3-5 words) from messages."""
+    history_text = "\n".join([f"{m['role']}: {m['content']}" for m in messages[:4]])
+    
+    prompt = """You are the Title Generator Agent for Esona, a supportive mental wellness companion.
+Analyze the following conversation snippet and generate a short, poetic, and emotionally resonant title (3-5 words).
+Do NOT use quotes. Do NOT explain. Use a single relevant emoji at the start.
+Keep it under 35 characters.
+
+Example: 🌊 Quiet loneliness tonight
+Example: ☀️ Finding sunshine
+Example: 🍂 Stressful day
+Example: 🌙 Late night thoughts
+Example: 💭 Fear about future
+
+Conversation:
+{history_text}
+
+Title:"""
+    
+    try:
+        from app.agents.graph import client
+        from app.config import settings
+        response = await client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {"role": "system", "content": prompt.format(history_text=history_text)},
+            ],
+            temperature=0.7,
+            max_tokens=25,
+        )
+        title = response.choices[0].message.content.strip()
+        # Clean title
+        title = title.replace('"', '').replace("'", '').replace("`", "").strip()
+        if len(title) > 50:
+            title = title[:47] + "..."
+        return title
+    except Exception as e:
+        logger.error(f"Failed to generate LLM title: {e}")
+        return "✨ Soft check-in"
 
 
 async def _get_or_create_conversation(
@@ -166,8 +209,6 @@ async def send_message(
     history = await _build_conversation_history(db, conversation.id)
     emotional_profile = await _get_emotional_profile_dict(db, current_user.id)
 
-    # Title will be updated dynamically after agents run
-
     # 4. Run agent graph
     try:
         result = await run_agent_graph(
@@ -181,9 +222,16 @@ async def send_message(
         detected_emotion = result.get("detected_emotion", None)
         mood_score = result.get("mood_score", None)
 
-        # Update conversation title from first message using detected emotion
+        # Update conversation title from first message using LLM
         if len(history) <= 1:
-            conversation.title = generate_emotional_title(body.message, detected_emotion or "neutral")
+            try:
+                title_msgs = [
+                    {"role": "user", "content": body.message},
+                    {"role": "assistant", "content": full_response}
+                ]
+                conversation.title = await generate_chat_title_llm(title_msgs)
+            except Exception:
+                conversation.title = generate_emotional_title(body.message, detected_emotion or "neutral")
             await db.flush()
         agent_analysis = {
             "emotion_analysis": result.get("emotion_analysis", {}),
@@ -288,8 +336,6 @@ async def stream_message_sse(
     history = await _build_conversation_history(db, conversation.id)
     emotional_profile = await _get_emotional_profile_dict(db, current_user.id)
 
-    # Title will be updated dynamically on stream done
-
     await db.commit()
 
     # 5. Event generator
@@ -349,7 +395,14 @@ async def stream_message_sse(
                     if detected_emotion:
                         db_conv.emotional_tag = detected_emotion
                     if len(history) <= 1:
-                        db_conv.title = generate_emotional_title(message, detected_emotion or "neutral")
+                        try:
+                            title_msgs = [
+                                {"role": "user", "content": message},
+                                {"role": "assistant", "content": full_response}
+                            ]
+                            db_conv.title = await generate_chat_title_llm(title_msgs)
+                        except Exception:
+                            db_conv.title = generate_emotional_title(message, detected_emotion or "neutral")
 
                 await save_db.commit()
                 await save_db.refresh(assistant_msg)
@@ -472,3 +525,66 @@ async def create_conversation(
         created_at=conv.created_at,
         message_count=0,
     )
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationResponse)
+async def update_conversation(
+    conversation_id: uuid.UUID,
+    body: ConversationUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update conversation properties (like title)."""
+    result = await db.execute(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+    )
+    conv = result.scalar_one_or_none()
+    if conv is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+    
+    conv.title = body.title
+    await db.commit()
+    await db.refresh(conv)
+    
+    msg_count_result = await db.execute(
+        select(func.count(Message.id)).where(Message.conversation_id == conversation_id)
+    )
+    message_count = msg_count_result.scalar() or 0
+    
+    return ConversationResponse(
+        id=conv.id,
+        title=conv.title,
+        created_at=conv.created_at,
+        message_count=message_count,
+    )
+
+
+@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_conversation(
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a conversation."""
+    result = await db.execute(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+    )
+    conv = result.scalar_one_or_none()
+    if conv is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+    
+    await db.delete(conv)
+    await db.commit()
+    return None

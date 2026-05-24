@@ -83,6 +83,59 @@ async function apiPost<T>(endpoint: string, body?: unknown, token?: string | nul
   return response.json();
 }
 
+async function apiPatch<T>(endpoint: string, body?: unknown, token?: string | null): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'PATCH',
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearAuth();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    }
+    const errorData = await response.json().catch(() => ({}));
+    const message = await parseError(response, errorData);
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+async function apiDelete(endpoint: string, token?: string | null): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'DELETE',
+    headers,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearAuth();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    }
+    const errorData = await response.json().catch(() => ({}));
+    const message = await parseError(response, errorData);
+    throw new Error(message);
+  }
+}
+
 // ============================================
 // AUTH ENDPOINTS
 // ============================================
@@ -194,6 +247,24 @@ export async function createConversation(token: string): Promise<Conversation> {
     createdAt: data.created_at ? new Date(data.created_at) : new Date(),
     lastMessage: data.last_message,
   };
+}
+
+export async function updateConversation(
+  conversationId: string,
+  title: string,
+  token: string
+): Promise<Conversation> {
+  const data = await apiPatch<any>(`/api/chat/conversations/${conversationId}`, { title }, token);
+  return {
+    id: data.id,
+    title: data.title,
+    createdAt: data.created_at ? new Date(data.created_at) : new Date(),
+    lastMessage: data.last_message,
+  };
+}
+
+export async function deleteConversation(conversationId: string, token: string): Promise<void> {
+  await apiDelete(`/api/chat/conversations/${conversationId}`, token);
 }
 
 // ============================================

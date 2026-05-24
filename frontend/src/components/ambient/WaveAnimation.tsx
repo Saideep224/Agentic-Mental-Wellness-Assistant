@@ -116,8 +116,7 @@ export default function WaveAnimation() {
                   top: `${top}%`,
                   width: '150px',
                   height: '12px',
-                  animation: `${windDirection === 'right' ? 'wind-trail-right' : 'wind-trail-left'} ${trailDuration}s linear infinite`,
-                  animationDelay: `${delay}s`,
+                  animation: `${windDirection === 'right' ? 'wind-trail-right' : 'wind-trail-left'} ${trailDuration}s linear infinite ${delay}s`,
                   transform: `scale(${scale})`,
                 }}
                 viewBox="0 0 100 10"
@@ -149,8 +148,7 @@ export default function WaveAnimation() {
             width: '200%',
             height: height1,
             opacity: 0.1,
-            animation: `wave ${duration1} linear infinite`,
-            animationDirection: animDirection,
+            animation: `wave ${duration1} linear infinite ${animDirection}`,
           }}
           viewBox="0 0 1440 120"
           preserveAspectRatio="none"
@@ -172,8 +170,7 @@ export default function WaveAnimation() {
             width: '200%',
             height: height2,
             opacity: 0.07,
-            animation: `wave ${duration2} linear infinite`,
-            animationDirection: animDirection === 'normal' ? 'reverse' : 'normal', // counter-flow
+            animation: `wave ${duration2} linear infinite ${animDirection === 'normal' ? 'reverse' : 'normal'}`,
           }}
           viewBox="0 0 1440 100"
           preserveAspectRatio="none"
@@ -195,8 +192,7 @@ export default function WaveAnimation() {
             width: '200%',
             height: height3,
             opacity: 0.05,
-            animation: `wave ${duration3} linear infinite`,
-            animationDirection: animDirection,
+            animation: `wave ${duration3} linear infinite ${animDirection}`,
           }}
           viewBox="0 0 1440 80"
           preserveAspectRatio="none"
@@ -210,6 +206,7 @@ export default function WaveAnimation() {
             fill="#a78bfa"
           />
         </svg>
+
       </div>
 
       {/* Floating Wind Controller Widget */}

@@ -9,6 +9,10 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Sparkles,
+  Edit2,
+  Trash2,
+  Check,
+  X,
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import ChatContainer from '@/components/chat/ChatContainer';
@@ -28,6 +32,54 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+
+  const handleSaveTitle = async (id: string) => {
+    if (!editTitle.trim()) {
+      setEditingId(null);
+      return;
+    }
+    const token = getToken();
+    if (!token) return;
+
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, title: editTitle.trim() } : c))
+    );
+    setEditingId(null);
+
+    try {
+      await api.updateConversation(id, editTitle.trim(), token);
+    } catch (err) {
+      console.error('Failed to update title:', err);
+      loadConversations();
+    }
+  };
+
+  const handleDeleteConversation = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this conversation?')) return;
+    const token = getToken();
+    if (!token) return;
+
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    if (activeConversationId === id) {
+      setActiveConversationId(null);
+    }
+
+    try {
+      await api.deleteConversation(id, token);
+      const convos = await api.getConversations(token);
+      setConversations(convos);
+      if (convos.length > 0) {
+        setActiveConversationId(convos[0].id);
+      } else {
+        setActiveConversationId(null);
+      }
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
+      loadConversations();
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -154,8 +206,12 @@ export default function ChatPage() {
                     conversations.map((convo) => (
                       <button
                         key={convo.id}
-                        onClick={() => setActiveConversationId(convo.id)}
-                        className="w-full text-left px-3 py-3 rounded-xl transition-all duration-200 cursor-pointer"
+                        onClick={() => {
+                          if (editingId !== convo.id) {
+                            setActiveConversationId(convo.id);
+                          }
+                        }}
+                        className="w-full text-left px-3 py-3 rounded-xl transition-all duration-200 cursor-pointer group"
                         style={{
                           background:
                             activeConversationId === convo.id
@@ -167,19 +223,63 @@ export default function ChatPage() {
                               : '1px solid transparent',
                         }}
                       >
-                        <div className="flex items-center gap-2 mb-1">
-                          <MessageCircle size={12} style={{ color: 'var(--text-muted)' }} />
-                          <span
-                            className="text-sm font-medium truncate"
-                            style={{
-                              color:
-                                activeConversationId === convo.id
-                                  ? 'var(--text-primary)'
-                                  : 'var(--text-secondary)',
-                            }}
-                          >
-                            {convo.title || 'New Conversation'}
-                          </span>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <div className="flex items-center gap-2 truncate flex-1">
+                            <MessageCircle size={12} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                            {editingId === convo.id ? (
+                              <input
+                                value={editTitle}
+                                onChange={(e) => setEditTitle(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveTitle(convo.id);
+                                  if (e.key === 'Escape') setEditingId(null);
+                                }}
+                                onBlur={() => handleSaveTitle(convo.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                autoFocus
+                                className="bg-black/40 text-xs rounded border border-white/20 px-2 py-0.5 w-full focus:outline-none focus:border-cyan-400 text-white"
+                              />
+                            ) : (
+                              <span
+                                className="text-sm font-medium truncate"
+                                style={{
+                                  color:
+                                    activeConversationId === convo.id
+                                      ? 'var(--text-primary)'
+                                      : 'var(--text-secondary)',
+                                }}
+                              >
+                                {convo.title || 'New Conversation'}
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* Edit / Delete actions shown on hover or when active */}
+                          {editingId !== convo.id && (
+                            <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingId(convo.id);
+                                  setEditTitle(convo.title || 'New Conversation');
+                                }}
+                                className="p-1 text-white/40 hover:text-cyan-400 hover:bg-white/5 rounded transition-all duration-150 cursor-pointer"
+                                title="Edit Title"
+                              >
+                                <Edit2 size={12} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteConversation(convo.id);
+                                }}
+                                className="p-1 text-white/40 hover:text-rose-400 hover:bg-white/5 rounded transition-all duration-150 cursor-pointer"
+                                title="Delete Chat"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          )}
                         </div>
                         {convo.lastMessage && (
                           <p

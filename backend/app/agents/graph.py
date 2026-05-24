@@ -539,6 +539,9 @@ RECENT EMOTIONAL MEMORY:
 CURRENT MESSAGE:
 {user_message}
 
+CURRENT DATE AND TIME:
+{current_time}
+
 =================================================
 
 IMPORTANT BEHAVIOR RULES:
@@ -633,10 +636,16 @@ async def response_agent(state: AgentState) -> dict:
     history_str = " | ".join(memory_snippets) if memory_snippets else "No relevant past memories."
     memory_context_str = f"{patterns_str}Recent Emotional History:\n{history_str}"
 
+    from datetime import datetime
+    import time
+    tz_name = time.tzname[0] if hasattr(time, 'tzname') else 'local time'
+    current_time_str = f"{datetime.now().strftime('%A, %B %d, %Y %I:%M %p')} ({tz_name})"
+
     formatted_system_prompt = RESPONSE_SYSTEM_PROMPT.replace("{profile_data}", profile_data_str) \
                                                     .replace("{emotion_analysis}", emotion_analysis_str) \
                                                     .replace("{memory_context}", memory_context_str) \
-                                                    .replace("{user_message}", user_message)
+                                                    .replace("{user_message}", user_message) \
+                                                    .replace("{current_time}", current_time_str)
 
     messages = [{"role": "system", "content": formatted_system_prompt}]
 

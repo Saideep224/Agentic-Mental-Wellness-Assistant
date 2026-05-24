@@ -57,3 +57,8 @@ class ConversationResponse(BaseModel):
 class ConversationCreateRequest(BaseModel):
     """Body for POST /api/chat/conversations."""
     title: str = Field(default="New Conversation", max_length=512)
+
+
+class ConversationUpdateRequest(BaseModel):
+    """Body for PATCH /api/chat/conversations/{conversation_id}."""
+    title: str = Field(..., min_length=1, max_length=512)

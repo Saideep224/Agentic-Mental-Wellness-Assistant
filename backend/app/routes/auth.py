@@ -1,5 +1,5 @@
 """
-Authentication router – register, login, and user info.
+Authentication route – register, login, and user info.
 """
 
 import uuid

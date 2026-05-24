@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: esona-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:///./esona.db
+      - key: JWT_SECRET
+        value: esona-local-dev-jwt-secret-key-2026
+      - key: USE_UNCLOSEAI
+        value: "true"

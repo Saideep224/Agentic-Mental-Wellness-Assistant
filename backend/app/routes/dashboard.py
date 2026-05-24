@@ -1,5 +1,5 @@
 """
-Dashboard router – mood trends, emotional profile, stress patterns, insights.
+Dashboard route – mood trends, emotional profile, stress patterns, insights.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.conversation import Message, MessageRole
 from app.models.emotional_profile import EmotionalProfile
-from app.routers.auth import get_current_user
+from app.routes.auth import get_current_user
 from app.schemas.dashboard import (
     MoodDataPoint,
     MoodTrendsResponse,

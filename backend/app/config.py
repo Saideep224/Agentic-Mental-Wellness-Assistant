@@ -28,27 +28,41 @@ class Settings(BaseSettings):
     GEMINI_EMBEDDING_MODEL: str = "text-embedding-004"
     GEMINI_API_BASE: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
+    # ── UncloseAI ─────────────────────────────────────────────
+    USE_UNCLOSEAI: bool = True
+    UNCLOSEAI_API_BASE: str = "https://hermes.ai.unturf.com/v1"
+    UNCLOSEAI_MODEL: str = "adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic"
+
     @property
     def llm_api_key(self) -> str:
+        if self.USE_UNCLOSEAI:
+            return self.OPENAI_API_KEY or "free"
         return self.GEMINI_API_KEY or self.OPENAI_API_KEY
 
     @property
     def llm_base_url(self) -> str | None:
+        if self.USE_UNCLOSEAI:
+            return self.UNCLOSEAI_API_BASE
         if self.GEMINI_API_KEY:
             return self.GEMINI_API_BASE
         return None
 
     @property
     def llm_model(self) -> str:
+        if self.USE_UNCLOSEAI:
+            return self.UNCLOSEAI_MODEL
         if self.GEMINI_API_KEY:
             return self.GEMINI_MODEL
         return self.OPENAI_MODEL
 
     @property
     def embedding_model(self) -> str:
+        if self.USE_UNCLOSEAI:
+            return "text-embedding-3-small"
         if self.GEMINI_API_KEY:
             return self.GEMINI_EMBEDDING_MODEL
         return "text-embedding-3-small"
+
 
     # ── ChromaDB ──────────────────────────────────────────────
     CHROMA_PERSIST_DIR: str = "./chroma_data"

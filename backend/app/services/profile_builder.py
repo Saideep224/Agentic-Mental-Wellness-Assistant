@@ -99,11 +99,11 @@ class ProfileBuilder:
         Generate the updated emotional profile:
         """
 
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
 
         try:
             response = await client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
+                model=settings.llm_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -111,6 +111,7 @@ class ProfileBuilder:
                 temperature=0.3,
                 response_format={"type": "json_object"},
             )
+
 
             raw_content = response.choices[0].message.content or "{}"
             updated_data = json.loads(raw_content)

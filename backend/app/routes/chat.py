@@ -165,21 +165,39 @@ async def _build_conversation_history(
 
 
 async def _get_emotional_profile_dict(
-    db: AsyncSession, user_id: uuid.UUID
+    db: AsyncSession, user_id: uuid.UUID, user_name: str
 ) -> dict:
     """Load the emotional profile as a plain dict (empty dict if none)."""
     result = await db.execute(
         select(EmotionalProfile).where(EmotionalProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
-    if profile is None:
-        return {}
-    return {
-        "personality_type": profile.personality_type,
-        "emotional_baseline": profile.emotional_baseline,
-        "comfort_preferences": profile.comfort_preferences,
-        "communication_style": profile.communication_style,
+    
+    profile_dict = {
+        "user_name": user_name,
+        "personality_type": {},
+        "emotional_baseline": {},
+        "comfort_preferences": {},
+        "communication_style": {},
+        "emotional_summary": {},
+        "stress_patterns": {},
+        "emotional_triggers": {},
+        "preferred_response_style": {},
     }
+    
+    if profile is not None:
+        profile_dict.update({
+            "personality_type": profile.personality_type or {},
+            "emotional_baseline": profile.emotional_baseline or {},
+            "comfort_preferences": profile.comfort_preferences or {},
+            "communication_style": profile.communication_style or {},
+            "emotional_summary": profile.emotional_summary or {},
+            "stress_patterns": profile.stress_patterns or {},
+            "emotional_triggers": profile.emotional_triggers or {},
+            "preferred_response_style": profile.preferred_response_style or {},
+        })
+        
+    return profile_dict
 
 
 @router.post("/message")
@@ -207,7 +225,7 @@ async def send_message(
 
     # 3. Build context for agents
     history = await _build_conversation_history(db, conversation.id)
-    emotional_profile = await _get_emotional_profile_dict(db, current_user.id)
+    emotional_profile = await _get_emotional_profile_dict(db, current_user.id, current_user.name)
 
     # 4. Run agent graph
     try:
@@ -334,7 +352,7 @@ async def stream_message_sse(
 
     # 4. Build context
     history = await _build_conversation_history(db, conversation.id)
-    emotional_profile = await _get_emotional_profile_dict(db, current_user.id)
+    emotional_profile = await _get_emotional_profile_dict(db, current_user.id, current_user.name)
 
     await db.commit()
 

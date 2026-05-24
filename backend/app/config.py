@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     # ── Database ──────────────────────────────────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/esona"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./esona.db"
 
     # ── OpenAI ────────────────────────────────────────────────
     OPENAI_API_KEY: str = ""

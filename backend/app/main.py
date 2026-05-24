@@ -61,9 +61,10 @@ app.add_middleware(
     allow_origins=[
         settings.FRONTEND_URL,
         "http://localhost:3000",
-        "https://esona.vercel.app"
+        "https://esona.vercel.app",
+        "https://agentic-mental-wellness-assistant.vercel.app",
     ],
-    allow_origin_regex=r"https://esona-.*\.vercel\.app",
+    allow_origin_regex=r"https://agentic-mental-wellness-assistant.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

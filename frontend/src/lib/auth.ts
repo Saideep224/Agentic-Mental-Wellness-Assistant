@@ -11,7 +11,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
       async authorize(credentials) {
         try {
-          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+          const backendUrl =
+            process.env.NEXT_PUBLIC_API_URL ||
+            process.env.NEXT_PUBLIC_BACKEND_URL ||
+            'http://localhost:8000';
+
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
+
           const res = await fetch(`${backendUrl}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -19,7 +26,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               email: credentials.email,
               password: credentials.password,
             }),
+            signal: controller.signal,
           });
+
+          clearTimeout(timeoutId);
 
           if (!res.ok) {
             return null;
@@ -34,7 +44,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             accessToken: data.access_token,
             onboardingCompleted: data.user.onboarding_completed ?? data.user.onboardingCompleted ?? false,
           };
-        } catch {
+        } catch (error) {
+          console.error('[Esona Auth] Login error:', error instanceof Error ? error.message : error);
           return null;
         }
       },

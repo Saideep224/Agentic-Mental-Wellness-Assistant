@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Eye, EyeOff, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import * as api from '@/lib/api';
 
@@ -18,6 +18,24 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline' | 'idle'>('idle');
+
+  // Check backend health on mount
+  useEffect(() => {
+    const checkHealth = async () => {
+      setBackendStatus('checking');
+      const healthy = await api.checkBackendHealth();
+      setBackendStatus(healthy ? 'online' : 'offline');
+    };
+    checkHealth();
+  }, []);
+
+  const retryHealthCheck = async () => {
+    setBackendStatus('checking');
+    setError('');
+    const healthy = await api.checkBackendHealth();
+    setBackendStatus(healthy ? 'online' : 'offline');
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -28,6 +46,11 @@ export default function LoginPage() {
       if (mode === 'register') {
         if (!name.trim()) {
           setError('Please enter your name');
+          setIsLoading(false);
+          return;
+        }
+        if (password.length < 8) {
+          setError('Password must be at least 8 characters');
           setIsLoading(false);
           return;
         }
@@ -54,6 +77,10 @@ export default function LoginPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong';
       setError(message);
+      // If it was a network error, refresh backend status
+      if (message.includes('server') || message.includes('timed out') || message.includes('reach')) {
+        setBackendStatus('offline');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -81,6 +108,74 @@ export default function LoginPage() {
             {mode === 'login' ? 'Welcome back. We missed you.' : 'Begin your journey with Esona.'}
           </p>
         </div>
+
+        {/* Backend status indicator */}
+        <AnimatePresence>
+          {backendStatus === 'offline' && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-4 px-4 py-3 rounded-xl text-sm flex items-center justify-between"
+              style={{
+                background: 'rgba(251, 191, 36, 0.1)',
+                border: '1px solid rgba(251, 191, 36, 0.2)',
+                color: '#fbbf24',
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <WifiOff size={14} />
+                <span>Server is waking up... This may take 30-60 seconds.</span>
+              </div>
+              <button
+                onClick={retryHealthCheck}
+                className="p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                title="Retry connection"
+              >
+                <RefreshCw size={14} />
+              </button>
+            </motion.div>
+          )}
+          {backendStatus === 'checking' && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-4 px-4 py-3 rounded-xl text-sm flex items-center gap-2"
+              style={{
+                background: 'rgba(34, 211, 238, 0.05)',
+                border: '1px solid rgba(34, 211, 238, 0.1)',
+                color: 'var(--accent-cyan)',
+              }}
+            >
+              <div
+                className="w-3 h-3 rounded-full border-2 animate-spin"
+                style={{
+                  borderColor: 'rgba(34, 211, 238, 0.3)',
+                  borderTopColor: 'var(--accent-cyan)',
+                }}
+              />
+              <span>Connecting to server...</span>
+            </motion.div>
+          )}
+          {backendStatus === 'online' && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ exit: { delay: 2 } }}
+              className="mb-4 px-4 py-2 rounded-xl text-sm flex items-center gap-2"
+              style={{
+                background: 'rgba(52, 211, 153, 0.08)',
+                border: '1px solid rgba(52, 211, 153, 0.15)',
+                color: '#34d399',
+              }}
+            >
+              <Wifi size={14} />
+              <span>Server connected</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Auth card */}
         <div className="glass-card p-8">
@@ -214,14 +309,24 @@ export default function LoginPage() {
                     initial={{ opacity: 0, y: -5 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -5 }}
-                    className="px-4 py-3 rounded-xl text-sm"
+                    className="px-4 py-3 rounded-xl text-sm flex items-start gap-2"
                     style={{
                       background: 'rgba(244, 114, 182, 0.1)',
                       border: '1px solid rgba(244, 114, 182, 0.2)',
                       color: 'var(--accent-pink)',
                     }}
                   >
-                    {error}
+                    <span className="flex-1">{error}</span>
+                    {(error.includes('server') || error.includes('timed out') || error.includes('reach')) && (
+                      <button
+                        type="button"
+                        onClick={retryHealthCheck}
+                        className="p-1 rounded hover:bg-white/5 transition-colors cursor-pointer shrink-0"
+                        title="Retry connection"
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>

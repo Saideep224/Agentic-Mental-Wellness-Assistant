@@ -1,9 +1,40 @@
 import { ApiResponse, LoginResponse, RegisterResponse, User, Message, Conversation, MoodDataPoint, EmotionalProfile, StressPattern, PersonalityInsight } from '@/types';
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
 // ============================================
-// HTTP HELPERS
+// RETRY & TIMEOUT CONFIG (for Render cold starts)
+// ============================================
+
+const MAX_RETRIES = 2;
+const INITIAL_TIMEOUT_MS = 30000; // 30s for Render free tier cold starts
+const RETRY_DELAY_MS = 2000;
+
+async function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isNetworkError(error: unknown): boolean {
+  if (error instanceof TypeError && error.message === 'Failed to fetch') return true;
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+  return false;
+}
+
+function friendlyErrorMessage(error: unknown): string {
+  if (error instanceof TypeError && error.message === 'Failed to fetch') {
+    return 'Unable to reach the server. It may be starting up — please try again in a few seconds.';
+  }
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return 'The request timed out. The server may be waking up — please try again.';
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Something went wrong. Please try again.';
+}
+
+// ============================================
+// HTTP HELPERS (with retry + timeout)
 // ============================================
 
 async function parseError(response: Response, errorData: any): Promise<string> {
@@ -26,6 +57,48 @@ async function parseError(response: Response, errorData: any): Promise<string> {
   return errorMessage;
 }
 
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries: number = MAX_RETRIES,
+  timeoutMs: number = INITIAL_TIMEOUT_MS
+): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      lastError = error;
+
+      console.warn(
+        `[Esona API] Request failed (attempt ${attempt + 1}/${retries + 1}):`,
+        error instanceof Error ? error.message : error
+      );
+
+      // Only retry on network errors / timeouts, not on HTTP errors
+      if (attempt < retries && isNetworkError(error)) {
+        const delay = RETRY_DELAY_MS * Math.pow(2, attempt);
+        console.info(`[Esona API] Retrying in ${delay}ms...`);
+        await sleep(delay);
+      } else {
+        break;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 async function apiGet<T>(endpoint: string, token?: string | null): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -34,10 +107,15 @@ async function apiGet<T>(endpoint: string, token?: string | null): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    method: 'GET',
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
+      method: 'GET',
+      headers,
+    });
+  } catch (error) {
+    throw new Error(friendlyErrorMessage(error));
+  }
 
   if (!response.ok) {
     if (response.status === 401) {
@@ -62,11 +140,16 @@ async function apiPost<T>(endpoint: string, body?: unknown, token?: string | nul
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    method: 'POST',
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
+      method: 'POST',
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (error) {
+    throw new Error(friendlyErrorMessage(error));
+  }
 
   if (!response.ok) {
     if (response.status === 401) {
@@ -91,11 +174,16 @@ async function apiPatch<T>(endpoint: string, body?: unknown, token?: string | nu
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    method: 'PATCH',
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
+      method: 'PATCH',
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (error) {
+    throw new Error(friendlyErrorMessage(error));
+  }
 
   if (!response.ok) {
     if (response.status === 401) {
@@ -118,10 +206,15 @@ async function apiDelete(endpoint: string, token?: string | null): Promise<void>
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    method: 'DELETE',
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
+      method: 'DELETE',
+      headers,
+    });
+  } catch (error) {
+    throw new Error(friendlyErrorMessage(error));
+  }
 
   if (!response.ok) {
     if (response.status === 401) {
@@ -133,6 +226,25 @@ async function apiDelete(endpoint: string, token?: string | null): Promise<void>
     const errorData = await response.json().catch(() => ({}));
     const message = await parseError(response, errorData);
     throw new Error(message);
+  }
+}
+
+// ============================================
+// HEALTH CHECK
+// ============================================
+
+export async function checkBackendHealth(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const response = await fetch(`${API_BASE}/health`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response.ok;
+  } catch {
+    return false;
   }
 }
 

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # ── Supabase (optional, for direct client access if needed) ─
     SUPABASE_URL: str = ""
     SUPABASE_ANON_KEY: str = ""
+    SUPABASE_JWT_SECRET: str = ""
 
     # ── OpenAI ────────────────────────────────────────────────
     OPENAI_API_KEY: str = ""

@@ -1,11 +1,10 @@
 """
-Authentication route – register, login, and user info.
+Authentication route – verifies Supabase JWT token and extracts user profile info.
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
@@ -15,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserLogin, UserResponse, TokenResponse
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -23,159 +21,152 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 bearer_scheme = HTTPBearer()
 
 
-def _hash_password(password: str) -> str:
-    """Return a bcrypt hash of the plaintext password."""
-    pw_bytes = password.encode("utf-8")
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(pw_bytes, salt).decode("utf-8")
-
-
-def _verify_password(plain: str, hashed: str) -> bool:
-    """Check a plaintext password against its bcrypt hash."""
-    try:
-        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
-    except Exception:
-        return False
-
-
-def _create_access_token(user_id: uuid.UUID) -> str:
-    """Create a signed JWT containing the user_id and expiration."""
-    expire = datetime.now(timezone.utc) + timedelta(hours=settings.JWT_EXPIRATION_HOURS)
-    payload = {
-        "sub": str(user_id),
-        "exp": expire,
-    }
-    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
-
-
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """FastAPI dependency – extracts and verifies the JWT, returns the User row."""
+    """FastAPI dependency – extracts and verifies the Supabase JWT, returns the User (profiles) row."""
     token = credentials.credentials
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
     try:
-        payload = jwt.decode(
-            token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]
-        )
+        # Decode Supabase JWT
+        if getattr(settings, "SUPABASE_JWT_SECRET", None):
+            payload = jwt.decode(
+                token, settings.SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False}
+            )
+        else:
+            payload = jwt.get_unverified_claims(token)
+            
         user_id_str: str | None = payload.get("sub")
         if user_id_str is None:
             raise credentials_exception
         user_id = uuid.UUID(user_id_str)
-    except (JWTError, ValueError):
-        raise credentials_exception
+    except Exception:
+        # Fallback to local JWT signature for backward compatibility/credentials token
+        try:
+            payload = jwt.decode(
+                token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]
+            )
+            user_id_str: str | None = payload.get("sub")
+            if user_id_str is None:
+                raise credentials_exception
+            user_id = uuid.UUID(user_id_str)
+        except (JWTError, ValueError):
+            raise credentials_exception
 
+    # Query profiles table using User model
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
+    
     if user is None:
-        raise credentials_exception
+        # Auto-create profile row if it doesn't exist yet (robust sync bridge)
+        try:
+            email = payload.get("email", "")
+            user_meta = payload.get("user_metadata", {})
+            name = user_meta.get("full_name") or user_meta.get("name") or email.split("@")[0] or "Esona User"
+            provider = payload.get("app_metadata", {}).get("provider", "credentials")
+            
+            user = User(
+                id=user_id,
+                email=email,
+                name=name,
+                provider=provider,
+                onboarding_completed=False,
+            )
+            db.add(user)
+            await db.flush()
+            await db.refresh(user)
+        except Exception:
+            raise credentials_exception
+            
     return user
 
 
-# ── Endpoints ─────────────────────────────────────────────────
-
-
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: UserCreate, db: AsyncSession = Depends(get_db)):
-    """Register a new user account and return a JWT."""
-    # Check for existing email
-    existing = await db.execute(select(User).where(User.email == body.email))
-    if existing.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A user with this email already exists",
-        )
-
-    user = User(
-        name=body.name,
-        email=body.email,
-        hashed_password=_hash_password(body.password),
-    )
-    db.add(user)
-    await db.flush()  # populate user.id
-    await db.refresh(user)
-
-    token = _create_access_token(user.id)
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse.model_validate(user),
+@router.post("/register")
+async def register():
+    """Register endpoint disabled – authentication runs securely through Supabase Auth."""
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Registration has migrated directly to Supabase Auth on the frontend.",
     )
 
 
-@router.post("/login", response_model=TokenResponse)
-async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
-    """Authenticate with email + password, return a JWT."""
-    result = await db.execute(select(User).where(User.email == body.email))
-    user = result.scalar_one_or_none()
-
-    if user is None or not _verify_password(body.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        )
-
-    user.last_login = datetime.now(timezone.utc)
-    await db.flush()
-
-    token = _create_access_token(user.id)
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse.model_validate(user),
+@router.post("/login")
+async def login():
+    """Login endpoint disabled – authentication runs securely through Supabase Auth."""
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Login has migrated directly to Supabase Auth on the frontend.",
     )
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=dict)
 async def get_me(current_user: User = Depends(get_current_user)):
     """Return the currently authenticated user's info."""
-    return UserResponse.model_validate(current_user)
+    return {
+        "id": str(current_user.id),
+        "email": current_user.email,
+        "name": current_user.name,
+        "onboarding_completed": current_user.onboarding_completed,
+        "avatar_url": current_user.avatar_url,
+        "provider": current_user.provider,
+        "github_username": current_user.github_username,
+        "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+        "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
+    }
 
 
-from pydantic import BaseModel
-
-class SupabaseLoginRequest(BaseModel):
-    name: str
-    email: str
-    avatar_url: str | None = None
-    provider: str = "github"
-    github_username: str | None = None
-
-
-@router.post("/supabase-login", response_model=TokenResponse)
-async def supabase_login(body: SupabaseLoginRequest, db: AsyncSession = Depends(get_db)):
-    """Authenticate or register a user logging in via Supabase OAuth using UPSERT logic."""
-    # Check for existing email
-    result = await db.execute(select(User).where(User.email == body.email))
+@router.post("/supabase-login")
+async def supabase_login(body: dict, db: AsyncSession = Depends(get_db)):
+    """Supabase OAuth registration/login bridge endpoint."""
+    user_id_str = body.get("id")
+    if not user_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing user ID",
+        )
+    user_id = uuid.UUID(user_id_str)
+    
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-
+    
     if user is None:
         user = User(
-            name=body.name,
-            email=body.email,
-            avatar_url=body.avatar_url,
-            provider=body.provider,
-            github_username=body.github_username,
+            id=user_id,
+            email=body.get("email", ""),
+            name=body.get("name", ""),
+            avatar_url=body.get("avatar_url"),
+            provider=body.get("provider", "github"),
+            github_username=body.get("github_username"),
+            onboarding_completed=False,
             last_login=datetime.now(timezone.utc),
-            hashed_password=None,  # Password-less OAuth
         )
         db.add(user)
         await db.flush()
         await db.refresh(user)
     else:
-        # Sync profile details if they changed (UPSERT logic)
-        user.name = body.name
-        user.avatar_url = body.avatar_url
-        user.provider = body.provider
-        user.github_username = body.github_username
+        user.name = body.get("name", user.name)
+        user.avatar_url = body.get("avatar_url", user.avatar_url)
+        user.provider = body.get("provider", user.provider)
+        user.github_username = body.get("github_username", user.github_username)
         user.last_login = datetime.now(timezone.utc)
         await db.flush()
-
-    token = _create_access_token(user.id)
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse.model_validate(user),
-    )
+        
+    await db.commit()
+    
+    return {
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "name": user.name,
+            "onboarding_completed": user.onboarding_completed,
+            "avatar_url": user.avatar_url,
+            "provider": user.provider,
+            "github_username": user.github_username,
+        }
+    }

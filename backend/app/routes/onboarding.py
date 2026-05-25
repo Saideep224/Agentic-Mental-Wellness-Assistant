@@ -8,15 +8,51 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User
-from app.models.onboarding import UserOnboardingAnswer
+from app.models.onboarding import UserAnswer
 from app.routes.auth import get_current_user
 from app.schemas.onboarding import (
     OnboardingSubmitRequest,
     OnboardingStatusResponse,
+    OnboardingAnswer,
 )
 from app.services.onboarding_analyzer import analyze_onboarding
 
 router = APIRouter(prefix="/api/onboarding", tags=["Onboarding"])
+
+
+@router.post("/answer", status_code=status.HTTP_200_OK)
+async def save_onboarding_answer(
+    answer: OnboardingAnswer,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save an individual onboarding answer live to the database (user_answers table)."""
+    # Check if this answer already exists
+    result = await db.execute(
+        select(UserAnswer).where(
+            UserAnswer.user_id == current_user.id,
+            UserAnswer.question_id == answer.question_id,
+        )
+    )
+    db_ans = result.scalar_one_or_none()
+
+    if db_ans:
+        db_ans.category = answer.category
+        db_ans.selected_answers = answer.selected_answers
+        db_ans.custom_answer = answer.custom_answer
+    else:
+        db_ans = UserAnswer(
+            user_id=current_user.id,
+            question_id=answer.question_id,
+            category=answer.category,
+            selected_answers=answer.selected_answers,
+            custom_answer=answer.custom_answer,
+        )
+        db.add(db_ans)
+
+    await db.flush()
+    await db.commit()
+    return {"message": "Answer saved live."}
 
 
 @router.post("/submit", status_code=status.HTTP_201_CREATED)
@@ -39,7 +75,7 @@ async def submit_onboarding(
     # 2. Delete existing onboarding responses if they exist for a clean slate
     from sqlalchemy import delete
     await db.execute(
-        delete(UserOnboardingAnswer).where(UserOnboardingAnswer.user_id == current_user.id)
+        delete(UserAnswer).where(UserAnswer.user_id == current_user.id)
     )
     await db.flush()
 
@@ -47,7 +83,7 @@ async def submit_onboarding(
     db_responses = []
     answers_to_analyze = []
     for ans in body.answers:
-        db_ans = UserOnboardingAnswer(
+        db_ans = UserAnswer(
             user_id=current_user.id,
             question_id=ans.question_id,
             category=ans.category,
@@ -64,7 +100,7 @@ async def submit_onboarding(
             "custom_answer": ans.custom_answer,
         })
 
-    # Mark user onboarding as complete
+    # Mark user onboarding as complete on User table (profiles)
     current_user.onboarding_completed = True
     
     await db.flush()
@@ -88,8 +124,8 @@ async def get_onboarding_status(
 ):
     """Check if the user has completed onboarding and how many questions are answered."""
     result = await db.execute(
-        select(func.count(UserOnboardingAnswer.id)).where(
-            UserOnboardingAnswer.user_id == current_user.id
+        select(func.count(UserAnswer.id)).where(
+            UserAnswer.user_id == current_user.id
         )
     )
     count = result.scalar() or 0

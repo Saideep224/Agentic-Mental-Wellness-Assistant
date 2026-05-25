@@ -22,10 +22,9 @@ export default function AuthCallbackPage() {
           throw new Error('No active session found. Please try logging in again.');
         }
 
-        setStatus('Syncing user profile with server...');
+        setStatus('Syncing user profile with database...');
         
         const userMeta = session.user.user_metadata || {};
-        const githubUsername = userMeta.preferred_username || userMeta.user_name || null;
         
         // Detect OAuth provider
         let provider = 'github';
@@ -35,37 +34,34 @@ export default function AuthCallbackPage() {
           provider = session.user.identities[0].provider;
         }
 
-        const oauthData = {
+        // Check if user already exists to keep onboardingCompleted status
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("onboarding_completed")
+          .eq("id", session.user.id)
+          .single();
+          
+        const onboardingCompleted = profile?.onboarding_completed ?? false;
+
+        // Upsert profile in Supabase database
+        await supabase.from("profiles").upsert({
+          id: session.user.id,
+          email: session.user.email,
           name: userMeta.full_name || userMeta.name || session.user.email?.split('@')[0] || 'OAuth User',
-          email: session.user.email || '',
-          avatar_url: userMeta.avatar_url || null,
           provider: provider,
-          github_username: githubUsername,
-        };
-
-        // Send to FastAPI backend
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
-        const res = await fetch(`${backendUrl}/api/auth/supabase-login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(oauthData),
+          onboarding_completed: onboardingCompleted
         });
+        console.log('[Auth Callback] Profile upserted in Supabase database.');
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.detail || 'Failed to sync OAuth session with backend');
-        }
-
-        const backendData = await res.json();
+        // Sync and register in backend SQLite/Postgres DB using getMe JWT call
+        const jwtToken = session.access_token;
+        const freshUser = await api.getMe(jwtToken);
         
-        // Save FastAPI token and user profile locally
-        api.setToken(backendData.access_token);
-        api.setStoredUser(backendData.user);
+        api.setToken(jwtToken);
+        api.setStoredUser(freshUser);
+        console.log('[Auth Callback] Successfully synced session with FastAPI backend:', freshUser);
 
-        // Sign out from supabase client to stick with backend JWT session
-        await supabase.auth.signOut();
-
-        if (!backendData.user.onboarding_completed && !backendData.user.onboardingCompleted) {
+        if (!freshUser.onboardingCompleted) {
           setStatus('Redirecting to onboarding...');
           router.push('/onboarding');
         } else {
@@ -76,9 +72,6 @@ export default function AuthCallbackPage() {
         console.error('[Esona Auth Callback] Error:', err);
         const errMsg = err instanceof Error ? err.message : 'Authentication failed';
         setError(errMsg);
-        
-        // Sign out from supabase client on error
-        await supabase.auth.signOut().catch(() => {});
         
         // Redirect back to login with error query parameter
         router.push(`/login?error=${encodeURIComponent(errMsg)}`);

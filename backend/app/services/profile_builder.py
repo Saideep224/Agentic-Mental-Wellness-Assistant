@@ -121,6 +121,7 @@ class ProfileBuilder:
                 profile.personality_type = updated_data["personality_type"]
                 profile.strengths = {"strengths": updated_data["personality_type"].get("strengths", [])}
                 profile.weaknesses = {"weaknesses": updated_data["personality_type"].get("growth_areas", [])}
+                profile.personality_type_text = updated_data["personality_type"].get("type", "Thoughtful Explorer")
             if "emotional_baseline" in updated_data:
                 profile.emotional_baseline = updated_data["emotional_baseline"]
                 profile.emotional_style = updated_data["emotional_baseline"]
@@ -129,6 +130,7 @@ class ProfileBuilder:
                 profile.interests = updated_data["comfort_preferences"]
             if "communication_style" in updated_data:
                 profile.communication_style = updated_data["communication_style"]
+                profile.communication_style_text = updated_data["communication_style"].get("preferred_style", "Gentle and validating")
             if "emotional_triggers" in updated_data:
                 profile.emotional_triggers = updated_data["emotional_triggers"]
                 profile.stress_triggers = updated_data["emotional_triggers"]
@@ -138,6 +140,23 @@ class ProfileBuilder:
                 profile.stress_patterns = updated_data["stress_patterns"]
             if "preferred_response_style" in updated_data:
                 profile.preferred_response_style = updated_data["preferred_response_style"]
+
+            # Rebuild personality_profile
+            p_type = profile.personality_type_text or "Thoughtful Explorer"
+            c_style = profile.communication_style_text or "Gentle and validating"
+            p_strengths = profile.strengths.get("strengths", []) if isinstance(profile.strengths, dict) else []
+            p_interests = profile.comfort_preferences.get("escape_mechanisms", []) if isinstance(profile.comfort_preferences, dict) else []
+            p_triggers = profile.stress_patterns.get("stress_triggers", []) if isinstance(profile.stress_patterns, dict) else []
+            p_motivation = profile.preferred_response_style.get("what_helps", []) if isinstance(profile.preferred_response_style, dict) else []
+            
+            profile.personality_profile = {
+                "type": p_type,
+                "communication_style": c_style,
+                "strengths": p_strengths,
+                "interests": p_interests,
+                "stress_triggers": p_triggers,
+                "motivation_style": ", ".join(p_motivation) if isinstance(p_motivation, list) else str(p_motivation)
+            }
 
             await self.db.flush()
             logger.info(f"UserProfile successfully updated for user {user_id}")

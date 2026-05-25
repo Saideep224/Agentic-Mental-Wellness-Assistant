@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useRouter, usePathname } from 'next/navigation';
 import { User } from '@/types';
 import { getToken, getStoredUser, clearAuth, getMe } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -21,54 +22,74 @@ const protectedRoutes = ['/chat', '/dashboard', '/onboarding'];
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [token, setTokenState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
   const router = useRouter();
   const pathname = usePathname();
 
-  // Load session from storage on mount
+  // Load and listen to Supabase Auth State changes
   useEffect(() => {
     const initAuth = async () => {
-      const storedToken = getToken();
-      const storedUser = getStoredUser();
-
-      if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(storedUser);
+      try {
+        console.log('[AuthProvider] Restoring Supabase session...');
+        const { data: { session } } = await supabase.auth.getSession();
         
-        try {
-          const freshUser = await getMe(storedToken);
+        if (session) {
+          const jwtToken = session.access_token;
+          setTokenState(jwtToken);
+          localStorage.setItem('esona_token', jwtToken);
+          
+          const freshUser = await getMe(jwtToken);
           setUser(freshUser);
           localStorage.setItem('esona_user', JSON.stringify(freshUser));
-        } catch (err) {
-          console.warn('[AuthProvider] Failed to refresh user, keeping local data:', err);
-          // If token expired (Unauthorized), clear state
-          if (err instanceof Error && (err.message.includes('401') || err.message.includes('expired') || err.message.includes('Unauthorized'))) {
-            clearAuth();
-            setToken(null);
-            setUser(null);
-            if (protectedRoutes.some(route => pathname.startsWith(route))) {
-              router.push('/login');
-            }
-          }
+          console.log('[AuthProvider] Session restored successfully for:', freshUser.email);
+        } else {
+          // Clear if no session
+          setTokenState(null);
+          setUser(null);
         }
-      } else {
-        // If no credentials and we are on a protected route, redirect to login
-        if (protectedRoutes.some(route => pathname.startsWith(route))) {
-          router.push('/login');
-        }
+      } catch (err) {
+        console.warn('[AuthProvider] Session restoration error:', err);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     initAuth();
-  }, [router, pathname]);
 
-  // Route protection redirect checks when pathname changes
+    // Set up auth state change listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[AuthProvider] onAuthStateChange event:', event);
+      if (session) {
+        const jwtToken = session.access_token;
+        setTokenState(jwtToken);
+        localStorage.setItem('esona_token', jwtToken);
+        
+        try {
+          const freshUser = await getMe(jwtToken);
+          setUser(freshUser);
+          localStorage.setItem('esona_user', JSON.stringify(freshUser));
+        } catch (err) {
+          console.error('[AuthProvider] Failed to sync profile on event:', err);
+        }
+      } else {
+        setTokenState(null);
+        setUser(null);
+        localStorage.removeItem('esona_token');
+        localStorage.removeItem('esona_user');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Route protection redirect checks
   useEffect(() => {
     if (!isLoading) {
-      const storedToken = getToken();
+      const storedToken = localStorage.getItem('esona_token');
       const storedUser = getStoredUser();
 
       if (!storedToken) {
@@ -76,40 +97,59 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           router.push('/login');
         }
       } else {
-        const hasCompletedOnboarding = storedUser?.onboardingCompleted ?? false;
-        if (!hasCompletedOnboarding && (pathname.startsWith('/chat') || pathname.startsWith('/dashboard'))) {
+        const hasCompletedOnboarding = user?.onboardingCompleted ?? storedUser?.onboardingCompleted ?? false;
+        
+        if (pathname === '/login') {
+          if (!hasCompletedOnboarding) {
+            router.push('/onboarding');
+          } else {
+            router.push('/dashboard');
+          }
+        } else if (!hasCompletedOnboarding && (pathname.startsWith('/chat') || pathname.startsWith('/dashboard'))) {
+          console.log('[AuthProvider] Redirecting to onboarding...');
           router.push('/onboarding');
         } else if (hasCompletedOnboarding && pathname === '/onboarding') {
           router.push('/dashboard');
         }
       }
     }
-  }, [pathname, isLoading, router]);
+  }, [pathname, isLoading, router, user]);
 
   const login = (newToken: string, newUser: User) => {
     localStorage.setItem('esona_token', newToken);
     localStorage.setItem('esona_user', JSON.stringify(newUser));
-    setToken(newToken);
+    setTokenState(newToken);
     setUser(newUser);
-    router.push('/dashboard');
+    
+    if (!newUser.onboardingCompleted) {
+      router.push('/onboarding');
+    } else {
+      router.push('/dashboard');
+    }
   };
 
-  const logout = () => {
-    clearAuth();
-    setToken(null);
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('[AuthProvider] Signout error:', e);
+    }
+    localStorage.removeItem('esona_token');
+    localStorage.removeItem('esona_user');
+    setTokenState(null);
     setUser(null);
-    router.push('/');
+    router.push('/login');
   };
 
   const refreshUser = async () => {
-    const currentToken = token || getToken();
+    const currentToken = token || localStorage.getItem('esona_token');
     if (!currentToken) return;
     try {
       const freshUser = await getMe(currentToken);
       setUser(freshUser);
       localStorage.setItem('esona_user', JSON.stringify(freshUser));
     } catch (err) {
-      console.error('[AuthProvider] Failed to refresh user details:', err);
+      console.error('[AuthProvider] Failed to refresh user:', err);
     }
   };
 

@@ -22,8 +22,7 @@ export default function ProgressBar({
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
           Question{' '}
-          <span style={{ color: 'var(--accent-cyan)' }}>{currentQuestion + 1}</span>{' '}
-          of {totalQuestions}
+          <span style={{ color: 'var(--accent-cyan)' }}>{currentQuestion + 1}</span>/{totalQuestions}
         </span>
         <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
           {categories.find((c) => c.id === currentCategory)?.label || ''}

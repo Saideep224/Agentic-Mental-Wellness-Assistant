@@ -1,46 +1,45 @@
 """
-UserProfile model – stores personality details, styles, answers, triggers, and compatibility fields.
+UserProfile model – storing personality metrics and maps to the 'user_personality' table.
 """
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, UUID, JSON
+from sqlalchemy import DateTime, ForeignKey, UUID, JSON, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 
 class UserProfile(Base):
-    """UserProfile model mapping to the user_profiles database table."""
+    """UserProfile model mapping to the user_personality database table."""
 
-    __tablename__ = "user_profiles"
+    __tablename__ = "user_personality"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID,
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("profiles.id", ondelete="CASCADE"),
         primary_key=True,
         nullable=False,
         index=True,
     )
 
     # ── Required profiles sections ────────────────────────────
-    personality_type: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    emotional_style: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    personality_profile: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    personality_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    communication_style: Mapped[str | None] = mapped_column(Text, nullable=True)
     interests: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    communication_style: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    stress_indicators: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    
+    # ── Backward compatibility columns ──────────────────────────
+    personality_type_dict: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    emotional_style: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     stress_triggers: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     strengths: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     weaknesses: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     onboarding_answers: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    # ── Onboarding Additions ──────────────────────────────────
-    onboarding_completed: Mapped[bool] = mapped_column(Boolean := __import__('sqlalchemy').Boolean, default=False, nullable=False)
-    personality_profile: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    personality_type_text: Mapped[str | None] = mapped_column(Text := __import__('sqlalchemy').Text, nullable=True)
-    communication_style_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # ── Backward compatibility columns ──────────────────────────
     emotional_baseline: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     comfort_preferences: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     emotional_summary: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

@@ -37,7 +37,7 @@ class Conversation(Base):
         UUID, primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(512), default="New Conversation")
     emotional_tag: Mapped[str | None] = mapped_column(String(255), nullable=True)

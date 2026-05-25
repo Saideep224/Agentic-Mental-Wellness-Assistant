@@ -48,7 +48,7 @@ export default function LoginPage() {
     }
   }, []);
 
-  // Listen for Supabase redirect callback session
+  // Listen for Supabase session on mount
   useEffect(() => {
     const checkSupabaseSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -56,9 +56,17 @@ export default function LoginPage() {
         setIsLoading(true);
         setError('');
         try {
-          const userMeta = session.user.user_metadata || {};
-          const githubUsername = userMeta.preferred_username || userMeta.user_name || null;
+          const jwtToken = session.access_token;
           
+          // Query existing profile status to check onboardingCompleted safely
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('onboarding_completed')
+            .eq('id', session.user.id)
+            .single();
+
+          const onboardingCompleted = profile?.onboarding_completed ?? false;
+
           let provider = 'github';
           if (session.user.app_metadata.provider) {
             provider = session.user.app_metadata.provider;
@@ -66,43 +74,27 @@ export default function LoginPage() {
             provider = session.user.identities[0].provider;
           }
 
-          const oauthData = {
-            name: userMeta.full_name || userMeta.name || session.user.email?.split('@')[0] || 'GitHub User',
-            email: session.user.email || '',
-            avatar_url: userMeta.avatar_url || null,
+          // Upsert profiles
+          await supabase.from('profiles').upsert({
+            id: session.user.id,
+            email: session.user.email,
+            name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Esona User',
             provider: provider,
-            github_username: githubUsername,
-          };
-          
-          // Send to FastAPI backend
-          const backendUrl = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
-          const res = await fetch(`${backendUrl}/api/auth/supabase-login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(oauthData),
+            onboarding_completed: onboardingCompleted,
           });
-          
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.detail || 'Failed to sync GitHub session with backend');
-          }
-          
-          const backendData = await res.json();
-          api.setToken(backendData.access_token);
-          api.setStoredUser(backendData.user);
-          
-          // Sign out from supabase client to stick with backend JWT session
-          await supabase.auth.signOut();
-          
-          if (!backendData.user.onboardingCompleted) {
+          console.log('[Auth] Session restored & profile synced on login mount.');
+
+          const freshUser = await api.getMe(jwtToken);
+          api.setToken(jwtToken);
+          api.setStoredUser(freshUser);
+
+          if (!freshUser.onboardingCompleted) {
             router.push('/onboarding');
           } else {
             router.push('/dashboard');
           }
         } catch (err) {
-          console.error('[Esona Auth] OAuth callback failed:', err);
-          setError(err instanceof Error ? err.message : 'Failed to register GitHub user');
-          await supabase.auth.signOut();
+          console.error('[Auth] Session restoration error on login mount:', err);
         } finally {
           setIsLoading(false);
         }
@@ -171,31 +163,101 @@ export default function LoginPage() {
           setIsLoading(false);
           return;
         }
-        const data = await api.register(name.trim(), email.trim(), password);
-        api.setToken(data.access_token);
-        api.setStoredUser(data.user);
 
-        if (!data.user.onboardingCompleted) {
+        console.log('[Auth] Registering user via Supabase Auth...');
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: {
+              full_name: name.trim(),
+            },
+          },
+        });
+
+        if (signUpError) throw signUpError;
+        if (!data.user) throw new Error('No user returned from Supabase Auth');
+        console.log('[Auth] Signup success:', data.user.email);
+
+        // Create initial profile row
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.user_metadata?.full_name || name.trim() || '',
+          provider: 'credentials',
+          onboarding_completed: false,
+        });
+        console.log('[Auth] New profile inserted/synced with profiles table.');
+
+        const session = data.session;
+        if (!session) {
+          setIsLoading(false);
+          setError('Registration successful! Please check your email to confirm your account.');
+          return;
+        }
+
+        const jwtToken = session.access_token;
+        const freshUser = await api.getMe(jwtToken);
+        api.setToken(jwtToken);
+        api.setStoredUser(freshUser);
+
+        if (!freshUser.onboardingCompleted) {
           router.push('/onboarding');
         } else {
-          router.push('/chat');
+          router.push('/dashboard');
         }
       } else {
-        const data = await api.login(email.trim(), password);
-        api.setToken(data.access_token);
-        api.setStoredUser(data.user);
+        console.log('[Auth] Logging in via Supabase Auth...');
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
 
-        if (!data.user.onboardingCompleted) {
+        if (signInError) throw signInError;
+        if (!data.user) throw new Error('No user returned from Supabase Auth');
+        console.log('[Auth] Login success:', data.user.email);
+
+        // Query existing profile to verify onboardingcompleted flag
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('onboarding_completed')
+          .eq('id', data.user.id)
+          .single();
+
+        const onboardingCompleted = profile?.onboarding_completed ?? false;
+
+        // Upsert user profile
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0] || '',
+          provider: 'credentials',
+          onboarding_completed: onboardingCompleted,
+        });
+        console.log('[Auth] Profile synced on credentials login.');
+
+        const session = data.session;
+        if (!session) throw new Error('No active session found.');
+
+        const jwtToken = session.access_token;
+        const freshUser = await api.getMe(jwtToken);
+        api.setToken(jwtToken);
+        api.setStoredUser(freshUser);
+
+        if (!freshUser.onboardingCompleted) {
           router.push('/onboarding');
         } else {
-          router.push('/chat');
+          router.push('/dashboard');
         }
       }
-    } catch (err) {
+    } catch (err: any) {
+      console.error('[Auth] Submit failed:', err);
       const message = err instanceof Error ? err.message : 'Something went wrong';
       setError(message);
-      if (message.includes('server') || message.includes('timed out') || message.includes('reach')) {
-        setBackendStatus('offline');
+      if (message.toLowerCase().includes('duplicate') || message.toLowerCase().includes('already registered') || message.toLowerCase().includes('already exists')) {
+        setError('An account with this email address already exists.');
+      } else if (message.toLowerCase().includes('invalid login credentials') || message.toLowerCase().includes('invalid credentials')) {
+        setError('Invalid email or password.');
       }
     } finally {
       setIsLoading(false);

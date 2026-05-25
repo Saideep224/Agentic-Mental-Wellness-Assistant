@@ -4,8 +4,10 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { OnboardingResponse } from '@/types';
 import { questions, getCategoryForQuestion } from '@/data/questions';
 import * as api from '@/lib/api';
+import { useAuth } from '@/providers/AuthProvider';
 
 export function useOnboarding() {
+  const { refreshUser } = useAuth();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [responses, setResponses] = useState<OnboardingResponse[]>([]);
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
@@ -85,6 +87,14 @@ export function useOnboarding() {
       selectedAnswers: selectedOptions,
       customAnswer: hasCustomText ? customText.trim() : undefined,
     };
+
+    // Save live to database
+    const token = api.getToken();
+    if (token) {
+      api.saveOnboardingAnswer(response, token).catch((err) => {
+        console.warn('[Onboarding] Live answer saving failed:', err);
+      });
+    }
 
     // Update or add response
     const updatedResponses = [...responses];
@@ -172,12 +182,8 @@ export function useOnboarding() {
         localStorage.removeItem('esona_onboarding_responses');
       }
 
-      // Update stored user
-      const user = api.getStoredUser();
-      if (user) {
-        user.onboardingCompleted = true;
-        api.setStoredUser(user);
-      }
+      // Update stored user and trigger reactiveness
+      await refreshUser();
 
       setIsComplete(true);
     } catch (err: any) {
@@ -185,11 +191,7 @@ export function useOnboarding() {
       const errMsg = err instanceof Error ? err.message : '';
       if (errMsg.includes('Onboarding already completed')) {
         // Update stored user and mark complete gracefully
-        const user = api.getStoredUser();
-        if (user) {
-          user.onboardingCompleted = true;
-          api.setStoredUser(user);
-        }
+        await refreshUser();
         setIsComplete(true);
       } else {
         setError(errMsg || 'Failed to submit your responses. Please try again.');

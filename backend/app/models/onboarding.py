@@ -1,5 +1,5 @@
 """
-Onboarding response model – stores answers to the 20-question onboarding quiz.
+Onboarding response model – stores answers to the onboarding questionnaire inside 'user_answers' table.
 """
 
 import uuid
@@ -11,17 +11,17 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
-class UserOnboardingAnswer(Base):
-    """One answer from the onboarding questionnaire."""
+class UserAnswer(Base):
+    """One answer from the onboarding questionnaire stored in user_answers table."""
 
-    __tablename__ = "user_onboarding_answers"
+    __tablename__ = "user_answers"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID, primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID,
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("profiles.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -39,4 +39,4 @@ class UserOnboardingAnswer(Base):
     user: Mapped["User"] = relationship("User", back_populates="onboarding_answers")  # noqa: F821
 
     def __repr__(self) -> str:
-        return f"<UserOnboardingAnswer q={self.question_id} user={self.user_id}>"
+        return f"<UserAnswer q={self.question_id} user={self.user_id}>"

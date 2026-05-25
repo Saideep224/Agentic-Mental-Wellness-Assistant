@@ -305,6 +305,19 @@ export async function submitOnboarding(
   return apiPost<ApiResponse>('/api/onboarding/submit', { answers }, token);
 }
 
+export async function saveOnboardingAnswer(
+  response: { questionId: number; category: string; selectedAnswers: string[]; customAnswer?: string },
+  token: string
+): Promise<ApiResponse> {
+  const answer = {
+    question_id: response.questionId,
+    category: response.category,
+    selected_answers: response.selectedAnswers,
+    custom_answer: response.customAnswer || null,
+  };
+  return apiPost<ApiResponse>('/api/onboarding/answer', answer, token);
+}
+
 export async function getOnboardingStatus(token: string): Promise<{ completed: boolean }> {
   const data = await apiGet<any>('/api/onboarding/status', token);
   return {

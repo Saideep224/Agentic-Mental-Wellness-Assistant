@@ -69,8 +69,19 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isLoading) {
       const storedToken = getToken();
-      if (!storedToken && protectedRoutes.some(route => pathname.startsWith(route))) {
-        router.push('/login');
+      const storedUser = getStoredUser();
+
+      if (!storedToken) {
+        if (protectedRoutes.some(route => pathname.startsWith(route)) && pathname !== '/login') {
+          router.push('/login');
+        }
+      } else {
+        const hasCompletedOnboarding = storedUser?.onboardingCompleted ?? false;
+        if (!hasCompletedOnboarding && (pathname.startsWith('/chat') || pathname.startsWith('/dashboard'))) {
+          router.push('/onboarding');
+        } else if (hasCompletedOnboarding && pathname === '/onboarding') {
+          router.push('/dashboard');
+        }
       }
     }
   }, [pathname, isLoading, router]);

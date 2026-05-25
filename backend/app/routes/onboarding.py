@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User
-from app.models.onboarding import OnboardingResponse
+from app.models.onboarding import UserOnboardingAnswer
 from app.routes.auth import get_current_user
 from app.schemas.onboarding import (
     OnboardingSubmitRequest,
@@ -37,14 +37,9 @@ async def submit_onboarding(
         )
 
     # 2. Delete existing onboarding responses if they exist for a clean slate
-    await db.execute(
-        select(OnboardingResponse).where(OnboardingResponse.user_id == current_user.id)
-    )
-    # SQLAlchemy ORM cascading delete works or manually clearing:
-    # (Since we overwrite, we delete first)
     from sqlalchemy import delete
     await db.execute(
-        delete(OnboardingResponse).where(OnboardingResponse.user_id == current_user.id)
+        delete(UserOnboardingAnswer).where(UserOnboardingAnswer.user_id == current_user.id)
     )
     await db.flush()
 
@@ -52,12 +47,12 @@ async def submit_onboarding(
     db_responses = []
     answers_to_analyze = []
     for ans in body.answers:
-        db_ans = OnboardingResponse(
+        db_ans = UserOnboardingAnswer(
             user_id=current_user.id,
             question_id=ans.question_id,
             category=ans.category,
-            selected_option=ans.selected_option,
-            custom_text=ans.custom_text,
+            selected_answers=ans.selected_answers,
+            custom_answer=ans.custom_answer,
         )
         db.add(db_ans)
         db_responses.append(db_ans)
@@ -65,8 +60,8 @@ async def submit_onboarding(
         answers_to_analyze.append({
             "question_id": ans.question_id,
             "category": ans.category,
-            "selected_option": ans.selected_option,
-            "custom_text": ans.custom_text,
+            "selected_answers": ans.selected_answers,
+            "custom_answer": ans.custom_answer,
         })
 
     # Mark user onboarding as complete
@@ -93,8 +88,8 @@ async def get_onboarding_status(
 ):
     """Check if the user has completed onboarding and how many questions are answered."""
     result = await db.execute(
-        select(func.count(OnboardingResponse.id)).where(
-            OnboardingResponse.user_id == current_user.id
+        select(func.count(UserOnboardingAnswer.id)).where(
+            UserOnboardingAnswer.user_id == current_user.id
         )
     )
     count = result.scalar() or 0

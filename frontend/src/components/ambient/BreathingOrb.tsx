@@ -13,50 +13,45 @@ export default function BreathingOrb({ size = 200, className }: BreathingOrbProp
       className={cn('relative flex items-center justify-center', className)}
       style={{ width: size, height: size }}
     >
-      {/* Outer glow ring */}
+      {/* Outer glow ring - Optimized with feathered gradient, no blur filter */}
       <div
         className="absolute rounded-full animate-breathe"
         style={{
           width: size,
           height: size,
-          background: 'radial-gradient(circle, rgba(34, 211, 238, 0.15) 0%, rgba(167, 139, 250, 0.05) 50%, transparent 70%)',
-          filter: 'blur(20px)',
+          background: 'radial-gradient(circle, rgba(34, 211, 238, 0.12) 0%, rgba(167, 139, 250, 0.04) 50%, transparent 100%)',
         }}
       />
 
-      {/* Middle ring */}
+      {/* Middle ring - Optimized gradient, no blur filter */}
       <div
         className="absolute rounded-full animate-breathe"
         style={{
-          width: size * 0.7,
-          height: size * 0.7,
-          background: 'radial-gradient(circle, rgba(34, 211, 238, 0.25) 0%, rgba(59, 130, 246, 0.1) 50%, transparent 70%)',
-          filter: 'blur(10px)',
+          width: size * 0.75,
+          height: size * 0.75,
+          background: 'radial-gradient(circle, rgba(34, 211, 238, 0.22) 0%, rgba(59, 130, 246, 0.08) 60%, transparent 100%)',
           animationDelay: '0.5s',
         }}
       />
 
-      {/* Core orb */}
+      {/* Core orb - Optimized radial gradient replacing box-shadows */}
       <div
         className="absolute rounded-full animate-breathe"
         style={{
-          width: size * 0.35,
-          height: size * 0.35,
-          background: 'radial-gradient(circle, rgba(34, 211, 238, 0.6) 0%, rgba(34, 211, 238, 0.2) 50%, transparent 80%)',
-          boxShadow: '0 0 40px rgba(34, 211, 238, 0.3), 0 0 80px rgba(34, 211, 238, 0.1)',
+          width: size * 0.45,
+          height: size * 0.45,
+          background: 'radial-gradient(circle, rgba(34, 211, 238, 0.45) 0%, rgba(34, 211, 238, 0.1) 70%, transparent 100%)',
           animationDelay: '1s',
         }}
       />
 
-      {/* Tiny bright center */}
+      {/* Tiny bright center - Optimized gradient, no filter/box-shadow */}
       <div
         className="absolute rounded-full"
         style={{
-          width: size * 0.08,
-          height: size * 0.08,
-          background: 'rgba(255, 255, 255, 0.8)',
-          boxShadow: '0 0 10px rgba(34, 211, 238, 0.8)',
-          filter: 'blur(1px)',
+          width: size * 0.1,
+          height: size * 0.1,
+          background: 'radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(34, 211, 238, 0.5) 50%, transparent 100%)',
         }}
       />
     </div>

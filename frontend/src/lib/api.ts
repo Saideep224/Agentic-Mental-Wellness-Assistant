@@ -293,14 +293,14 @@ export async function getMe(token: string): Promise<User> {
 // ============================================
 
 export async function submitOnboarding(
-  responses: Array<{ questionId: number; category: string; selectedOption: string; customText?: string }>,
+  responses: Array<{ questionId: number; category: string; selectedAnswers: string[]; customAnswer?: string }>,
   token: string
 ): Promise<ApiResponse> {
   const answers = responses.map((r) => ({
     question_id: r.questionId,
     category: r.category,
-    selected_option: r.selectedOption,
-    custom_text: r.customText || null,
+    selected_answers: r.selectedAnswers,
+    custom_answer: r.customAnswer || null,
   }));
   return apiPost<ApiResponse>('/api/onboarding/submit', { answers }, token);
 }

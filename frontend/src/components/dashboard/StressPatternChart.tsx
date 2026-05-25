@@ -12,9 +12,10 @@ import { StressPattern } from '@/types';
 
 interface StressPatternChartProps {
   data: StressPattern[];
+  title?: string;
 }
 
-export default function StressPatternChart({ data }: StressPatternChartProps) {
+export default function StressPatternChart({ data, title = "Stress Patterns" }: StressPatternChartProps) {
   if (!data || data.length === 0) {
     return (
       <div className="glass-card p-8 flex flex-col items-center justify-center min-h-[320px] text-center border border-white/5 bg-white/2 hover:border-white/10 transition-all duration-300">
@@ -22,7 +23,7 @@ export default function StressPatternChart({ data }: StressPatternChartProps) {
           📊
         </div>
         <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
-          Stress Pattern Analysis
+          {title}
         </h3>
         <p className="text-sm max-w-sm" style={{ color: 'var(--text-muted)' }}>
           No emotional data yet. Chat with Esona to generate your emotional dimension radar profile.
@@ -44,7 +45,7 @@ export default function StressPatternChart({ data }: StressPatternChartProps) {
           fontFamily: 'var(--font-outfit), sans-serif',
         }}
       >
-        Stress Patterns
+        {title}
       </h3>
       <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
         Areas that affect your stress levels

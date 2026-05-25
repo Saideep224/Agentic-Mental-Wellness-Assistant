@@ -202,15 +202,6 @@ body {
   }
 }
 
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
 @keyframes wave {
   0% {
     transform: translateX(0);
@@ -301,10 +292,6 @@ body {
 
 .animate-breathe {
   animation: breathe 4s ease-in-out infinite;
-}
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
 }
 
 .animate-wave {

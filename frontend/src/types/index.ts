@@ -25,8 +25,8 @@ export interface Question {
 export interface OnboardingResponse {
   questionId: number;
   category: string;
-  selectedOption: string;
-  customText?: string;
+  selectedAnswers: string[];
+  customAnswer?: string;
 }
 
 export interface OnboardingState {

@@ -14,6 +14,7 @@ import { MoodDataPoint } from '@/types';
 
 interface MoodTrendChartProps {
   data: MoodDataPoint[];
+  title?: string;
 }
 
 interface CustomTooltipProps {
@@ -47,7 +48,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   );
 }
 
-export default function MoodTrendChart({ data }: MoodTrendChartProps) {
+export default function MoodTrendChart({ data, title = "Mood Trends" }: MoodTrendChartProps) {
   if (!data || data.length === 0) {
     return (
       <div className="glass-card p-8 flex flex-col items-center justify-center min-h-[320px] text-center border border-white/5 bg-white/2 hover:border-white/10 transition-all duration-300">
@@ -55,7 +56,7 @@ export default function MoodTrendChart({ data }: MoodTrendChartProps) {
           📈
         </div>
         <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
-          Mood Trends
+          {title}
         </h3>
         <p className="text-sm max-w-sm mb-6" style={{ color: 'var(--text-muted)' }}>
           No emotional data yet. Start conversing with Esona to see your mood trend analytics.
@@ -81,7 +82,7 @@ export default function MoodTrendChart({ data }: MoodTrendChartProps) {
           fontFamily: 'var(--font-outfit), sans-serif',
         }}
       >
-        Mood Trends
+        {title}
       </h3>
       <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
         Your emotional journey over the last 30 days

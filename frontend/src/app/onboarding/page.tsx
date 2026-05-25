@@ -20,7 +20,7 @@ export default function OnboardingPage() {
     currentIndex,
     totalQuestions,
     currentCategory,
-    selectedOption,
+    selectedOptions,
     customText,
     isSubmitting,
     isComplete,
@@ -46,7 +46,7 @@ export default function OnboardingPage() {
       // First check local storage
       const user = getStoredUser();
       if (user && user.onboardingCompleted) {
-        router.push('/chat');
+        router.push('/dashboard');
         return;
       }
 
@@ -58,7 +58,7 @@ export default function OnboardingPage() {
             user.onboardingCompleted = true;
             setStoredUser(user);
           }
-          router.push('/chat');
+          router.push('/dashboard');
         }
       } catch (err) {
         console.error('Failed to check onboarding status:', err);
@@ -72,8 +72,8 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (isComplete) {
       const timer = setTimeout(() => {
-        router.push('/chat');
-      }, 3000);
+        router.push('/dashboard');
+      }, 4000);
       return () => clearTimeout(timer);
     }
   }, [isComplete, router]);
@@ -86,46 +86,46 @@ export default function OnboardingPage() {
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.6, ease: 'easeOut' }}
-          className="text-center"
+          className="text-center max-w-md w-full"
         >
-          <BreathingOrb size={150} className="mx-auto mb-8" />
+          <BreathingOrb size={120} className="mx-auto mb-8 animate-pulse" />
 
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
+            className="space-y-4"
           >
             <Sparkles
-              size={32}
-              className="mx-auto mb-4"
-              style={{ color: 'var(--accent-cyan)' }}
+              size={36}
+              className="mx-auto mb-2 text-cyan-400 animate-bounce"
             />
             <h2
               className="text-3xl font-bold mb-3 glow-text"
               style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
             >
-              You&apos;re all set!
+              Analyzing your answers...
             </h2>
-            <p className="text-base mb-2" style={{ color: 'var(--text-secondary)' }}>
-              Esona now understands you a little better.
+            <p className="text-base" style={{ color: 'var(--text-secondary)' }}>
+              🧠 Building your personalized wellness space...
             </p>
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              Taking you to your first conversation...
+            <p className="text-xs text-slate-500 italic mt-2">
+              Generating personality type, insights, and coping recommendations.
             </p>
           </motion.div>
 
-          {/* Loading dots */}
-          <div className="flex items-center justify-center gap-1.5 mt-8">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="w-2 h-2 rounded-full typing-dot"
-                style={{
-                  backgroundColor: 'var(--accent-cyan)',
-                  animationDelay: `${i * 0.2}s`,
-                }}
-              />
-            ))}
+          {/* Loading bar */}
+          <div className="mt-8 max-w-xs mx-auto h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: '100%' }}
+              transition={{ duration: 3.5, ease: 'easeInOut' }}
+              className="h-full"
+              style={{
+                background: 'linear-gradient(90deg, var(--accent-cyan), var(--accent-purple))',
+                boxShadow: '0 0 10px rgba(34, 211, 238, 0.5)',
+              }}
+            />
           </div>
         </motion.div>
       </main>
@@ -134,11 +134,6 @@ export default function OnboardingPage() {
 
   // Category transition screen
   if (showCategoryTransition) {
-    const nextCat =
-      currentIndex < totalQuestions - 1
-        ? currentCategory
-        : 'communication';
-    // Get the next category
     const catMap: Record<string, string> = {
       personality: 'emotion',
       emotion: 'hobbies',
@@ -158,13 +153,26 @@ export default function OnboardingPage() {
 
   if (!currentQuestion) return null;
 
-  const canGoNext = selectedOption !== null || customText.trim().length > 0;
+  const canGoNext = selectedOptions.length > 0 || customText.trim().length > 0;
   const isLastQuestion = currentIndex === totalQuestions - 1;
 
   return (
-    <main className="min-h-screen flex flex-col px-4 pt-8 pb-20">
+    <main className="min-h-screen flex flex-col px-4 pt-4 pb-20">
+      {/* Header and Subtext */}
+      <div className="text-center mt-6 mb-4">
+        <h1
+          className="text-2xl sm:text-3xl font-bold text-white flex items-center justify-center gap-2 mb-2"
+          style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+        >
+          🧠 Help Esona understand you better
+        </h1>
+        <p className="text-xs sm:text-sm max-w-lg mx-auto" style={{ color: 'var(--text-muted)' }}>
+          These questions personalize your emotional insights, personality analysis, and AI responses.
+        </p>
+      </div>
+
       {/* Progress */}
-      <div className="pt-4">
+      <div className="max-w-2xl mx-auto w-full mb-6">
         <ProgressBar
           currentQuestion={currentIndex}
           totalQuestions={totalQuestions}
@@ -182,6 +190,11 @@ export default function OnboardingPage() {
           />
         </AnimatePresence>
 
+        {/* Small Helper Text */}
+        <p className="text-xs text-slate-400 mb-3 text-center italic">
+          Select one or more choices. You can also type your own answer for personalized responses.
+        </p>
+
         {/* Options */}
         <div className="space-y-3 mb-4">
           {currentQuestion.options.map((option, i) => (
@@ -189,7 +202,7 @@ export default function OnboardingPage() {
               key={option.value}
               option={option}
               index={i}
-              isSelected={selectedOption === option.value}
+              isSelected={selectedOptions.includes(option.value)}
               onSelect={() => selectOption(option.value)}
             />
           ))}
@@ -199,7 +212,7 @@ export default function OnboardingPage() {
             <OptionCard
               option={{ label: "Something else...", value: "other", emoji: "✏️" }}
               index={currentQuestion.options.length}
-              isSelected={selectedOption === 'other'}
+              isSelected={selectedOptions.includes('other')}
               onSelect={() => selectOption('other')}
             />
           )}
@@ -207,7 +220,7 @@ export default function OnboardingPage() {
 
         {/* Custom text input */}
         <OtherInput
-          isVisible={selectedOption === 'other'}
+          isVisible={selectedOptions.includes('other')}
           value={customText}
           onChange={setCustomText}
         />

@@ -47,8 +47,8 @@ class User(Base):
     user_profile: Mapped["UserProfile | None"] = relationship(  # noqa: F821
         "UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
-    onboarding_responses: Mapped[list["OnboardingResponse"]] = relationship(  # noqa: F821
-        "OnboardingResponse", back_populates="user", cascade="all, delete-orphan"
+    onboarding_answers: Mapped[list["UserOnboardingAnswer"]] = relationship(  # noqa: F821
+        "UserOnboardingAnswer", back_populates="user", cascade="all, delete-orphan"
     )
 
     @property

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { OnboardingResponse } from '@/types';
 import { questions, getCategoryForQuestion } from '@/data/questions';
 import * as api from '@/lib/api';
@@ -8,7 +8,7 @@ import * as api from '@/lib/api';
 export function useOnboarding() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [responses, setResponses] = useState<OnboardingResponse[]>([]);
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [customText, setCustomText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
@@ -28,80 +28,127 @@ export function useOnboarding() {
 
   const isNewCategory = nextCategory !== null && nextCategory !== currentCategory;
 
-  // Check if an answer exists for the current question
-  const existingResponse = useMemo(
-    () => responses.find((r) => r.questionId === currentQuestion?.id),
-    [responses, currentQuestion]
-  );
+  // Load initial progress on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedIndex = localStorage.getItem('esona_onboarding_index');
+      const storedResponses = localStorage.getItem('esona_onboarding_responses');
+      
+      let initialIdx = 0;
+      let initialResponses: OnboardingResponse[] = [];
 
-  // Restore selected option if going back
-  useState(() => {
-    if (existingResponse) {
-      setSelectedOption(existingResponse.selectedOption);
-      setCustomText(existingResponse.customText || '');
+      if (storedIndex) {
+        initialIdx = parseInt(storedIndex, 10);
+        setCurrentIndex(initialIdx);
+      }
+      if (storedResponses) {
+        initialResponses = JSON.parse(storedResponses);
+        setResponses(initialResponses);
+      }
+
+      // Restore selections for the current index
+      const currQ = questions[initialIdx];
+      if (currQ) {
+        const existing = initialResponses.find((r) => r.questionId === currQ.id);
+        if (existing) {
+          setSelectedOptions(existing.selectedAnswers || []);
+          setCustomText(existing.customAnswer || '');
+        }
+      }
     }
-  });
+  }, []);
+
+  const saveProgress = (newIndex: number, newResponses: OnboardingResponse[]) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('esona_onboarding_index', newIndex.toString());
+      localStorage.setItem('esona_onboarding_responses', JSON.stringify(newResponses));
+    }
+  };
 
   const selectOption = useCallback((value: string) => {
-    setSelectedOption(value);
-    setCustomText('');
+    setSelectedOptions((prev) => {
+      if (prev.includes(value)) {
+        return prev.filter((v) => v !== value);
+      } else {
+        return [...prev, value];
+      }
+    });
   }, []);
 
   const goToNext = useCallback(() => {
-    if (!selectedOption && !customText) return;
+    const hasCustomText = customText.trim().length > 0;
+    if (selectedOptions.length === 0 && !hasCustomText) return;
 
     const response: OnboardingResponse = {
       questionId: currentQuestion.id,
       category: currentQuestion.category,
-      selectedOption: selectedOption === 'other' ? 'other' : (selectedOption || ''),
-      customText: selectedOption === 'other' ? customText : undefined,
+      selectedAnswers: selectedOptions,
+      customAnswer: hasCustomText ? customText.trim() : undefined,
     };
 
     // Update or add response
-    setResponses((prev) => {
-      const existing = prev.findIndex((r) => r.questionId === currentQuestion.id);
-      if (existing >= 0) {
-        const updated = [...prev];
-        updated[existing] = response;
-        return updated;
-      }
-      return [...prev, response];
-    });
+    const updatedResponses = [...responses];
+    const existingIdx = responses.findIndex((r) => r.questionId === currentQuestion.id);
+    if (existingIdx >= 0) {
+      updatedResponses[existingIdx] = response;
+    } else {
+      updatedResponses.push(response);
+    }
+    setResponses(updatedResponses);
 
     if (currentIndex < totalQuestions - 1) {
-      // Check if next question is a new category
-      const nextCat = getCategoryForQuestion(currentIndex + 1);
+      const nextIdx = currentIndex + 1;
+      const nextCat = getCategoryForQuestion(nextIdx);
       if (nextCat !== currentCategory) {
         setShowCategoryTransition(true);
+        saveProgress(nextIdx, updatedResponses);
       } else {
         setDirection(1);
-        setCurrentIndex((prev) => prev + 1);
-        setSelectedOption(null);
-        setCustomText('');
+        setCurrentIndex(nextIdx);
+        
+        // Restore next question's answers if they exist
+        const nextResponse = updatedResponses.find(
+          (r) => r.questionId === questions[nextIdx].id
+        );
+        setSelectedOptions(nextResponse?.selectedAnswers || []);
+        setCustomText(nextResponse?.customAnswer || '');
+        saveProgress(nextIdx, updatedResponses);
       }
     } else {
       // Last question - submit all
-      handleSubmit([...responses.filter((r) => r.questionId !== currentQuestion.id), response]);
+      handleSubmit(updatedResponses);
     }
-  }, [selectedOption, customText, currentIndex, currentQuestion, totalQuestions, currentCategory, responses]);
+  }, [selectedOptions, customText, currentIndex, currentQuestion, totalQuestions, currentCategory, responses]);
 
   const continuePastTransition = useCallback(() => {
     setShowCategoryTransition(false);
     setDirection(1);
-    setCurrentIndex((prev) => prev + 1);
-    setSelectedOption(null);
-    setCustomText('');
-  }, []);
+    const nextIdx = currentIndex + 1;
+    setCurrentIndex(nextIdx);
+    
+    // Restore next question's answers if they exist
+    const nextResponse = responses.find(
+      (r) => r.questionId === questions[nextIdx].id
+    );
+    setSelectedOptions(nextResponse?.selectedAnswers || []);
+    setCustomText(nextResponse?.customAnswer || '');
+    saveProgress(nextIdx, responses);
+  }, [currentIndex, responses]);
 
   const goToPrevious = useCallback(() => {
     if (currentIndex > 0) {
+      const prevIdx = currentIndex - 1;
       setDirection(-1);
-      setCurrentIndex((prev) => prev - 1);
+      setCurrentIndex(prevIdx);
       const prevResponse = responses.find(
-        (r) => r.questionId === questions[currentIndex - 1].id
+        (r) => r.questionId === questions[prevIdx].id
       );
-      setSelectedOption(prevResponse?.selectedOption || null);
-      setCustomText(prevResponse?.customText || '');
+      setSelectedOptions(prevResponse?.selectedAnswers || []);
+      setCustomText(prevResponse?.customAnswer || '');
+      
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('esona_onboarding_index', prevIdx.toString());
+      }
     }
   }, [currentIndex, responses]);
 
@@ -118,6 +165,12 @@ export function useOnboarding() {
       }
 
       await api.submitOnboarding(allResponses, token);
+
+      // Clear onboarding progress from local storage
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('esona_onboarding_index');
+        localStorage.removeItem('esona_onboarding_responses');
+      }
 
       // Update stored user
       const user = api.getStoredUser();
@@ -152,7 +205,7 @@ export function useOnboarding() {
     totalQuestions,
     currentCategory,
     progress,
-    selectedOption,
+    selectedOptions,
     customText,
     isSubmitting,
     isComplete,

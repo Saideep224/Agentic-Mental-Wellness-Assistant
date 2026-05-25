@@ -12,8 +12,8 @@ class OnboardingAnswer(BaseModel):
         ...,
         description="One of: personality, emotions, comfort, communication",
     )
-    selected_option: str = Field(..., max_length=512)
-    custom_text: str | None = Field(default=None, max_length=2000)
+    selected_answers: list[str] = Field(default_factory=list)
+    custom_answer: str | None = Field(default=None, max_length=2000)
 
 
 class OnboardingSubmitRequest(BaseModel):

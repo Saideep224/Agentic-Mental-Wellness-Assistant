@@ -34,12 +34,13 @@ async def analyze_onboarding(
     for ans in answers:
         q_id = ans.get("question_id")
         cat = ans.get("category")
-        opt = ans.get("selected_option")
-        custom = ans.get("custom_text")
+        opts = ans.get("selected_answers", [])
+        custom = ans.get("custom_answer")
         
+        opts_str = ", ".join([f"'{o}'" for o in opts])
         custom_str = f" (Custom answer: '{custom}')" if custom else ""
         formatted_responses.append(
-            f"Question {q_id} [{cat}]: Selected '{opt}'{custom_str}"
+            f"Question {q_id} [{cat}]: Selected [{opts_str}]{custom_str}"
         )
 
     answers_summary = "\n".join(formatted_responses)
@@ -153,6 +154,26 @@ async def analyze_onboarding(
     profile.strengths = {"strengths": profile_data.get("personality_type", {}).get("strengths", [])}
     profile.weaknesses = {"weaknesses": profile_data.get("personality_type", {}).get("growth_areas", [])}
     profile.onboarding_answers = {"answers": answers}
+
+    # Onboarding Additions
+    profile.onboarding_completed = True
+    p_type = profile_data.get("personality_type", {}).get("type", "Thoughtful Explorer")
+    c_style = profile_data.get("communication_style", {}).get("preferred_style", "Gentle and validating")
+    p_strengths = profile_data.get("personality_type", {}).get("strengths", [])
+    p_interests = profile_data.get("comfort_preferences", {}).get("escape_mechanisms", [])
+    p_triggers = profile_data.get("stress_patterns", {}).get("stress_triggers", [])
+    p_motivation = profile_data.get("preferred_response_style", {}).get("what_helps", [])
+    
+    profile.personality_profile = {
+        "type": p_type,
+        "communication_style": c_style,
+        "strengths": p_strengths,
+        "interests": p_interests,
+        "stress_triggers": p_triggers,
+        "motivation_style": ", ".join(p_motivation) if isinstance(p_motivation, list) else str(p_motivation)
+    }
+    profile.personality_type_text = p_type
+    profile.communication_style_text = c_style
 
     # Backward compatibility
     profile.emotional_baseline = profile_data.get("emotional_baseline", {})

@@ -94,7 +94,11 @@ export default function LoginPage() {
           // Sign out from supabase client to stick with backend JWT session
           await supabase.auth.signOut();
           
-          router.push('/dashboard');
+          if (!backendData.user.onboardingCompleted) {
+            router.push('/onboarding');
+          } else {
+            router.push('/dashboard');
+          }
         } catch (err) {
           console.error('[Esona Auth] OAuth callback failed:', err);
           setError(err instanceof Error ? err.message : 'Failed to register GitHub user');

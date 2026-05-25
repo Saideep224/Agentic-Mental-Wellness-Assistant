@@ -34,6 +34,12 @@ class UserProfile(Base):
     weaknesses: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     onboarding_answers: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
+    # ── Onboarding Additions ──────────────────────────────────
+    onboarding_completed: Mapped[bool] = mapped_column(Boolean := __import__('sqlalchemy').Boolean, default=False, nullable=False)
+    personality_profile: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    personality_type_text: Mapped[str | None] = mapped_column(Text := __import__('sqlalchemy').Text, nullable=True)
+    communication_style_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # ── Backward compatibility columns ──────────────────────────
     emotional_baseline: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     comfort_preferences: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

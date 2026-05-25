@@ -93,6 +93,7 @@ export function useMoodData() {
           overallMood: averageMood,
           communicationStyleLabel: rawProfile.communication_style?.preferred_style || 'Empathetic Listener',
           personalityLabel: rawProfile.personality_type?.type || 'Thoughtful Processor',
+          personalityProfile: rawProfile.personality_profile || {},
         };
         
         setEmotionalProfile(mappedProfile);

@@ -65,8 +65,13 @@ export default function AuthCallbackPage() {
         // Sign out from supabase client to stick with backend JWT session
         await supabase.auth.signOut();
 
-        setStatus('Redirecting to dashboard...');
-        router.push('/dashboard');
+        if (!backendData.user.onboarding_completed && !backendData.user.onboardingCompleted) {
+          setStatus('Redirecting to onboarding...');
+          router.push('/onboarding');
+        } else {
+          setStatus('Redirecting to dashboard...');
+          router.push('/dashboard');
+        }
       } catch (err: any) {
         console.error('[Esona Auth Callback] Error:', err);
         const errMsg = err instanceof Error ? err.message : 'Authentication failed';

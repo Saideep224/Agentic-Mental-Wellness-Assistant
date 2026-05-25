@@ -34,19 +34,29 @@ class Settings(BaseSettings):
     GEMINI_EMBEDDING_MODEL: str = "text-embedding-004"
     GEMINI_API_BASE: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
+    # ── OpenRouter ────────────────────────────────────────────
+    USE_OPENROUTER: bool = True
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
+    OPENROUTER_API_BASE: str = "https://openrouter.ai/api/v1"
+
     # ── UncloseAI ─────────────────────────────────────────────
-    USE_UNCLOSEAI: bool = True
+    USE_UNCLOSEAI: bool = False
     UNCLOSEAI_API_BASE: str = "https://hermes.ai.unturf.com/v1"
     UNCLOSEAI_MODEL: str = "adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic"
 
     @property
     def llm_api_key(self) -> str:
+        if self.USE_OPENROUTER:
+            return self.OPENROUTER_API_KEY or self.OPENAI_API_KEY
         if self.USE_UNCLOSEAI:
             return self.OPENAI_API_KEY or "free"
         return self.GEMINI_API_KEY or self.OPENAI_API_KEY
 
     @property
     def llm_base_url(self) -> str | None:
+        if self.USE_OPENROUTER:
+            return self.OPENROUTER_API_BASE
         if self.USE_UNCLOSEAI:
             return self.UNCLOSEAI_API_BASE
         if self.GEMINI_API_KEY:
@@ -55,6 +65,8 @@ class Settings(BaseSettings):
 
     @property
     def llm_model(self) -> str:
+        if self.USE_OPENROUTER:
+            return self.OPENROUTER_MODEL
         if self.USE_UNCLOSEAI:
             return self.UNCLOSEAI_MODEL
         if self.GEMINI_API_KEY:
@@ -63,6 +75,8 @@ class Settings(BaseSettings):
 
     @property
     def embedding_model(self) -> str:
+        if self.USE_OPENROUTER:
+            return "text-embedding-3-small"
         if self.USE_UNCLOSEAI:
             return "text-embedding-3-small"
         if self.GEMINI_API_KEY:

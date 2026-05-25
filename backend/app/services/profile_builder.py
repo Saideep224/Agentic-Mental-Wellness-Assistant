@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.emotional_profile import EmotionalProfile
+from app.models.user_profile import UserProfile
 from app.models.conversation import Message, Conversation
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class ProfileBuilder:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def update_profile_from_history(self, user_id: uuid.UUID, limit: int = 30) -> EmotionalProfile:
+    async def update_profile_from_history(self, user_id: uuid.UUID, limit: int = 30) -> UserProfile:
         """
         Loads the last N user messages and the current profile, then uses OpenAI
         to update/refine the EmotionalProfile to reflect recent changes.
@@ -34,11 +34,11 @@ class ProfileBuilder:
 
         # 1. Fetch current profile
         profile_res = await self.db.execute(
-            select(EmotionalProfile).where(EmotionalProfile.user_id == user_id)
+            select(UserProfile).where(UserProfile.user_id == user_id)
         )
         profile = profile_res.scalar_one_or_none()
         if not profile:
-            raise ValueError("Emotional profile must exist (from onboarding) before updating from history.")
+            raise ValueError("UserProfile must exist (from onboarding) before updating from history.")
 
         # 2. Get recent conversation messages
         messages_res = await self.db.execute(
@@ -119,23 +119,28 @@ class ProfileBuilder:
             # Update profile properties if present in response
             if "personality_type" in updated_data:
                 profile.personality_type = updated_data["personality_type"]
+                profile.strengths = {"strengths": updated_data["personality_type"].get("strengths", [])}
+                profile.weaknesses = {"weaknesses": updated_data["personality_type"].get("growth_areas", [])}
             if "emotional_baseline" in updated_data:
                 profile.emotional_baseline = updated_data["emotional_baseline"]
+                profile.emotional_style = updated_data["emotional_baseline"]
             if "comfort_preferences" in updated_data:
                 profile.comfort_preferences = updated_data["comfort_preferences"]
+                profile.interests = updated_data["comfort_preferences"]
             if "communication_style" in updated_data:
                 profile.communication_style = updated_data["communication_style"]
+            if "emotional_triggers" in updated_data:
+                profile.emotional_triggers = updated_data["emotional_triggers"]
+                profile.stress_triggers = updated_data["emotional_triggers"]
             if "emotional_summary" in updated_data:
                 profile.emotional_summary = updated_data["emotional_summary"]
             if "stress_patterns" in updated_data:
                 profile.stress_patterns = updated_data["stress_patterns"]
-            if "emotional_triggers" in updated_data:
-                profile.emotional_triggers = updated_data["emotional_triggers"]
             if "preferred_response_style" in updated_data:
                 profile.preferred_response_style = updated_data["preferred_response_style"]
 
             await self.db.flush()
-            logger.info(f"EmotionalProfile successfully updated for user {user_id}")
+            logger.info(f"UserProfile successfully updated for user {user_id}")
 
         except Exception as e:
             logger.error(f"Failed to update profile from history: {e}", exc_info=True)

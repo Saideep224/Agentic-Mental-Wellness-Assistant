@@ -1,5 +1,5 @@
 """
-Emotional profile model – built from onboarding and refined over time.
+UserProfile model – stores personality details, styles, answers, triggers, and compatibility fields.
 """
 
 import uuid
@@ -11,29 +11,32 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
-class EmotionalProfile(Base):
-    """Stores the comprehensive emotional/personality profile of a user."""
+class UserProfile(Base):
+    """UserProfile model mapping to the user_profiles database table."""
 
-    __tablename__ = "emotional_profiles"
+    __tablename__ = "user_profiles"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID, primary_key=True, default=uuid.uuid4
-    )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID,
         ForeignKey("users.id", ondelete="CASCADE"),
-        unique=True,
+        primary_key=True,
         nullable=False,
         index=True,
     )
 
-    # ── Profile sections (all JSON blobs) ─────────────────────
+    # ── Required profiles sections ────────────────────────────
     personality_type: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    emotional_style: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    interests: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    communication_style: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    stress_triggers: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    strengths: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    weaknesses: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    onboarding_answers: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+    # ── Backward compatibility columns ──────────────────────────
     emotional_baseline: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     comfort_preferences: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    communication_style: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    
-    # Extra personalization details
     emotional_summary: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     stress_patterns: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     emotional_triggers: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
@@ -53,7 +56,7 @@ class EmotionalProfile(Base):
     )
 
     # ── Relationships ─────────────────────────────────────────
-    user: Mapped["User"] = relationship("User", back_populates="emotional_profile")  # noqa: F821
+    user: Mapped["User"] = relationship("User", back_populates="user_profile")  # noqa: F821
 
     def __repr__(self) -> str:
-        return f"<EmotionalProfile user={self.user_id}>"
+        return f"<UserProfile user={self.user_id}>"

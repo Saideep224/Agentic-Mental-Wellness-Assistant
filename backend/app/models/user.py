@@ -23,7 +23,10 @@ class User(Base):
         String(320), unique=True, index=True, nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(1024), nullable=False)
+    hashed_password: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    provider: Mapped[str] = mapped_column(String(50), default="credentials", nullable=False)
+    github_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     onboarding_completed: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
@@ -37,12 +40,17 @@ class User(Base):
     conversations: Mapped[list["Conversation"]] = relationship(  # noqa: F821
         "Conversation", back_populates="user", cascade="all, delete-orphan"
     )
-    emotional_profile: Mapped["EmotionalProfile | None"] = relationship(  # noqa: F821
-        "EmotionalProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    user_profile: Mapped["UserProfile | None"] = relationship(  # noqa: F821
+        "UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
     onboarding_responses: Mapped[list["OnboardingResponse"]] = relationship(  # noqa: F821
         "OnboardingResponse", back_populates="user", cascade="all, delete-orphan"
     )
+
+    @property
+    def emotional_profile(self):
+        """Backward compatibility for existing routes/services referencing emotional_profile."""
+        return self.user_profile
 
     def __repr__(self) -> str:
         return f"<User {self.email}>"

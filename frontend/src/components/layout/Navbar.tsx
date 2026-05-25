@@ -7,9 +7,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageCircle, BarChart3, Menu, X, LogOut, User as UserIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getToken, getStoredUser, clearAuth } from '@/lib/api';
+import ProfileModal from '@/components/layout/ProfileModal';
 
 export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
 
@@ -102,20 +104,28 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-3">
             {isLoggedIn ? (
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass-card">
-                  <div
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{
-                      background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))',
-                      color: 'white',
-                    }}
-                  >
-                    {user?.name?.charAt(0).toUpperCase() || <UserIcon size={14} />}
+                <button
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass-card hover:border-[rgba(34,211,238,0.3)] transition-all duration-300 cursor-pointer"
+                >
+                  <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center border border-white/10 shrink-0">
+                    {user?.avatarUrl ? (
+                      <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div
+                        className="w-full h-full flex items-center justify-center text-xs font-bold text-white"
+                        style={{
+                          background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))',
+                        }}
+                      >
+                        {user?.name?.charAt(0).toUpperCase() || <UserIcon size={14} />}
+                      </div>
+                    )}
                   </div>
-                  <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  <span className="text-sm font-medium text-slate-300">
                     {user?.name || 'User'}
                   </span>
-                </div>
+                </button>
                 <button
                   onClick={handleLogout}
                   className="p-2 rounded-xl transition-all duration-300 hover:bg-white/5 cursor-pointer"
@@ -184,14 +194,26 @@ export default function Navbar() {
                   })}
 
                 {isLoggedIn ? (
-                  <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium cursor-pointer"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    <LogOut size={18} />
-                    Sign out
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        setIsMobileMenuOpen(false);
+                        setIsProfileModalOpen(true);
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-300 cursor-pointer"
+                    >
+                      <UserIcon size={18} className="text-cyan-400" />
+                      View Profile
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium cursor-pointer w-full text-left"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <LogOut size={18} />
+                      Sign out
+                    </button>
+                  </>
                 ) : (
                   <Link
                     href="/login"
@@ -206,6 +228,9 @@ export default function Navbar() {
           )}
         </AnimatePresence>
       </div>
+      
+      {/* Profile Modal */}
+      <ProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
     </motion.nav>
   );
 }

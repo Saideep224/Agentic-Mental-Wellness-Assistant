@@ -19,7 +19,9 @@ from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.models.conversation import Conversation, Message, MessageRole
-from app.models.emotional_profile import EmotionalProfile
+from app.models.user_profile import UserProfile
+from app.models.chat_history import ChatHistory
+from app.models.mood_log import MoodLog
 from app.routes.auth import get_current_user
 from app.schemas.chat import (
     ChatMessageRequest,
@@ -169,7 +171,7 @@ async def _get_emotional_profile_dict(
 ) -> dict:
     """Load the emotional profile as a plain dict (empty dict if none)."""
     result = await db.execute(
-        select(EmotionalProfile).where(EmotionalProfile.user_id == user_id)
+        select(UserProfile).where(UserProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
     
@@ -183,6 +185,12 @@ async def _get_emotional_profile_dict(
         "stress_patterns": {},
         "emotional_triggers": {},
         "preferred_response_style": {},
+        "emotional_style": {},
+        "interests": {},
+        "stress_triggers": {},
+        "strengths": {},
+        "weaknesses": {},
+        "onboarding_answers": {},
     }
     
     if profile is not None:
@@ -195,6 +203,12 @@ async def _get_emotional_profile_dict(
             "stress_patterns": profile.stress_patterns or {},
             "emotional_triggers": profile.emotional_triggers or {},
             "preferred_response_style": profile.preferred_response_style or {},
+            "emotional_style": profile.emotional_style or {},
+            "interests": profile.interests or {},
+            "stress_triggers": profile.stress_triggers or {},
+            "strengths": profile.strengths or {},
+            "weaknesses": profile.weaknesses or {},
+            "onboarding_answers": profile.onboarding_answers or {},
         })
         
     return profile_dict
@@ -221,6 +235,15 @@ async def send_message(
         content=body.message,
     )
     db.add(user_msg)
+    
+    # Save to chat_history
+    chat_user = ChatHistory(
+        user_id=current_user.id,
+        role="user",
+        message=body.message,
+        emotion_score=None,
+    )
+    db.add(chat_user)
     await db.flush()
 
     # 3. Build context for agents
@@ -288,6 +311,31 @@ async def send_message(
         )
         db.add(assistant_msg)
         
+        # Save to chat_history
+        chat_assistant = ChatHistory(
+            user_id=current_user.id,
+            role="assistant",
+            message=full_response,
+            emotion_score=mood_score,
+        )
+        db.add(chat_assistant)
+
+        # Save mood log
+        dims = result.get("emotion_dimensions", {})
+        mood_log = MoodLog(
+            user_id=current_user.id,
+            mood_score=mood_score or 0.5,
+            mood_label=detected_emotion or "neutral",
+            detected_emotion=detected_emotion or "neutral",
+            stress=dims.get("stress", 0.3),
+            happiness=dims.get("happiness", 0.5),
+            sadness=dims.get("sadness", 0.3),
+            anxiety=dims.get("anxiety", 0.3),
+            motivation=dims.get("motivation", 0.5),
+            confidence=dims.get("confidence", 0.5),
+        )
+        db.add(mood_log)
+        
         # Also update conversation emotional_tag
         if detected_emotion:
             conversation.emotional_tag = detected_emotion
@@ -350,6 +398,15 @@ async def stream_message_sse(
         content=message,
     )
     db.add(user_msg)
+    
+    # Save to chat_history
+    chat_user = ChatHistory(
+        user_id=current_user.id,
+        role="user",
+        message=message,
+        emotion_score=None,
+    )
+    db.add(chat_user)
     await db.flush()
 
     # 4. Build context
@@ -407,6 +464,31 @@ async def stream_message_sse(
                     emotional_context=agent_analysis.get("emotion_analysis", {}),
                 )
                 save_db.add(assistant_msg)
+                
+                # Save to chat_history
+                chat_assistant = ChatHistory(
+                    user_id=current_user.id,
+                    role="assistant",
+                    message=full_response,
+                    emotion_score=mood_score,
+                )
+                save_db.add(chat_assistant)
+
+                # Save mood log
+                dims = result.get("emotion_dimensions", {})
+                mood_log = MoodLog(
+                    user_id=current_user.id,
+                    mood_score=mood_score or 0.5,
+                    mood_label=detected_emotion or "neutral",
+                    detected_emotion=detected_emotion or "neutral",
+                    stress=dims.get("stress", 0.3),
+                    happiness=dims.get("happiness", 0.5),
+                    sadness=dims.get("sadness", 0.3),
+                    anxiety=dims.get("anxiety", 0.3),
+                    motivation=dims.get("motivation", 0.5),
+                    confidence=dims.get("confidence", 0.5),
+                )
+                save_db.add(mood_log)
                 
                 # Also update conversation emotional_tag and title
                 stmt = select(Conversation).where(Conversation.id == conversation.id)

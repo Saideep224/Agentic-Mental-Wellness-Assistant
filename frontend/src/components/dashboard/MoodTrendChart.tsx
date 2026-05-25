@@ -48,6 +48,25 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 }
 
 export default function MoodTrendChart({ data }: MoodTrendChartProps) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="glass-card p-8 flex flex-col items-center justify-center min-h-[320px] text-center border border-white/5 bg-white/2 hover:border-white/10 transition-all duration-300">
+        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4 text-2xl" style={{ background: 'rgba(34, 211, 238, 0.1)', color: 'var(--accent-cyan)' }}>
+          📈
+        </div>
+        <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
+          Mood Trends
+        </h3>
+        <p className="text-sm max-w-sm mb-6" style={{ color: 'var(--text-muted)' }}>
+          No emotional data yet. Start conversing with Esona to see your mood trend analytics.
+        </p>
+        <a href="/chat" className="gradient-btn px-6 py-2.5 rounded-xl text-xs flex items-center gap-2 font-medium cursor-pointer">
+          <span>Start Conversing</span>
+          <span>💬</span>
+        </a>
+      </div>
+    );
+  }
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}

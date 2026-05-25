@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.emotional_profile import EmotionalProfile
+from app.models.user_profile import UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ async def analyze_onboarding(
     user_id: uuid.UUID,
     answers: List[Dict[str, Any]],
     db: AsyncSession,
-) -> EmotionalProfile:
+) -> UserProfile:
     """
     Analyze 20 onboarding responses using OpenAI and save the resulting
     EmotionalProfile.
@@ -136,24 +136,32 @@ async def analyze_onboarding(
 
     # Fetch existing profile if any, or create a new one
     result = await db.execute(
-        select(EmotionalProfile).where(EmotionalProfile.user_id == user_id)
+        select(UserProfile).where(UserProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
 
     if not profile:
-        profile = EmotionalProfile(user_id=user_id)
+        profile = UserProfile(user_id=user_id)
         db.add(profile)
 
     # Populate sections
     profile.personality_type = profile_data.get("personality_type", {})
+    profile.emotional_style = profile_data.get("emotional_baseline", {})
+    profile.interests = profile_data.get("comfort_preferences", {})
+    profile.communication_style = profile_data.get("communication_style", {})
+    profile.stress_triggers = profile_data.get("emotional_triggers", {})
+    profile.strengths = {"strengths": profile_data.get("personality_type", {}).get("strengths", [])}
+    profile.weaknesses = {"weaknesses": profile_data.get("personality_type", {}).get("growth_areas", [])}
+    profile.onboarding_answers = {"answers": answers}
+
+    # Backward compatibility
     profile.emotional_baseline = profile_data.get("emotional_baseline", {})
     profile.comfort_preferences = profile_data.get("comfort_preferences", {})
-    profile.communication_style = profile_data.get("communication_style", {})
     profile.emotional_summary = profile_data.get("emotional_summary", {})
     profile.stress_patterns = profile_data.get("stress_patterns", {})
     profile.emotional_triggers = profile_data.get("emotional_triggers", {})
     profile.preferred_response_style = profile_data.get("preferred_response_style", {})
 
     await db.flush()
-    logger.info(f"EmotionalProfile saved successfully for user: {user_id}")
+    logger.info(f"UserProfile saved successfully for user: {user_id}")
     return profile

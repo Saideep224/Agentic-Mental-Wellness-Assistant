@@ -130,3 +130,47 @@ async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
 async def get_me(current_user: User = Depends(get_current_user)):
     """Return the currently authenticated user's info."""
     return UserResponse.model_validate(current_user)
+
+
+from pydantic import BaseModel
+
+class SupabaseLoginRequest(BaseModel):
+    name: str
+    email: str
+    avatar_url: str | None = None
+    provider: str = "github"
+    github_username: str | None = None
+
+
+@router.post("/supabase-login", response_model=TokenResponse)
+async def supabase_login(body: SupabaseLoginRequest, db: AsyncSession = Depends(get_db)):
+    """Authenticate or register a user logging in via Supabase OAuth using UPSERT logic."""
+    # Check for existing email
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        user = User(
+            name=body.name,
+            email=body.email,
+            avatar_url=body.avatar_url,
+            provider=body.provider,
+            github_username=body.github_username,
+            hashed_password=None,  # Password-less OAuth
+        )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+    else:
+        # Sync profile details if they changed (UPSERT logic)
+        user.name = body.name
+        user.avatar_url = body.avatar_url
+        user.provider = body.provider
+        user.github_username = body.github_username
+        await db.flush()
+
+    token = _create_access_token(user.id)
+    return TokenResponse(
+        access_token=token,
+        user=UserResponse.model_validate(user),
+    )

@@ -30,6 +30,12 @@ class EmotionalProfileResponse(BaseModel):
     emotional_baseline: dict[str, Any]
     comfort_preferences: dict[str, Any]
     communication_style: dict[str, Any]
+    emotional_style: dict[str, Any]
+    interests: dict[str, Any]
+    stress_triggers: dict[str, Any]
+    strengths: dict[str, Any]
+    weaknesses: dict[str, Any]
+    onboarding_answers: dict[str, Any]
     updated_at: datetime | None = None
 
     @field_serializer("updated_at")
@@ -43,9 +49,9 @@ class EmotionalProfileResponse(BaseModel):
 
 class StressPattern(BaseModel):
     """Individual stress pattern entry."""
-    period: str
-    stress_level: float
-    common_triggers: list[str]
+    category: str
+    value: float
+    fullMark: float = 100.0
 
 
 class StressPatternsResponse(BaseModel):

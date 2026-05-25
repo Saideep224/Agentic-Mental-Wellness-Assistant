@@ -119,6 +119,10 @@ export interface User {
   name: string;
   email: string;
   onboardingCompleted: boolean;
+  avatarUrl?: string | null;
+  provider?: string;
+  githubUsername?: string | null;
+  createdAt?: string;
 }
 
 export interface AuthState {

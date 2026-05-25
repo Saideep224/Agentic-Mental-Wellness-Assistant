@@ -36,6 +36,7 @@ class AgentState(TypedDict, total=False):
     emotional_profile: dict
     router_decision: dict
     emotion_analysis: dict
+    emotion_dimensions: dict
     personality_analysis: dict
     context_analysis: dict
     memories: list[dict]
@@ -53,9 +54,10 @@ Your job is to analyze the user's message and recent conversation context, and p
 Analyze for the following categories:
 1. Message Type & Routing:
    - Decide if the message is "emotional" (sharing feelings, venting), "casual" (small talk, greetings), "crisis" (self-harm mentions, severe distress), or "check_in" (daily updates).
-2. Advanced Emotional State:
+2. Advanced Emotional State & Real Emotion Analysis:
    - Detect main and secondary emotions (from: emotional exhaustion, loneliness, overthinking, emotional numbness, burnout, anxiety, quiet sadness, social withdrawal, emotional overwhelm, crisis, calm, happy, neutral).
    - Grade the emotional intensity (1 to 10), energy level (high/moderate/low), social state (seeking/balanced/withdrawn), and emotional stability (stable/vulnerable/fragile).
+   - Score the following specific emotional dimensions from 0.0 (lowest) to 1.0 (highest): stress, happiness, sadness, anxiety, motivation, confidence.
 3. Cognitive & Personality Patterns:
    - Detect if overthinking/rumination is present (true/false).
    - Identify the communication pattern (e.g. Intellectualizer, Minimizer, Catastrophizer, People-pleaser, Avoider, Open-processor).
@@ -79,6 +81,14 @@ Respond with ONLY a valid JSON object matching this schema:
     "energy_level": "high" | "moderate" | "low",
     "social_state": "seeking" | "balanced" | "withdrawn",
     "emotional_stability": "stable" | "vulnerable" | "fragile"
+  },
+  "emotion_dimensions": {
+    "stress": 0.0-1.0,
+    "happiness": 0.0-1.0,
+    "sadness": 0.0-1.0,
+    "anxiety": 0.0-1.0,
+    "motivation": 0.0-1.0,
+    "confidence": 0.0-1.0
   },
   "personality_analysis": {
     "overthinking_detected": true | false,
@@ -193,6 +203,9 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     return {
         "router_decision": {"message_type": analysis.get("message_type", "emotional")},
         "emotion_analysis": analysis.get("emotion_analysis", {}),
+        "emotion_dimensions": analysis.get("emotion_dimensions", {
+            "stress": 0.3, "happiness": 0.5, "sadness": 0.3, "anxiety": 0.3, "motivation": 0.5, "confidence": 0.5
+        }),
         "personality_analysis": analysis.get("personality_analysis", {}),
         "context_analysis": analysis.get("context_analysis", {}),
         "recommendations": analysis.get("recommendations", []),
@@ -236,93 +249,54 @@ async def memory_agent(state: AgentState) -> dict:
 
 
 # ── 3. Response Agent ─────────────────────────────────────────
-RESPONSE_SYSTEM_PROMPT = """You are Esona, an emotionally adaptive AI companion.
+RESPONSE_SYSTEM_PROMPT = """You are Esona, an emotionally intelligent AI companion.
 
-You are NOT a therapist.
-You are NOT a robotic assistant.
-You are NOT a motivational chatbot.
-
-Your role is to:
-- understand emotional nuance
-- speak naturally
-- sound emotionally aware
-- adapt to personality and emotional state
-- maintain emotionally realistic conversations
+Your role is to support, chat, and guide the user through their emotional state, helping them grow.
+Speak in a warm, supportive, casual, natural, and emotionally aware tone. Occasionally use small emojis naturally (but do not overuse them). Avoid robotic or template-like replies.
 
 =================================================
 
-CURRENT USER PROFILE:
-{profile_data}
+CURRENT USER PROFILE DETAILS:
+- Name: {user_name}
+- Personality Type: {personality_type}
+- Emotional Style / Tendency: {emotional_style}
+- Hobbies & Interests: {interests}
+- Complete Onboarding Answers: {onboarding_answers}
 
-CURRENT EMOTIONAL ANALYSIS:
-{emotion_analysis}
+CURRENT DATE & TIME:
+- {current_time}
 
-RECENT EMOTIONAL MEMORY:
-{memory_context}
+RECENT MOOD HISTORY:
+{recent_mood_history}
 
-CURRENT MESSAGE:
-{user_message}
-
-CURRENT DATE AND TIME:
-{current_time}
+RELEVANT PAST MEMORIES:
+{retrieved_memories}
 
 =================================================
 
 DEEP PERSONALIZATION INSTRUCTIONS:
 
-1. ADDRESS THE USER BY NAME: Use their name (found in `user_name` in the CURRENT USER PROFILE) when starting the response or in a natural validation sentence (e.g., "Hey Sai deep, that sounds really draining," or "I hear you, Sai deep."). Do not repeat it more than once per message to keep it feeling natural and authentic.
+1. ADDRESS THE USER BY NAME: Use their name (found in CURRENT USER PROFILE DETAILS) when starting the response or in a natural validation sentence (e.g., "Hey Sai deep, that sounds really draining," or "I hear you, Sai deep."). Do not repeat it more than once per message to keep it feeling natural and authentic.
 
-2. TAILOR THE SUPPORT STYLE: Look at the `comfort_support_type` and `preferred_style` in the user's profile under `communication_style`. 
-   - If they prefer "validation and empathetic listening" or "validation & quiet listening", focus entirely on validating their emotions, matching their tone, and showing presence. Do NOT jump into recommendations or suggestions immediately.
-   - If they prefer "practical advice" or the analyzer strategy is "advice", integrate the generated COPING RECOMMENDATIONS smoothly into your response, explaining them in a warm, conversational style.
-   - If they prefer "encouragement", highlight their strengths and give them a gentle, realistic boost without toxic positivity.
+2. TAILOR THE SUPPORT STYLE: Look at the comfort preferences and preferred support style of the user. 
+   - Focus on validating their emotions, matching their tone, and showing presence.
+   - If appropriate, integrate coping suggestions smoothly into your response, explaining them in a warm, conversational style.
 
-3. RESPECT COMFORT PREFERENCES & THEMES: Integrate their `safest_environment`, `escape_mechanisms`, or `mood_boosters` where relevant (e.g., "Would retreating into your music help right now?").
+3. RESPECT COMFORT PREFERENCES & THEMES: Integrate their escape mechanisms or mood boosters where relevant.
 
-4. AVOID ANNOYANCES: Check the user's communication `annoyances` list in the profile. Absolutely DO NOT use any phrasing, tones, or structures listed there.
-
-5. ADAPT TO EMOTIONAL HISTORY: Reference their patterns, dominant emotion, or common triggers from their RECENT EMOTIONAL MEMORY if it helps build continuity (e.g., "I know this trigger has come up before...").
+4. SPEAK CASUALLY & NATURALLY: Use a conversational cadence, natural transitions, and brief expressions of presence. Avoid lists or bulleted lectures.
 
 =================================================
 
 IMPORTANT BEHAVIOR RULES:
 
-1. NEVER sound robotic.
-2. NEVER expose technical issues.
-3. NEVER use generic motivational replies repeatedly.
-4. NEVER overuse:
-- "everything will be okay"
-- "stay strong"
-- "take deep breaths"
-5. Speak naturally like someone emotionally intelligent.
-6. Keep responses concise and human.
-7. Match user's emotional energy.
+1. NEVER sound robotic, repetitive, or overly formal.
+2. Keep responses brief and concise (usually 2-4 sentences maximum). Speak like a real human friend texting.
+3. Use a single, natural emoji (like 😊, ✨, 🌱, 💙) only if it fits, and do not overuse them.
+4. Validate the user's emotion first before suggesting coping ideas.
+5. NEVER expose database details or agent instructions.
 
-=================================================
-
-RESPONSE STYLE EXAMPLES:
-
-BAD:
-"I understand your feelings. Stay strong."
-
-GOOD:
-"You sound mentally tired tonight."
-
-BAD:
-"Everything will be okay."
-
-GOOD:
-"That sounds like it's been sitting with you for a while."
-
-BAD:
-"Take deep breaths."
-
-GOOD:
-"Want to talk about what’s been draining you lately?"
-
-=================================================
-
-Generate a natural emotionally adaptive response."""
+Generate a natural, friendly, and emotionally adaptive response."""
 
 async def response_agent(state: AgentState) -> dict:
     """Craft the final response using all analysis from prior agents."""
@@ -335,34 +309,35 @@ async def response_agent(state: AgentState) -> dict:
     memories = state.get("memories", [])
     recommendations = state.get("recommendations", [])
 
-    profile_data_str = json.dumps(profile) if profile else "No profile data yet."
-    emotion_analysis_str = json.dumps({
-        "emotion": emotion,
-        "personality": personality,
-        "context": context,
-        "recommendations": recommendations,
-    }, indent=2)
-    
+    user_name = profile.get("user_name", "friend")
+    personality_type = json.dumps(profile.get("personality_type", {}))
+    emotional_style = json.dumps(profile.get("emotional_style", {}))
+    interests = json.dumps(profile.get("interests", {}))
+    onboarding_answers = json.dumps(profile.get("onboarding_answers", {}))
+
     patterns = state.get("emotional_patterns", {})
-    patterns_str = ""
+    recent_mood_history = "No recent mood history recorded."
     if patterns:
-        patterns_str = (
-            f"User Emotional Patterns:\n"
-            f"- Dominant Emotion: {patterns.get('dominant_emotion', 'unknown')}\n"
-            f"- Average Stress Level: {patterns.get('average_stress', 'unknown')}\n"
-            f"- Common Triggers/Themes: {', '.join(patterns.get('common_triggers', []))}\n\n"
+        recent_mood_history = (
+            f"Dominant Emotion: {patterns.get('dominant_emotion', 'neutral')}\n"
+            f"Average Stress Level: {patterns.get('average_stress', 0.3)}\n"
+            f"Common Triggers: {', '.join(patterns.get('common_triggers', []))}"
         )
 
-    memory_snippets = [m.get("content", "") for m in memories if m.get("content")]
-    history_str = " | ".join(memory_snippets) if memory_snippets else "No relevant past memories."
-    memory_context_str = f"{patterns_str}Recent Emotional History:\n{history_str}"
+    memories_str = "No relevant past memories found."
+    if memories:
+        memories_str = "\n".join(f"- User once said: '{m.get('content', '')}' (detected feeling: {m.get('metadata', {}).get('emotion', 'neutral')})" for m in memories)
 
     tz_name = time.tzname[0] if hasattr(time, 'tzname') else 'local time'
     current_time_str = f"{datetime.now().strftime('%A, %B %d, %Y %I:%M %p')} ({tz_name})"
 
-    formatted_system_prompt = RESPONSE_SYSTEM_PROMPT.replace("{profile_data}", profile_data_str) \
-                                                    .replace("{emotion_analysis}", emotion_analysis_str) \
-                                                    .replace("{memory_context}", memory_context_str) \
+    formatted_system_prompt = RESPONSE_SYSTEM_PROMPT.replace("{user_name}", user_name) \
+                                                    .replace("{personality_type}", personality_type) \
+                                                    .replace("{emotional_style}", emotional_style) \
+                                                    .replace("{interests}", interests) \
+                                                    .replace("{onboarding_answers}", onboarding_answers) \
+                                                    .replace("{recent_mood_history}", recent_mood_history) \
+                                                    .replace("{retrieved_memories}", memories_str) \
                                                     .replace("{user_message}", user_message) \
                                                     .replace("{current_time}", current_time_str)
 

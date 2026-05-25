@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, User, ArrowRight, Eye, EyeOff, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import * as api from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 
 type AuthMode = 'login' | 'register';
 
@@ -29,6 +30,74 @@ export default function LoginPage() {
     };
     checkHealth();
   }, []);
+
+  // Listen for Supabase redirect callback session
+  useEffect(() => {
+    const checkSupabaseSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session && session.user) {
+        setIsLoading(true);
+        setError('');
+        try {
+          const userMeta = session.user.user_metadata || {};
+          const githubUsername = userMeta.preferred_username || userMeta.user_name || null;
+          const oauthData = {
+            name: userMeta.full_name || userMeta.name || session.user.email?.split('@')[0] || 'GitHub User',
+            email: session.user.email || '',
+            avatar_url: userMeta.avatar_url || null,
+            provider: 'github',
+            github_username: githubUsername,
+          };
+          
+          // Send to FastAPI backend
+          const backendUrl = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+          const res = await fetch(`${backendUrl}/api/auth/supabase-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(oauthData),
+          });
+          
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || 'Failed to sync GitHub session with backend');
+          }
+          
+          const backendData = await res.json();
+          api.setToken(backendData.access_token);
+          api.setStoredUser(backendData.user);
+          
+          // Sign out from supabase client to stick with backend JWT session
+          await supabase.auth.signOut();
+          
+          router.push('/dashboard');
+        } catch (err) {
+          console.error('[Esona Auth] OAuth callback failed:', err);
+          setError(err instanceof Error ? err.message : 'Failed to register GitHub user');
+          await supabase.auth.signOut();
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+    checkSupabaseSession();
+  }, [router]);
+
+  const handleGithubLogin = async () => {
+    try {
+      setError('');
+      setIsLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: {
+          redirectTo: window.location.origin + '/login',
+        },
+      });
+      if (error) throw error;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'GitHub Authentication failed');
+      setIsLoading(false);
+    }
+  };
 
   const retryHealthCheck = async () => {
     setBackendStatus('checking');
@@ -358,6 +427,29 @@ export default function LoginPage() {
                     <ArrowRight size={16} />
                   </>
                 )}
+              </motion.button>
+
+              <div className="relative my-6 flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-white/10"></div>
+                </div>
+                <span className="relative px-3 text-xs uppercase" style={{ color: 'var(--text-muted)', background: 'rgba(10,14,26,0.95)' }}>
+                  Or continue with
+                </span>
+              </div>
+
+              <motion.button
+                type="button"
+                onClick={handleGithubLogin}
+                disabled={isLoading}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 mb-2 cursor-pointer transition-all duration-300 border border-white/10 hover:border-white/20 text-white bg-white/5 hover:bg-white/10 disabled:opacity-50"
+              >
+                <svg className="w-4 h-4 mr-1 fill-current" viewBox="0 0 24 24">
+                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.11.82-.26.82-.577v-2.234c-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22v3.293c0 .319.22.694.825.576C20.565 21.795 24 17.3 24 12c0-6.63-5.37-12-12-12z" />
+                </svg>
+                <span>GitHub</span>
               </motion.button>
             </motion.form>
           </AnimatePresence>

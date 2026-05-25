@@ -26,6 +26,9 @@ class UserResponse(BaseModel):
     email: str
     name: str
     onboarding_completed: bool
+    avatar_url: str | None = None
+    provider: str = "credentials"
+    github_username: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

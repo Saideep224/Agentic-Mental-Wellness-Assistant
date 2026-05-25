@@ -10,6 +10,9 @@
   },
   "dependencies": {
     "@auth/core": "^0.41.2",
+    "@supabase/auth-helpers-nextjs": "^0.15.0",
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.106.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.3.0",
     "framer-motion": "^12.40.0",

@@ -138,7 +138,7 @@ body {
 /* ============================================= */
 
 .glow-text {
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+  background: linear-gradient(135deg, #ff7e5f, #feb47b);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;

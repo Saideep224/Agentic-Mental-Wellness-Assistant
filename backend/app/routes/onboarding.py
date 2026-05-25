@@ -1,8 +1,5 @@
-"""
-Onboarding route – submit questionnaire answers and check status.
-"""
-
-from fastapi import APIRouter, Depends, HTTPException, status
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +15,18 @@ from app.schemas.onboarding import (
 from app.services.onboarding_analyzer import analyze_onboarding
 
 router = APIRouter(prefix="/api/onboarding", tags=["Onboarding"])
+
+
+async def analyze_onboarding_background(user_id: uuid.UUID, answers: list):
+    """Run onboarding profiling in background with a dedicated DB session context."""
+    from app.database import async_session_maker
+    async with async_session_maker() as session:
+        try:
+            await analyze_onboarding(user_id, answers, session)
+            await session.commit()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Background onboarding analysis failed: {e}", exc_info=True)
 
 
 @router.post("/answer", status_code=status.HTTP_200_OK)
@@ -58,12 +67,13 @@ async def save_onboarding_answer(
 @router.post("/submit", status_code=status.HTTP_201_CREATED)
 async def submit_onboarding(
     body: OnboardingSubmitRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Accept 20 questions with selected answers, store them in the DB,
-    and trigger the async process to analyze them and create the initial EmotionalProfile.
+    and trigger the background process to analyze them and create the initial EmotionalProfile.
     """
     # 1. Validation check (must be exactly 20 answers)
     if len(body.answers) != 20:
@@ -102,19 +112,13 @@ async def submit_onboarding(
 
     # Mark user onboarding as complete on User table (profiles)
     current_user.onboarding_completed = True
-    
     await db.flush()
-
-    # 4. Analyze onboarding responses using OpenAI/Gemini to build the EmotionalProfile
-    try:
-        await analyze_onboarding(current_user.id, answers_to_analyze, db)
-    except Exception as e:
-        # Log error but don't fail registration
-        import logging
-        logging.getLogger(__name__).error(f"Failed to analyze onboarding: {e}", exc_info=True)
-
     await db.commit()
-    return {"message": "Onboarding answers saved successfully. Profile built."}
+
+    # 4. Queue the heavy AI analysis as a background task
+    background_tasks.add_task(analyze_onboarding_background, current_user.id, answers_to_analyze)
+
+    return {"message": "Onboarding answers saved successfully. Analysis running in background."}
 
 
 @router.get("/status", response_model=OnboardingStatusResponse)

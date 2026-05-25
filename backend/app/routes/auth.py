@@ -63,11 +63,13 @@ async def get_current_user(
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     
+    user_meta = payload.get("user_metadata", {}) if payload else {}
+    onboarding_completed_meta = bool(user_meta.get("onboarding_completed", False))
+
     if user is None:
         # Auto-create profile row if it doesn't exist yet (robust sync bridge)
         try:
             email = payload.get("email", "")
-            user_meta = payload.get("user_metadata", {})
             name = user_meta.get("full_name") or user_meta.get("name") or email.split("@")[0] or "Esona User"
             provider = payload.get("app_metadata", {}).get("provider", "credentials")
             
@@ -76,13 +78,18 @@ async def get_current_user(
                 email=email,
                 name=name,
                 provider=provider,
-                onboarding_completed=False,
+                onboarding_completed=onboarding_completed_meta,
             )
             db.add(user)
             await db.flush()
             await db.refresh(user)
         except Exception:
             raise credentials_exception
+    else:
+        # Sync onboarding status if metadata says true
+        if onboarding_completed_meta and not user.onboarding_completed:
+            user.onboarding_completed = True
+            await db.flush()
             
     return user
 

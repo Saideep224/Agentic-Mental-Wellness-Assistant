@@ -5,6 +5,7 @@ import { OnboardingResponse } from '@/types';
 import { questions, getCategoryForQuestion } from '@/data/questions';
 import * as api from '@/lib/api';
 import { useAuth } from '@/providers/AuthProvider';
+import { supabase } from '@/lib/supabase';
 
 export function useOnboarding() {
   const { refreshUser } = useAuth();
@@ -175,6 +176,35 @@ export function useOnboarding() {
       }
 
       await api.submitOnboarding(allResponses, token);
+
+      // Update onboarding_completed in Supabase profiles table & user metadata
+      try {
+        const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+        if (supabaseUser) {
+          // Update profiles table
+          const { error: updateErr } = await supabase
+            .from('profiles')
+            .update({ onboarding_completed: true })
+            .eq('id', supabaseUser.id);
+          if (updateErr) {
+            console.error('[Onboarding] Supabase profile update failed:', updateErr);
+          } else {
+            console.log('[Onboarding] Updated onboarding_completed to true in Supabase profiles table');
+          }
+
+          // Update user auth metadata
+          const { error: metaErr } = await supabase.auth.updateUser({
+            data: { onboarding_completed: true }
+          });
+          if (metaErr) {
+            console.error('[Onboarding] Supabase metadata update failed:', metaErr);
+          } else {
+            console.log('[Onboarding] Updated onboarding_completed to true in Supabase user metadata');
+          }
+        }
+      } catch (sbErr) {
+        console.error('[Onboarding] Failed to update onboarding status in Supabase:', sbErr);
+      }
 
       // Clear onboarding progress from local storage
       if (typeof window !== 'undefined') {

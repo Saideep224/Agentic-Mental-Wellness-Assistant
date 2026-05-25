@@ -192,7 +192,7 @@ export default function OnboardingPage() {
 
         {/* Small Helper Text */}
         <p className="text-xs text-slate-400 mb-3 text-center italic">
-          Select one or more choices. You can also type your own answer for more personalized responses.
+          Select one or more choices or type your own answer for personalized responses.
         </p>
 
         {/* Options */}

@@ -59,6 +59,7 @@ async def analyze_onboarding(
     - emotional_baseline: containing 'dominant_emotion' (e.g. calm, overwhelmed, anxious, optimistic), 'tendencies' (list of strings describing their recurring moods), 'stress_level' (a rating between 1 and 10), and 'burnout_risk_assessment' (brief textual assessment).
     - comfort_preferences: containing 'safest_environment' (where they feel emotionally safest), 'escape_mechanisms' (list of things they use to de-stress), and 'mood_boosters' (list of actions/factors that improve their mood).
     - communication_style: containing 'preferred_style' (e.g. warm & friendly, direct & logical, gentle & validating), 'annoyances' (list of communication patterns that annoy them), and 'comfort_support_type' (what they seek when feeling low: practical advice vs validation/listening).
+    - reply_style: containing 'reply_style' (one of: "short_funny", "short", "deep_emotional", "casual"), 'likes_humor' (boolean), 'paragraph_preference' (one of: "short", "medium", "long"), 'emoji_usage' (one of: "low", "medium", "high"), 'communication_style' (one of: "casual", "gentle", "direct", "funny"), and 'energy' (one of: "playful", "calm", "thoughtful", "supportive").
     - emotional_summary: containing a descriptive narrative summarizing their current emotional state, baseline, and tendencies.
     - stress_patterns: containing 'stress_triggers' (list of strings) and 'coping_mechanisms' (list of strings).
     - emotional_triggers: containing 'triggers' (list of strings) and 'overthinking_tendency' (high/medium/low).
@@ -117,6 +118,14 @@ async def analyze_onboarding(
                 "annoyances": ["toxic positivity", "overly formal scripts"],
                 "comfort_support_type": "validation & quiet listening",
             },
+            "reply_style": {
+                "reply_style": "casual",
+                "likes_humor": True,
+                "paragraph_preference": "short",
+                "emoji_usage": "medium",
+                "communication_style": "casual",
+                "energy": "supportive"
+            },
             "emotional_summary": {
                 "summary": "Currently in a neutral, calm emotional baseline. Tends to overthink during stress but values self-reflection."
             },
@@ -170,7 +179,15 @@ async def analyze_onboarding(
         "strengths": p_strengths,
         "interests": p_interests,
         "stress_triggers": p_triggers,
-        "motivation_style": ", ".join(p_motivation) if isinstance(p_motivation, list) else str(p_motivation)
+        "motivation_style": ", ".join(p_motivation) if isinstance(p_motivation, list) else str(p_motivation),
+        "reply_style": profile_data.get("reply_style", {
+            "reply_style": "casual",
+            "likes_humor": True,
+            "paragraph_preference": "short",
+            "emoji_usage": "medium",
+            "communication_style": "casual",
+            "energy": "supportive"
+        })
     }
     profile.personality_type_text = p_type
     profile.communication_style_text = c_style

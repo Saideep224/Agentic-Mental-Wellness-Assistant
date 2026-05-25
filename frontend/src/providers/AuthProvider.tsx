@@ -109,7 +109,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           console.log('[AuthProvider] Redirecting to onboarding...');
           router.push('/onboarding');
         } else if (hasCompletedOnboarding && pathname === '/onboarding') {
-          router.push('/dashboard');
+          router.push('/chat');
         }
       }
     }

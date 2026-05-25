@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
+import EsonaLogo from '@/components/layout/EsonaLogo';
 import ChatContainer from '@/components/chat/ChatContainer';
 import MessageBubble from '@/components/chat/MessageBubble';
 import ChatInput from '@/components/chat/ChatInput';
@@ -143,8 +144,8 @@ export default function ChatPage() {
         const convo = await api.createConversation(token);
         setConversations((prev) => [convo, ...prev]);
         setActiveConversationId(convo.id);
-        // Wait for state to update then send
-        setTimeout(() => sendMessage(content), 100);
+        // Send immediately overriding the stale conversationId state
+        sendMessage(content, convo.id);
       } catch (err) {
         console.error('Failed to auto-create conversation:', err);
       }
@@ -320,11 +321,7 @@ export default function ChatPage() {
             </button>
 
             <div className="flex items-center gap-2">
-              <img
-                src="/logo.png"
-                alt="Esona Logo"
-                className="w-8 h-8 object-contain logo-premium"
-              />
+              <EsonaLogo size={32} showParticles={false} glowIntensity="low" />
               <div>
                 <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                   Esona

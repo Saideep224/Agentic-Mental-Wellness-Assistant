@@ -16,6 +16,7 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
     <motion.div
       initial={{ opacity: 0, x: isUser ? 20 : -20, y: 10 }}
       animate={{ opacity: 1, x: 0, y: 0 }}
+      whileHover={{ y: -1 }}
       transition={{ duration: 0.35, ease: 'easeOut' }}
       className={`flex items-end gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
     >
@@ -39,19 +40,22 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
       {/* Message content */}
       <div className={`max-w-[75%] ${isUser ? 'order-1' : ''}`}>
         <div
-          className="px-4 py-3 rounded-2xl text-sm leading-relaxed"
+          className="px-4 py-3 rounded-2xl text-sm leading-relaxed transition-all duration-300 hover:brightness-105"
           style={{
             background: isUser
-              ? 'rgba(56, 189, 248, 0.12)'
-              : 'rgba(167, 139, 250, 0.08)',
+              ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.15) 0%, rgba(59, 130, 246, 0.08) 100%)'
+              : 'linear-gradient(135deg, rgba(167, 139, 250, 0.1) 0%, rgba(244, 114, 182, 0.05) 100%)',
             border: isUser
-              ? '1px solid rgba(56, 189, 248, 0.2)'
-              : '1px solid rgba(167, 139, 250, 0.15)',
+              ? '1px solid rgba(56, 189, 248, 0.25)'
+              : '1px solid rgba(167, 139, 250, 0.18)',
+            boxShadow: isUser
+              ? '0 4px 15px rgba(56, 189, 248, 0.04)'
+              : '0 4px 15px rgba(167, 139, 250, 0.03)',
             borderBottomRightRadius: isUser ? '6px' : '18px',
             borderBottomLeftRadius: isUser ? '18px' : '6px',
             color: 'var(--text-primary)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
           }}
         >
           <div className="markdown-content whitespace-pre-wrap">{message.content}</div>

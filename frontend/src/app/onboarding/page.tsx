@@ -11,6 +11,7 @@ import OptionCard from '@/components/onboarding/OptionCard';
 import OtherInput from '@/components/onboarding/OtherInput';
 import CategoryTransition from '@/components/onboarding/CategoryTransition';
 import BreathingOrb from '@/components/ambient/BreathingOrb';
+import EsonaLogo from '@/components/layout/EsonaLogo';
 import { getToken, getStoredUser, setStoredUser, getOnboardingStatus } from '@/lib/api';
 
 export default function OnboardingPage() {
@@ -30,6 +31,7 @@ export default function OnboardingPage() {
     selectOption,
     setCustomText,
     goToNext,
+    skipQuestion,
     goToPrevious,
     continuePastTransition,
   } = useOnboarding();
@@ -72,7 +74,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (isComplete) {
       const timer = setTimeout(() => {
-        router.push('/dashboard');
+        router.push('/chat');
       }, 4000);
       return () => clearTimeout(timer);
     }
@@ -90,10 +92,11 @@ export default function OnboardingPage() {
         >
           <div className="relative w-32 h-32 mx-auto mb-8 flex items-center justify-center">
             <BreathingOrb size={120} className="absolute inset-0 opacity-60" />
-            <img
-              src="/logo.png"
-              alt="Esona Logo"
-              className="w-16 h-16 object-contain logo-premium logo-float relative z-10"
+            <EsonaLogo
+              size={64}
+              showParticles={true}
+              glowIntensity="medium"
+              className="relative z-10 logo-float"
             />
           </div>
 
@@ -268,6 +271,16 @@ export default function OnboardingPage() {
         >
           <ArrowLeft size={16} />
           Back
+        </motion.button>
+
+        <motion.button
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={skipQuestion}
+          disabled={isSubmitting}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent"
+        >
+          {isLastQuestion ? 'Skip & Complete' : 'Skip Question'}
         </motion.button>
 
         <motion.button

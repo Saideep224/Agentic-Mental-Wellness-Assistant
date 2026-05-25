@@ -94,6 +94,7 @@ export function useMoodData() {
           communicationStyleLabel: rawProfile.communication_style?.preferred_style || 'Empathetic Listener',
           personalityLabel: rawProfile.personality_type?.type || 'Thoughtful Processor',
           personalityProfile: rawProfile.personality_profile || {},
+          onboardingAnswers: rawProfile.onboarding_answers?.answers || [],
         };
         
         setEmotionalProfile(mappedProfile);

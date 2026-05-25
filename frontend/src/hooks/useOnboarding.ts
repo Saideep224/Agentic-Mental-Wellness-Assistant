@@ -131,6 +131,56 @@ export function useOnboarding() {
     }
   }, [selectedOptions, customText, currentIndex, currentQuestion, totalQuestions, currentCategory, responses]);
 
+  const skipQuestion = useCallback(() => {
+    const response: OnboardingResponse = {
+      questionId: currentQuestion.id,
+      category: currentQuestion.category,
+      selectedAnswers: [], // Empty indicates skipped
+      customAnswer: undefined,
+    };
+
+    // Save live to database
+    const token = api.getToken();
+    if (token) {
+      api.saveOnboardingAnswer(response, token).catch((err) => {
+        console.warn('[Onboarding] Live answer saving failed:', err);
+      });
+    }
+
+    // Update or add response
+    const updatedResponses = [...responses];
+    const existingIdx = responses.findIndex((r) => r.questionId === currentQuestion.id);
+    if (existingIdx >= 0) {
+      updatedResponses[existingIdx] = response;
+    } else {
+      updatedResponses.push(response);
+    }
+    setResponses(updatedResponses);
+
+    if (currentIndex < totalQuestions - 1) {
+      const nextIdx = currentIndex + 1;
+      const nextCat = getCategoryForQuestion(nextIdx);
+      if (nextCat !== currentCategory) {
+        setShowCategoryTransition(true);
+        saveProgress(nextIdx, updatedResponses);
+      } else {
+        setDirection(1);
+        setCurrentIndex(nextIdx);
+        
+        // Restore next question's answers if they exist
+        const nextResponse = updatedResponses.find(
+          (r) => r.questionId === questions[nextIdx].id
+        );
+        setSelectedOptions(nextResponse?.selectedAnswers || []);
+        setCustomText(nextResponse?.customAnswer || '');
+        saveProgress(nextIdx, updatedResponses);
+      }
+    } else {
+      // Last question - submit all
+      handleSubmit(updatedResponses);
+    }
+  }, [currentIndex, currentQuestion, totalQuestions, currentCategory, responses]);
+
   const continuePastTransition = useCallback(() => {
     setShowCategoryTransition(false);
     setDirection(1);
@@ -249,6 +299,7 @@ export function useOnboarding() {
     selectOption,
     setCustomText,
     goToNext,
+    skipQuestion,
     goToPrevious,
     continuePastTransition,
   };

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { getToken, getStoredUser, clearAuth } from '@/lib/api';
 import ProfileModal from '@/components/layout/ProfileModal';
 import { useAuth } from '@/providers/AuthProvider';
+import EsonaLogo from '@/components/layout/EsonaLogo';
 
 export default function Navbar() {
   const { logout } = useAuth();
@@ -51,11 +52,7 @@ export default function Navbar() {
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 group">
-            <img
-              src="/logo.png"
-              alt="Esona Logo"
-              className="w-8 h-8 object-contain logo-premium"
-            />
+            <EsonaLogo size={32} showParticles={false} glowIntensity="low" />
             <span
               className="text-xl font-bold glow-text"
               style={{ fontFamily: 'var(--font-outfit), sans-serif' }}

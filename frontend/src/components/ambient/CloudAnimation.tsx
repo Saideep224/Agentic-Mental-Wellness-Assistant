@@ -21,16 +21,16 @@ interface CloudLayer {
 
 const CLOUD_LAYERS: CloudLayer[] = [
   // Far background — slow drift, low sensitivity
-  { id: 1, x: 5, y: 8, width: 280, height: 120, opacity: 0.15, driftSpeed: 0.3, sensitivity: 0.3, blur: 2, type: 'gradient', zIndex: 1 },
-  { id: 2, x: 65, y: 5, width: 320, height: 140, opacity: 0.12, driftSpeed: 0.25, sensitivity: 0.25, blur: 3, type: 'gradient', zIndex: 1 },
+  { id: 1, x: 5, y: 8, width: 350, height: 180, opacity: 0.12, driftSpeed: 0.3, sensitivity: 0.3, blur: 4, type: 'gradient', zIndex: 1 },
+  { id: 2, x: 65, y: 5, width: 400, height: 200, opacity: 0.1, driftSpeed: 0.25, sensitivity: 0.25, blur: 5, type: 'gradient', zIndex: 1 },
   // Mid layer — moderate drift and sensitivity
-  { id: 3, x: 15, y: 35, width: 220, height: 100, opacity: 0.2, driftSpeed: 0.5, sensitivity: 0.6, blur: 1, type: 'image', imageSrc: '/cloud1.png', zIndex: 2 },
-  { id: 4, x: 70, y: 25, width: 200, height: 90, opacity: 0.18, driftSpeed: 0.45, sensitivity: 0.55, blur: 1, type: 'gradient', zIndex: 2 },
-  { id: 5, x: 40, y: 60, width: 260, height: 110, opacity: 0.16, driftSpeed: 0.4, sensitivity: 0.5, blur: 1, type: 'image', imageSrc: '/cloud2.png', zIndex: 2 },
+  { id: 3, x: 15, y: 35, width: 300, height: 150, opacity: 0.15, driftSpeed: 0.5, sensitivity: 0.6, blur: 3, type: 'gradient', zIndex: 2 },
+  { id: 4, x: 70, y: 25, width: 280, height: 140, opacity: 0.14, driftSpeed: 0.45, sensitivity: 0.55, blur: 3, type: 'gradient', zIndex: 2 },
+  { id: 5, x: 40, y: 60, width: 320, height: 160, opacity: 0.12, driftSpeed: 0.4, sensitivity: 0.5, blur: 3, type: 'gradient', zIndex: 2 },
   // Foreground — fast drift, high sensitivity
-  { id: 6, x: -5, y: 70, width: 300, height: 130, opacity: 0.25, driftSpeed: 0.7, sensitivity: 1.2, blur: 0, type: 'image', imageSrc: '/cloud1.png', zIndex: 3 },
-  { id: 7, x: 80, y: 65, width: 240, height: 100, opacity: 0.22, driftSpeed: 0.65, sensitivity: 1.0, blur: 0, type: 'gradient', zIndex: 3 },
-  { id: 8, x: 30, y: 80, width: 180, height: 80, opacity: 0.2, driftSpeed: 0.6, sensitivity: 0.8, blur: 0, type: 'image', imageSrc: '/cloud2.png', zIndex: 3 },
+  { id: 6, x: -5, y: 70, width: 450, height: 220, opacity: 0.12, driftSpeed: 0.7, sensitivity: 1.2, blur: 5, type: 'gradient', zIndex: 3 },
+  { id: 7, x: 80, y: 65, width: 310, height: 150, opacity: 0.16, driftSpeed: 0.65, sensitivity: 1.0, blur: 3, type: 'gradient', zIndex: 3 },
+  { id: 8, x: 30, y: 80, width: 250, height: 120, opacity: 0.15, driftSpeed: 0.6, sensitivity: 0.8, blur: 3, type: 'gradient', zIndex: 3 },
 ];
 
 export default function CloudAnimation() {
@@ -160,22 +160,12 @@ export default function CloudAnimation() {
                 transition: 'opacity 0.5s ease',
               }}
             >
-              {cloud.type === 'gradient' ? (
-                <div
-                  className="w-full h-full rounded-full"
-                  style={{
-                    background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.4) 40%, rgba(255,255,255,0.1) 65%, transparent 100%)',
-                  }}
-                />
-              ) : (
-                <img
-                  src={cloud.imageSrc}
-                  alt=""
-                  className="w-full h-full object-contain"
-                  style={{ opacity: 0.85 }}
-                  draggable={false}
-                />
-              )}
+              <div
+                className="w-full h-full rounded-full"
+                style={{
+                  background: 'radial-gradient(ellipse at center, rgba(56, 189, 248, 0.15) 0%, rgba(167, 139, 250, 0.06) 50%, transparent 100%)',
+                }}
+              />
             </div>
           ))}
         </div>

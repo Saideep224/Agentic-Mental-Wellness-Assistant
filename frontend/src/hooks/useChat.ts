@@ -74,8 +74,9 @@ export function useChat({ conversationId }: UseChatOptions) {
   }, []);
 
   const sendMessage = useCallback(
-    async (content: string) => {
-      if (!conversationId || !content.trim()) return;
+    async (content: string, overrideConversationId?: string) => {
+      const targetId = overrideConversationId || conversationId;
+      if (!targetId || !content.trim()) return;
       const token = api.getToken();
       if (!token) return;
 
@@ -94,7 +95,7 @@ export function useChat({ conversationId }: UseChatOptions) {
 
       try {
         // Send message directly to receive fully compiled response (with splits)
-        const response = await api.sendMessage(conversationId, content.trim(), token);
+        const response = await api.sendMessage(targetId, content.trim(), token);
         const responseText = response.response;
         const detectedEmotion = response.emotionDetected;
         const moodScore = response.moodScore;

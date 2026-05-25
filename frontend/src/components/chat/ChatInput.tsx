@@ -48,10 +48,10 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
         className="flex items-end gap-3 p-3 rounded-2xl transition-all duration-300"
         style={{
           background: 'var(--glass-bg)',
-          border: '1px solid var(--glass-border)',
+          border: input.trim().length > 0 ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid var(--glass-border)',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
-          boxShadow: input.length > 0 ? 'var(--glow-cyan)' : 'none',
+          boxShadow: input.trim().length > 0 ? '0 0 25px rgba(56, 189, 248, 0.12), 0 0 15px rgba(167, 139, 250, 0.08)' : 'none',
         }}
       >
         <textarea

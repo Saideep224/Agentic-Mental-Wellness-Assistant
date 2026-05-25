@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
-import { RefreshCw, BarChart3, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { RefreshCw, BarChart3, Sparkles, ChevronDown, ChevronUp, Loader2, Edit2, Save, X } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import MoodTrendChart from '@/components/dashboard/MoodTrendChart';
 import StressPatternChart from '@/components/dashboard/StressPatternChart';
 import EmotionalProfileCard from '@/components/dashboard/EmotionalProfileCard';
 import PersonalityInsights from '@/components/dashboard/PersonalityInsights';
-import CommunicationStyle from '@/components/dashboard/CommunicationStyle';
 import { useMoodData } from '@/hooks/useMoodData';
-import { getToken, getStoredUser } from '@/lib/api';
+import { getToken, getStoredUser, submitOnboarding } from '@/lib/api';
+import { questions } from '@/data/questions';
 
 // Sub-components for dynamic user-specific sections
 
@@ -245,6 +245,321 @@ function GrowthTrackerCard({ profile }: { profile: any }) {
   );
 }
 
+function YourAnswersCard({ profile, onUpdate }: { profile: any; onUpdate: () => void }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null); // editing category
+  const [editedAnswers, setEditedAnswers] = useState<any[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Initialize editedAnswers from profile
+  const originalAnswers = profile?.onboardingAnswers || [];
+
+  useEffect(() => {
+    if (originalAnswers.length > 0) {
+      setEditedAnswers(JSON.parse(JSON.stringify(originalAnswers)));
+    }
+  }, [profile]);
+
+  if (!profile) return null;
+
+  const categories = [
+    { id: 'personality', label: '🧠 Personality & Behavior', range: [1, 5] },
+    { id: 'emotion', label: '💭 Emotional Habits', range: [6, 10] },
+    { id: 'hobbies', label: '🌿 Stress Patterns & Hobbies', range: [11, 15] },
+    { id: 'communication', label: '💬 Communication Style', range: [16, 20] },
+  ];
+
+  const handleToggleOption = (questionId: number, optionValue: string, isMulti: boolean) => {
+    setEditedAnswers(prev => {
+      const copy = [...prev];
+      let ans = copy.find(a => a.question_id === questionId);
+      if (!ans) {
+        // Find category for question
+        const q = questions.find(qu => qu.id === questionId);
+        ans = {
+          question_id: questionId,
+          category: q?.category || 'personality',
+          selected_answers: [],
+          custom_answer: null
+        };
+        copy.push(ans);
+      }
+
+      const selected = ans.selected_answers || [];
+      if (selected.includes(optionValue)) {
+        ans.selected_answers = selected.filter((v: string) => v !== optionValue);
+      } else {
+        if (isMulti) {
+          ans.selected_answers = [...selected, optionValue];
+        } else {
+          ans.selected_answers = [optionValue];
+        }
+      }
+      return copy;
+    });
+  };
+
+  const handleCustomTextChange = (questionId: number, text: string) => {
+    setEditedAnswers(prev => {
+      const copy = [...prev];
+      let ans = copy.find(a => a.question_id === questionId);
+      if (!ans) {
+        const q = questions.find(qu => qu.id === questionId);
+        ans = {
+          question_id: questionId,
+          category: q?.category || 'personality',
+          selected_answers: [],
+          custom_answer: null
+        };
+        copy.push(ans);
+      }
+      ans.custom_answer = text;
+      // Also ensure "other" is in selected_answers if they type custom text
+      if (text.trim() && !ans.selected_answers.includes('other')) {
+        ans.selected_answers = [...ans.selected_answers, 'other'];
+      }
+      return copy;
+    });
+  };
+
+  const handleSave = async (categoryId: string) => {
+    const token = getToken();
+    if (!token) return;
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      // Construct a complete list of 20 answers
+      const completeAnswers = questions.map(q => {
+        const edited = editedAnswers.find(a => a.question_id === q.id);
+        if (edited) {
+          return {
+            questionId: q.id,
+            category: q.category,
+            selectedAnswers: edited.selected_answers || [],
+            customAnswer: edited.custom_answer || undefined,
+          };
+        }
+        const original = originalAnswers.find((a: any) => a.question_id === q.id);
+        return {
+          questionId: q.id,
+          category: q.category,
+          selectedAnswers: original?.selected_answers || [],
+          customAnswer: original?.custom_answer || undefined,
+        };
+      });
+
+      await submitOnboarding(completeAnswers, token);
+      
+      // Stop editing
+      setActiveCategory(null);
+      
+      // Trigger dashboard reload
+      onUpdate();
+    } catch (err: any) {
+      console.error('[YourAnswers] Failed to update onboarding responses:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update answers');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    // Reset to original answers
+    setEditedAnswers(JSON.parse(JSON.stringify(originalAnswers)));
+    setActiveCategory(null);
+    setError(null);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.35 }}
+      className="glass-card p-6 lg:col-span-2 overflow-hidden"
+    >
+      <div 
+        className="flex items-center justify-between cursor-pointer"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div>
+          <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
+            📝 Your Answers
+          </h3>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Review and update your onboarding responses to personalize Esona's adaptation
+          </p>
+        </div>
+        <button className="p-1.5 rounded-lg hover:bg-white/5 transition-colors cursor-pointer text-slate-400 hover:text-white">
+          {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="mt-6 space-y-6 pt-4 border-t border-white/5"
+          >
+            {error && (
+              <div className="p-3 rounded-xl text-xs bg-red-500/10 border border-red-500/15 text-red-400">
+                {error}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {categories.map(cat => {
+                const isEditing = activeCategory === cat.id;
+                const catQuestions = questions.filter(q => q.id >= cat.range[0] && q.id <= cat.range[1]);
+
+                return (
+                  <div 
+                    key={cat.id} 
+                    className="p-5 rounded-xl border transition-all duration-300"
+                    style={{
+                      background: isEditing ? 'rgba(56, 189, 248, 0.02)' : 'rgba(255, 255, 255, 0.01)',
+                      borderColor: isEditing ? 'rgba(56, 189, 248, 0.25)' : 'var(--glass-border)',
+                      boxShadow: isEditing ? 'var(--glow-cyan)' : 'none',
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-sm font-bold text-white">{cat.label}</h4>
+                      {!activeCategory && (
+                        <button
+                          onClick={() => setActiveCategory(cat.id)}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-sky-400 cursor-pointer transition-all duration-200"
+                        >
+                          <Edit2 size={12} />
+                          Edit
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-4">
+                      {catQuestions.map(q => {
+                        const userAns = editedAnswers.find(a => a.question_id === q.id);
+                        const selectedVals = userAns?.selected_answers || [];
+                        const customVal = userAns?.custom_answer || '';
+                        
+                        // Map values to labels for display
+                        const selectedLabels = q.options
+                          .filter(opt => selectedVals.includes(opt.value))
+                          .map(opt => `${opt.emoji} ${opt.label}`);
+                        
+                        if (selectedVals.includes('other') && customVal) {
+                          selectedLabels.push(`✏️ ${customVal}`);
+                        }
+
+                        return (
+                          <div key={q.id} className="text-xs space-y-1.5 pb-3 border-b border-white/2 last:border-0 last:pb-0">
+                            <p className="font-semibold text-slate-300">Q{q.id}. {q.text}</p>
+                            
+                            {isEditing ? (
+                              <div className="space-y-2 pt-1.5">
+                                <div className="grid grid-cols-1 gap-1.5">
+                                  {q.options.map(opt => {
+                                    const isSelected = selectedVals.includes(opt.value);
+                                    return (
+                                      <label
+                                        key={opt.value}
+                                        onClick={() => handleToggleOption(q.id, opt.value, true)}
+                                        className="flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors bg-white/3 hover:bg-white/5 border text-slate-300"
+                                        style={{
+                                          borderColor: isSelected ? 'rgba(56, 189, 248, 0.3)' : 'transparent',
+                                          color: isSelected ? 'var(--accent-cyan)' : 'var(--text-secondary)'
+                                        }}
+                                      >
+                                        <span className="text-sm">{opt.emoji}</span>
+                                        <span>{opt.label}</span>
+                                      </label>
+                                    );
+                                  })}
+
+                                  {q.allowOther && (
+                                    <div className="space-y-1.5 mt-1">
+                                      <label
+                                        onClick={() => handleToggleOption(q.id, 'other', true)}
+                                        className="flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors bg-white/3 hover:bg-white/5 border text-slate-300"
+                                        style={{
+                                          borderColor: selectedVals.includes('other') ? 'rgba(56, 189, 248, 0.3)' : 'transparent',
+                                          color: selectedVals.includes('other') ? 'var(--accent-cyan)' : 'var(--text-secondary)'
+                                        }}
+                                      >
+                                        <span>✏️</span>
+                                        <span>Something else...</span>
+                                      </label>
+
+                                      {selectedVals.includes('other') && (
+                                        <input
+                                          type="text"
+                                          value={customVal}
+                                          onChange={(e) => handleCustomTextChange(q.id, e.target.value)}
+                                          placeholder="Type your own answer..."
+                                          className="w-full px-3 py-2 text-xs glass-input"
+                                        />
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {selectedLabels.length > 0 ? (
+                                  selectedLabels.map((lbl, i) => (
+                                    <span key={i} className="px-2 py-0.5 rounded bg-white/5 border border-white/5 text-[10px] text-slate-400">
+                                      {lbl}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-slate-500 italic">Skipped</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {isEditing && (
+                      <div className="flex items-center gap-2 mt-5 pt-3 border-t border-white/5 justify-end">
+                        <button
+                          onClick={handleCancel}
+                          disabled={isSaving}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-white/5 text-slate-400 cursor-pointer disabled:opacity-50 transition-colors"
+                        >
+                          <X size={12} />
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => handleSave(cat.id)}
+                          disabled={isSaving}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-400 text-bg-primary hover:bg-sky-300 cursor-pointer disabled:opacity-50 transition-colors"
+                        >
+                          {isSaving ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Save size={12} />
+                          )}
+                          Save Updates
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -387,6 +702,9 @@ export default function DashboardPage() {
             <MoodTrendChart data={moodTrends} title="📈 Mood Journey" />
           </div>
 
+          {/* Your Answers Card - Full width */}
+          <YourAnswersCard profile={emotionalProfile} onUpdate={refresh} />
+
           {/* Personality Card */}
           <PersonalityCard profile={emotionalProfile} />
 
@@ -401,9 +719,6 @@ export default function DashboardPage() {
 
           {/* Motivation Style Card */}
           <MotivationStyleCard profile={emotionalProfile} />
-
-          {/* Communication Style 🗣️ */}
-          <CommunicationStyle preferences={communicationPrefs} />
 
           {/* Emotional Growth Tracker 🌱 */}
           <GrowthTrackerCard profile={emotionalProfile} />

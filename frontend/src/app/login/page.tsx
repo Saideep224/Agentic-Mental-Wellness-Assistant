@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, User, ArrowRight, Eye, EyeOff, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import Link from 'next/link';
+import EsonaLogo from '@/components/layout/EsonaLogo';
 import * as api from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/AuthProvider';
@@ -222,10 +223,11 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-6 flex flex-col items-center">
           <Link href="/" className="inline-flex flex-col items-center">
-            <img
-              src="/logo.png"
-              alt="Esona Logo"
-              className="w-20 h-20 object-contain logo-premium logo-float mb-2"
+            <EsonaLogo
+              size={85}
+              showParticles={true}
+              glowIntensity="high"
+              className="mb-3 logo-float"
             />
             <h1
               className="text-4xl font-bold glow-text mb-1"

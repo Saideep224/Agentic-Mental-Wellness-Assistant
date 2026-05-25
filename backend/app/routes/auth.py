@@ -119,6 +119,9 @@ async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
             detail="Invalid email or password",
         )
 
+    user.last_login = datetime.now(timezone.utc)
+    await db.flush()
+
     token = _create_access_token(user.id)
     return TokenResponse(
         access_token=token,
@@ -156,6 +159,7 @@ async def supabase_login(body: SupabaseLoginRequest, db: AsyncSession = Depends(
             avatar_url=body.avatar_url,
             provider=body.provider,
             github_username=body.github_username,
+            last_login=datetime.now(timezone.utc),
             hashed_password=None,  # Password-less OAuth
         )
         db.add(user)
@@ -167,6 +171,7 @@ async def supabase_login(body: SupabaseLoginRequest, db: AsyncSession = Depends(
         user.avatar_url = body.avatar_url
         user.provider = body.provider
         user.github_username = body.github_username
+        user.last_login = datetime.now(timezone.utc)
         await db.flush()
 
     token = _create_access_token(user.id)

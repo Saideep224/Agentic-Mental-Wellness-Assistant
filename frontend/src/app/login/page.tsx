@@ -7,11 +7,13 @@ import { Mail, Lock, User, ArrowRight, Eye, EyeOff, RefreshCw, Wifi, WifiOff } f
 import Link from 'next/link';
 import * as api from '@/lib/api';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/providers/AuthProvider';
 
 type AuthMode = 'login' | 'register';
 
 export default function LoginPage() {
   const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,7 +23,14 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline' | 'idle'>('idle');
 
-  // Check backend health on mount
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      router.replace('/dashboard');
+    }
+  }, [isAuthenticated, authLoading, router]);
+
+  // Check backend health and URL error parameters on mount
   useEffect(() => {
     const checkHealth = async () => {
       setBackendStatus('checking');
@@ -29,6 +38,14 @@ export default function LoginPage() {
       setBackendStatus(healthy ? 'online' : 'offline');
     };
     checkHealth();
+
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlError = searchParams.get('error');
+      if (urlError) {
+        setError(decodeURIComponent(urlError));
+      }
+    }
   }, []);
 
   // Listen for Supabase redirect callback session
@@ -41,11 +58,19 @@ export default function LoginPage() {
         try {
           const userMeta = session.user.user_metadata || {};
           const githubUsername = userMeta.preferred_username || userMeta.user_name || null;
+          
+          let provider = 'github';
+          if (session.user.app_metadata.provider) {
+            provider = session.user.app_metadata.provider;
+          } else if (session.user.identities && session.user.identities.length > 0) {
+            provider = session.user.identities[0].provider;
+          }
+
           const oauthData = {
             name: userMeta.full_name || userMeta.name || session.user.email?.split('@')[0] || 'GitHub User',
             email: session.user.email || '',
             avatar_url: userMeta.avatar_url || null,
-            provider: 'github',
+            provider: provider,
             github_username: githubUsername,
           };
           
@@ -86,15 +111,34 @@ export default function LoginPage() {
     try {
       setError('');
       setIsLoading(true);
+      const redirectTo = `${window.location.origin}/auth/callback`;
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: window.location.origin + '/login',
+          redirectTo,
         },
       });
       if (error) throw error;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'GitHub Authentication failed');
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      setError('');
+      setIsLoading(true);
+      const redirectTo = `${window.location.origin}/auth/callback`;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+        },
+      });
+      if (error) throw error;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Google Authentication failed');
       setIsLoading(false);
     }
   };
@@ -146,7 +190,6 @@ export default function LoginPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong';
       setError(message);
-      // If it was a network error, refresh backend status
       if (message.includes('server') || message.includes('timed out') || message.includes('reach')) {
         setBackendStatus('offline');
       }
@@ -161,7 +204,7 @@ export default function LoginPage() {
         initial={{ opacity: 0, y: 30, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="w-full max-w-md"
+        className="w-full max-w-md animate-glow"
       >
         {/* Logo */}
         <div className="text-center mb-8">
@@ -174,7 +217,7 @@ export default function LoginPage() {
             </h1>
           </Link>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            {mode === 'login' ? 'Welcome back. We missed you.' : 'Begin your journey with Esona.'}
+            {mode === 'login' ? 'Welcome back. We missed you. ✨' : 'Begin your journey with Esona. 🌙'}
           </p>
         </div>
 
@@ -248,28 +291,91 @@ export default function LoginPage() {
 
         {/* Auth card */}
         <div className="glass-card p-8">
-          {/* Mode toggle */}
-          <div
-            className="flex rounded-xl p-1 mb-6"
-            style={{ background: 'rgba(255, 255, 255, 0.03)' }}
-          >
-            {(['login', 'register'] as AuthMode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => {
-                  setMode(m);
-                  setError('');
-                }}
-                className="flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-300 capitalize cursor-pointer"
-                style={{
-                  background: mode === m ? 'rgba(34, 211, 238, 0.1)' : 'transparent',
-                  color: mode === m ? 'var(--accent-cyan)' : 'var(--text-muted)',
-                  border: mode === m ? '1px solid rgba(34, 211, 238, 0.2)' : '1px solid transparent',
-                }}
-              >
-                {m === 'login' ? 'Sign In' : 'Sign Up'}
-              </button>
-            ))}
+          {/* Mode Toggle Header */}
+          <div className="text-center mb-6">
+            <h2 className="text-xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-outfit), sans-serif' }}>
+              {mode === 'login' ? 'Log in to your account' : 'Create your account'}
+            </h2>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {mode === 'login' ? (
+                <>
+                  Don't have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setMode('register'); setError(''); }}
+                    className="text-cyan-400 hover:text-cyan-300 font-semibold underline cursor-pointer bg-transparent border-0 p-0 text-xs"
+                  >
+                    Sign Up
+                  </button>
+                </>
+              ) : (
+                <>
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setMode('login'); setError(''); }}
+                    className="text-cyan-400 hover:text-cyan-300 font-semibold underline cursor-pointer bg-transparent border-0 p-0 text-xs"
+                  >
+                    Sign In
+                  </button>
+                </>
+              )}
+            </p>
+          </div>
+
+          {/* OAuth Buttons Section at the Top */}
+          <div className="space-y-3 mb-6">
+            <motion.button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={isLoading}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-3 cursor-pointer transition-all duration-300 border border-white/10 hover:border-white/20 text-white bg-white/5 hover:bg-white/10 disabled:opacity-50"
+            >
+              <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24">
+                <path
+                  fill="#EA4335"
+                  d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582l3.51-3.51C17.642 1.09 14.973 0 12 0 7.354 0 3.307 2.68 1.347 6.58l3.919 3.185Z"
+                />
+                <path
+                  fill="#4285F4"
+                  d="M24 12c0-.86-.073-1.68-.21-2.482H12v4.69H18.74A5.766 5.766 0 0 1 16.25 18l3.866 3a11.96 11.96 0 0 0 3.884-9Z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M1.347 6.58A12.012 12.012 0 0 0 0 12c0 1.96.47 3.82 1.306 5.48l3.96-3.07a7.039 7.039 0 0 1-.03-4.83l-3.89-3Z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M5.237 14.41A7.054 7.054 0 0 1 12 19.091c1.618 0 3.09-.54 4.273-1.455l3.866 3C17.964 22.82 15.118 24 12 24 7.354 24 3.307 21.32 1.306 17.42l3.93-3.01Z"
+                />
+              </svg>
+              <span>Continue with Google</span>
+            </motion.button>
+
+            <motion.button
+              type="button"
+              onClick={handleGithubLogin}
+              disabled={isLoading}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-3 cursor-pointer transition-all duration-300 border border-white/10 hover:border-white/20 text-white bg-white/5 hover:bg-white/10 disabled:opacity-50"
+            >
+              <svg className="w-4 h-4 mr-1 fill-current" viewBox="0 0 24 24">
+                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.11.82-.26.82-.577v-2.234c-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22v3.293c0 .319.22.694.825.576C20.565 21.795 24 17.3 24 12c0-6.63-5.37-12-12-12z" />
+              </svg>
+              <span>Continue with GitHub</span>
+            </motion.button>
+          </div>
+
+          <div className="relative mb-6 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-white/10"></div>
+            </div>
+            <span className="relative px-3 text-xs uppercase" style={{ color: 'var(--text-muted)', background: 'rgba(10,14,26,0.95)' }}>
+              Or with email and password
+            </span>
           </div>
 
           {/* Form */}
@@ -318,7 +424,7 @@ export default function LoginPage() {
               {/* Email */}
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                  Email
+                  Email Address
                 </label>
                 <div className="relative">
                   <Mail
@@ -409,7 +515,6 @@ export default function LoginPage() {
                 className="w-full py-3 gradient-btn text-sm rounded-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 suppressHydrationWarning
               >
-
                 {isLoading ? (
                   <div className="flex items-center gap-2">
                     <div
@@ -427,29 +532,6 @@ export default function LoginPage() {
                     <ArrowRight size={16} />
                   </>
                 )}
-              </motion.button>
-
-              <div className="relative my-6 flex items-center justify-center">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-white/10"></div>
-                </div>
-                <span className="relative px-3 text-xs uppercase" style={{ color: 'var(--text-muted)', background: 'rgba(10,14,26,0.95)' }}>
-                  Or continue with
-                </span>
-              </div>
-
-              <motion.button
-                type="button"
-                onClick={handleGithubLogin}
-                disabled={isLoading}
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 mb-2 cursor-pointer transition-all duration-300 border border-white/10 hover:border-white/20 text-white bg-white/5 hover:bg-white/10 disabled:opacity-50"
-              >
-                <svg className="w-4 h-4 mr-1 fill-current" viewBox="0 0 24 24">
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.11.82-.26.82-.577v-2.234c-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22v3.293c0 .319.22.694.825.576C20.565 21.795 24 17.3 24 12c0-6.63-5.37-12-12-12z" />
-                </svg>
-                <span>GitHub</span>
               </motion.button>
             </motion.form>
           </AnimatePresence>

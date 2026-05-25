@@ -35,6 +35,10 @@ class User(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    last_login: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     # ── Relationships ────────────────────────────────────────
     conversations: Mapped[list["Conversation"]] = relationship(  # noqa: F821

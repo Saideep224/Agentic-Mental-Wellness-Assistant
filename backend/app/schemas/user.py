@@ -30,11 +30,20 @@ class UserResponse(BaseModel):
     provider: str = "credentials"
     github_username: str | None = None
     created_at: datetime
+    last_login: datetime | None = None
 
     model_config = {"from_attributes": True}
 
     @field_serializer("created_at")
     def serialize_created_at(self, dt: datetime) -> str:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat().replace("+00:00", "Z")
+
+    @field_serializer("last_login")
+    def serialize_last_login(self, dt: datetime | None) -> str | None:
+        if dt is None:
+            return None
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.isoformat().replace("+00:00", "Z")

@@ -16,7 +16,13 @@ class Settings(BaseSettings):
     )
 
     # ── Database ──────────────────────────────────────────────
+    # For local dev: sqlite+aiosqlite:///./esona.db
+    # For Supabase: postgresql+asyncpg://postgres.[REF]:[PASS]@aws-0-[REGION].pooler.supabase.com:6543/postgres
     DATABASE_URL: str = "sqlite+aiosqlite:///./esona.db"
+
+    # ── Supabase (optional, for direct client access if needed) ─
+    SUPABASE_URL: str = ""
+    SUPABASE_ANON_KEY: str = ""
 
     # ── OpenAI ────────────────────────────────────────────────
     OPENAI_API_KEY: str = ""
@@ -63,6 +69,10 @@ class Settings(BaseSettings):
             return self.GEMINI_EMBEDDING_MODEL
         return "text-embedding-3-small"
 
+    @property
+    def is_postgres(self) -> bool:
+        """Check if the database is PostgreSQL (Supabase)."""
+        return self.DATABASE_URL.startswith("postgresql")
 
     # ── ChromaDB ──────────────────────────────────────────────
     CHROMA_PERSIST_DIR: str = "./chroma_data"

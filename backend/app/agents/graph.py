@@ -12,8 +12,10 @@ from typing import Literal, TypedDict
 
 from langgraph.graph import StateGraph, END
 from openai import AsyncOpenAI
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.database import async_session_maker
 from app.memory.memory_manager import MemoryManager
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,7 @@ class AgentState(TypedDict, total=False):
     """
     Full state schema for the Esona multi-agent graph.
     """
+    db: AsyncSession
     user_message: str
     user_id: str
     conversation_history: list[dict]
@@ -200,25 +203,34 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
 
 # ── 2. Memory Agent ───────────────────────────────────────────
 async def memory_agent(state: AgentState) -> dict:
-    """Query SQLite for relevant past memories and retrieve the user's emotional patterns."""
+    """Query the database for relevant past memories and retrieve the user's emotional patterns."""
     user_message = state.get("user_message", "")
     user_id = state.get("user_id", "")
 
     retrieved_memories: list[dict] = []
     patterns: dict = {}
 
+    db = state.get("db")
+    close_db = False
+    if db is None:
+        db = async_session_maker()
+        close_db = True
+
     try:
         mm = MemoryManager()
-        results = mm.retrieve_memories(
+        retrieved_memories = await mm.retrieve_memories(
+            db=db,
             user_id=user_id,
             query=user_message,
             n_results=5,
         )
-        retrieved_memories = results
-        patterns = mm.get_emotional_patterns(user_id)
+        patterns = await mm.get_emotional_patterns(db, user_id)
 
     except Exception as e:
         logger.warning(f"Memory agent error: {e}")
+    finally:
+        if close_db:
+            await db.close()
 
     return {"memories": retrieved_memories, "emotional_patterns": patterns}
 
@@ -430,6 +442,7 @@ async def run_agent_graph(
     user_id: str,
     conversation_history: list[dict],
     emotional_profile: dict,
+    db: AsyncSession | None = None,
 ) -> dict:
     """Execute the full agent pipeline and return the final state."""
     initial_state: AgentState = {
@@ -437,6 +450,7 @@ async def run_agent_graph(
         "user_id": user_id,
         "conversation_history": conversation_history,
         "emotional_profile": emotional_profile,
+        "db": db,
         "router_decision": {},
         "emotion_analysis": {},
         "personality_analysis": {},

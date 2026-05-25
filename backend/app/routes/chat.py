@@ -234,6 +234,7 @@ async def send_message(
             user_id=str(current_user.id),
             conversation_history=history,
             emotional_profile=emotional_profile,
+            db=db,
         )
 
         full_response = result.get("response", "I'm here for you. Could you tell me more?")
@@ -266,7 +267,8 @@ async def send_message(
                 "mood_score": mood_score or 0.5,
                 "message_type": result.get("router_decision", {}).get("message_type", "casual"),
             }
-            memory_mgr.store_memory(
+            await memory_mgr.store_memory(
+                db=db,
                 user_id=str(current_user.id),
                 content=body.message,
                 metadata=metadata,
@@ -376,24 +378,25 @@ async def stream_message_sse(
                 "recommendations": result.get("recommendations", []),
             }
 
-            # Store memory
-            try:
-                memory_mgr = MemoryManager()
-                metadata = {
-                    "emotion": detected_emotion or "neutral",
-                    "mood_score": mood_score or 0.5,
-                    "message_type": result.get("router_decision", {}).get("message_type", "casual"),
-                }
-                memory_mgr.store_memory(
-                    user_id=str(current_user.id),
-                    content=message,
-                    metadata=metadata,
-                )
-            except Exception as mem_err:
-                logger.warning(f"Failed to store memory: {mem_err}")
-
-            # Save assistant message
+            # Save assistant message & store memory
             async with get_db_session() as save_db:
+                # Store memory
+                try:
+                    memory_mgr = MemoryManager()
+                    metadata = {
+                        "emotion": detected_emotion or "neutral",
+                        "mood_score": mood_score or 0.5,
+                        "message_type": result.get("router_decision", {}).get("message_type", "casual"),
+                    }
+                    await memory_mgr.store_memory(
+                        db=save_db,
+                        user_id=str(current_user.id),
+                        content=message,
+                        metadata=metadata,
+                    )
+                except Exception as mem_err:
+                    logger.warning(f"Failed to store memory: {mem_err}")
+
                 assistant_msg = Message(
                     conversation_id=conversation.id,
                     role=MessageRole.assistant,

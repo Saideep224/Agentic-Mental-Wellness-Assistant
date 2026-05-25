@@ -3,7 +3,7 @@ import os
 from sqlalchemy import inspect
 from app.database import engine, Base
 # Import models to register them with Base
-from app.models import User, Conversation, Message, EmotionalProfile, OnboardingResponse
+from app.models import User, Conversation, Message, EmotionalProfile, OnboardingResponse, Memory
 
 async def main():
     # Retrieve the database path from connection URL
@@ -33,7 +33,7 @@ async def main():
         tables = await conn.run_sync(get_tables)
         print("Tables in database:", tables)
         
-        expected_tables = {"users", "conversations", "messages", "emotional_profiles", "onboarding_responses"}
+        expected_tables = {"users", "conversations", "messages", "emotional_profiles", "onboarding_responses", "memories"}
         missing_tables = expected_tables - set(tables)
         if not missing_tables:
             print("SUCCESS: All tables created successfully!")

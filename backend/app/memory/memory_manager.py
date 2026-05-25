@@ -1,52 +1,32 @@
 """
 Memory Manager – implements vector storage and semantic search using
-SQLite and OpenAI embeddings, replacing ChromaDB to avoid MSVC compiler dependency.
+SQLAlchemy (PostgreSQL/SQLite) and OpenAI embeddings.
+Uses async sessions so it works with both local SQLite and Supabase PostgreSQL.
 """
 
 import json
-import os
-import sqlite3
-import uuid
 import logging
+import uuid
 from datetime import datetime, timezone, timedelta
 from collections import Counter
+
 from openai import OpenAI
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.models.memory import Memory
 
 logger = logging.getLogger(__name__)
-
-# Path to the SQLite memory database
-DB_PATH = os.path.join(settings.CHROMA_PERSIST_DIR, "memories.db")
-
-
-def init_db():
-    """Ensure the memories directory and SQLite table exist."""
-    os.makedirs(settings.CHROMA_PERSIST_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS memories (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            content TEXT NOT NULL,
-            metadata TEXT NOT NULL,
-            embedding TEXT,
-            timestamp TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    conn.close()
 
 
 class MemoryManager:
     """
     Manages user emotional memories. Stores texts and metadata, and performs
-    semantic vector search using OpenAI embeddings and SQLite.
+    semantic vector search using OpenAI embeddings and SQLAlchemy.
     """
 
     def __init__(self) -> None:
-        init_db()
         self.openai_client = None
         if settings.llm_api_key:
             try:
@@ -56,7 +36,7 @@ class MemoryManager:
 
     def _get_embedding(self, text: str) -> list[float] | None:
         """Fetch OpenAI vector embedding for text."""
-        if not self.openai_client:
+        if not self.openai_client or settings.USE_UNCLOSEAI:
             return None
         try:
             response = self.openai_client.embeddings.create(
@@ -68,20 +48,20 @@ class MemoryManager:
             logger.warning(f"Failed to generate embedding: {e}")
             return None
 
-    def store_memory(
+    async def store_memory(
         self,
+        db: AsyncSession,
         user_id: str,
         content: str,
         metadata: dict | None = None,
     ) -> str:
-        """Store a new emotional memory with vector embedding."""
-        doc_id = str(uuid.uuid4())
+        """Store a new emotional memory with optional vector embedding."""
         meta = {
             "user_id": user_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             **(metadata or {}),
         }
-        
+
         # Clean metadata values
         sanitized_meta = {}
         for k, v in meta.items():
@@ -92,85 +72,75 @@ class MemoryManager:
 
         # Generate embedding
         embedding_list = self._get_embedding(content)
-        embedding_str = json.dumps(embedding_list) if embedding_list else None
+        embedding_data = embedding_list if embedding_list else None
 
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO memories (id, user_id, content, metadata, embedding, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                doc_id,
-                user_id,
-                content,
-                json.dumps(sanitized_meta),
-                embedding_str,
-                sanitized_meta["timestamp"]
-            )
+        memory = Memory(
+            user_id=user_id,
+            content=content,
+            metadata_json=sanitized_meta,
+            embedding_json=embedding_data,
         )
-        conn.commit()
-        conn.close()
-        logger.debug("Stored memory %s for user %s", doc_id, user_id)
-        return doc_id
+        db.add(memory)
+        await db.flush()
 
-    def retrieve_memories(
+        logger.debug("Stored memory %s for user %s", memory.id, user_id)
+        return str(memory.id)
+
+    async def retrieve_memories(
         self,
+        db: AsyncSession,
         user_id: str,
         query: str,
         n_results: int = 5,
     ) -> list[dict]:
         """Retrieve most semantically similar memories using cosine similarity."""
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, content, metadata, embedding, timestamp FROM memories WHERE user_id = ?",
-            (user_id,)
+        result = await db.execute(
+            select(Memory).where(Memory.user_id == user_id)
         )
-        rows = cursor.fetchall()
-        conn.close()
+        rows = result.scalars().all()
 
         if not rows:
             return []
 
         # If we have an OpenAI client, try vector similarity
         query_vector = self._get_embedding(query)
-        
+
         memories = []
-        for r_id, content, metadata_str, embedding_str, timestamp in rows:
-            meta = json.loads(metadata_str)
-            
+        for mem in rows:
+            meta = mem.metadata_json or {}
+
             similarity = 0.0
-            if query_vector and embedding_str:
+            if query_vector and mem.embedding_json:
                 try:
-                    db_vector = json.loads(embedding_str)
-                    if db_vector and len(db_vector) == len(query_vector):
-                        # Cosine similarity (since OpenAI embeddings are normalized to length 1, dot product is cosine similarity)
+                    db_vector = mem.embedding_json
+                    if isinstance(db_vector, list) and len(db_vector) == len(query_vector):
+                        # Cosine similarity (dot product for normalized embeddings)
                         similarity = sum(q * d for q, d in zip(query_vector, db_vector))
                 except Exception as e:
                     logger.warning(f"Error calculating similarity: {e}")
             else:
                 # Fallback lexical overlap if no embedding
                 query_words = set(query.lower().split())
-                content_words = set(content.lower().split())
+                content_words = set(mem.content.lower().split())
                 overlap = len(query_words.intersection(content_words))
                 similarity = overlap / max(len(query_words), 1)
 
             memories.append({
-                "content": content,
+                "content": mem.content,
                 "metadata": meta,
-                "distance": float(round(1.0 - similarity, 4))  # Convert similarity to distance
+                "distance": float(round(1.0 - similarity, 4))
             })
 
-        # Sort by distance (smaller distance = higher similarity)
+        # Sort by distance (smaller = more similar)
         memories.sort(key=lambda x: x["distance"])
         return memories[:n_results]
 
-    def get_emotional_patterns(self, user_id: str) -> dict:
+    async def get_emotional_patterns(self, db: AsyncSession, user_id: str) -> dict:
         """Aggregate all stored memories to extract recurring emotional patterns."""
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT metadata FROM memories WHERE user_id = ?", (user_id,))
-        rows = cursor.fetchall()
-        conn.close()
+        result = await db.execute(
+            select(Memory.metadata_json).where(Memory.user_id == user_id)
+        )
+        rows = result.scalars().all()
 
         if not rows:
             return {
@@ -184,9 +154,10 @@ class MemoryManager:
         stress_levels = []
         triggers = []
 
-        for (metadata_str,) in rows:
+        for meta in rows:
+            if not meta:
+                continue
             try:
-                meta = json.loads(metadata_str)
                 if meta.get("emotion"):
                     emotions.append(str(meta["emotion"]))
                 if meta.get("stress_level"):
@@ -213,29 +184,27 @@ class MemoryManager:
             "average_stress": round(avg_stress, 2),
         }
 
-    def get_mood_history(self, user_id: str, days: int = 30) -> list[dict]:
+    async def get_mood_history(self, db: AsyncSession, user_id: str, days: int = 30) -> list[dict]:
         """Return chronological daily mood scores from memories."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT metadata, timestamp FROM memories WHERE user_id = ? AND timestamp >= ? ORDER BY timestamp ASC",
-            (user_id, cutoff)
+        result = await db.execute(
+            select(Memory)
+            .where(Memory.user_id == user_id, Memory.created_at >= cutoff)
+            .order_by(Memory.created_at.asc())
         )
-        rows = cursor.fetchall()
-        conn.close()
+        rows = result.scalars().all()
 
         history = []
-        for metadata_str, timestamp in rows:
+        for mem in rows:
             try:
-                meta = json.loads(metadata_str)
+                meta = mem.metadata_json or {}
                 try:
                     mood = float(meta.get("mood_score", 0.5))
                 except (ValueError, TypeError):
                     mood = 0.5
                 history.append({
-                    "date": timestamp[:10],
+                    "date": mem.created_at.strftime("%Y-%m-%d") if mem.created_at else "",
                     "mood_score": mood,
                     "emotion": meta.get("emotion", "neutral"),
                 })

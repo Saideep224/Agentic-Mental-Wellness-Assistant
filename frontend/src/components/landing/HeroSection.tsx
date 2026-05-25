@@ -6,6 +6,14 @@ import Link from 'next/link';
 export default function HeroSection() {
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-24 sm:pt-0 overflow-hidden">
+      {/* Atmospheric glow behind hero content */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: 'radial-gradient(ellipse at 50% 40%, rgba(56, 189, 248, 0.08) 0%, rgba(167, 139, 250, 0.04) 40%, transparent 70%)',
+        }}
+      />
+
       {/* Content */}
       <div className="relative z-10 text-center max-w-3xl mx-auto">
         {/* Main title */}
@@ -53,7 +61,7 @@ export default function HeroSection() {
             style={{
               background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))',
               color: 'var(--bg-primary)',
-              boxShadow: '0 0 30px rgba(34, 211, 238, 0.3), 0 4px 20px rgba(0, 0, 0, 0.3)',
+              boxShadow: '0 0 30px rgba(56, 189, 248, 0.3), 0 4px 20px rgba(0, 0, 0, 0.3)',
             }}
           >
             <span>Begin Your Journey</span>
@@ -69,4 +77,3 @@ export default function HeroSection() {
     </section>
   );
 }
-

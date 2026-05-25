@@ -4,13 +4,14 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, User as UserIcon, Calendar, Shield, Mail, Key, Sparkles, LogOut, Edit } from 'lucide-react';
 import { getToken, getStoredUser, clearAuth, getEmotionalProfile } from '@/lib/api';
+import { useAuth } from '@/providers/AuthProvider';
 
 interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
 export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
+  const { logout } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -35,16 +36,17 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     }
   }, [isOpen]);
 
-  const handleLogout = () => {
-    clearAuth();
-    window.location.href = '/';
+  const handleLogout = async () => {
+    await logout();
+    onClose();
   };
 
   const formatDate = (isoString?: string) => {
     if (!isoString) return 'May 2026';
     try {
       const date = new Date(isoString);
-      return date.toLocaleDateString('en-US', {
+      return date.toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
         year: 'numeric',
         month: 'long',
         day: 'numeric',
@@ -82,7 +84,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             <div>
               <div className="p-6 border-b border-white/5 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2" style={{ fontFamily: 'var(--font-outfit), sans-serif' }}>
-                  <UserIcon size={20} className="text-cyan-400" />
+                  <UserIcon size={20} className="text-sky-400" />
                   Your Profile
                 </h2>
                 <button
@@ -117,7 +119,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                     )}
                   </div>
                   <h3 className="text-lg font-semibold text-white">{user?.name || 'Anonymous User'}</h3>
-                  <p className="text-xs text-cyan-400 capitalize flex items-center gap-1.5 justify-center mt-1">
+                  <p className="text-xs text-sky-400 capitalize flex items-center gap-1.5 justify-center mt-1">
                     <Shield size={12} />
                     {profile?.personality_type?.type || 'Thoughtful Explorer'}
                   </p>

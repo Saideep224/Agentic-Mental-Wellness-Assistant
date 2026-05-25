@@ -48,60 +48,7 @@ export default function LoginPage() {
     }
   }, []);
 
-  // Listen for Supabase session on mount
-  useEffect(() => {
-    const checkSupabaseSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session && session.user) {
-        setIsLoading(true);
-        setError('');
-        try {
-          const jwtToken = session.access_token;
-          
-          // Query existing profile status to check onboardingCompleted safely
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('onboarding_completed')
-            .eq('id', session.user.id)
-            .single();
-
-          const onboardingCompleted = profile?.onboarding_completed ?? false;
-
-          let provider = 'github';
-          if (session.user.app_metadata.provider) {
-            provider = session.user.app_metadata.provider;
-          } else if (session.user.identities && session.user.identities.length > 0) {
-            provider = session.user.identities[0].provider;
-          }
-
-          // Upsert profiles
-          await supabase.from('profiles').upsert({
-            id: session.user.id,
-            email: session.user.email,
-            name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Esona User',
-            provider: provider,
-            onboarding_completed: onboardingCompleted,
-          });
-          console.log('[Auth] Session restored & profile synced on login mount.');
-
-          const freshUser = await api.getMe(jwtToken);
-          api.setToken(jwtToken);
-          api.setStoredUser(freshUser);
-
-          if (!freshUser.onboardingCompleted) {
-            router.push('/onboarding');
-          } else {
-            router.push('/dashboard');
-          }
-        } catch (err) {
-          console.error('[Auth] Session restoration error on login mount:', err);
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    };
-    checkSupabaseSession();
-  }, [router]);
+  // Session check on mount removed in favor of central AuthProvider route protection checks
 
   const handleGithubLogin = async () => {
     try {
@@ -273,10 +220,15 @@ export default function LoginPage() {
         className="w-full max-w-md animate-glow"
       >
         {/* Logo */}
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-block">
+        <div className="text-center mb-6 flex flex-col items-center">
+          <Link href="/" className="inline-flex flex-col items-center">
+            <img
+              src="/logo.png"
+              alt="Esona Logo"
+              className="w-20 h-20 object-contain logo-premium logo-float mb-2"
+            />
             <h1
-              className="text-4xl font-bold glow-text mb-2"
+              className="text-4xl font-bold glow-text mb-1"
               style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
             >
               Esona
@@ -321,15 +273,15 @@ export default function LoginPage() {
               exit={{ opacity: 0, y: -10 }}
               className="mb-4 px-4 py-3 rounded-xl text-sm flex items-center gap-2"
               style={{
-                background: 'rgba(34, 211, 238, 0.05)',
-                border: '1px solid rgba(34, 211, 238, 0.1)',
+                background: 'rgba(56, 189, 248, 0.05)',
+                border: '1px solid rgba(56, 189, 248, 0.1)',
                 color: 'var(--accent-cyan)',
               }}
             >
               <div
                 className="w-3 h-3 rounded-full border-2 animate-spin"
                 style={{
-                  borderColor: 'rgba(34, 211, 238, 0.3)',
+                  borderColor: 'rgba(56, 189, 248, 0.3)',
                   borderTopColor: 'var(--accent-cyan)',
                 }}
               />
@@ -369,7 +321,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => { setMode('register'); setError(''); }}
-                    className="text-cyan-400 hover:text-cyan-300 font-semibold underline cursor-pointer bg-transparent border-0 p-0 text-xs"
+                    className="text-sky-400 hover:text-sky-300 font-semibold underline cursor-pointer bg-transparent border-0 p-0 text-xs"
                   >
                     Sign Up
                   </button>
@@ -380,7 +332,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => { setMode('login'); setError(''); }}
-                    className="text-cyan-400 hover:text-cyan-300 font-semibold underline cursor-pointer bg-transparent border-0 p-0 text-xs"
+                    className="text-sky-400 hover:text-sky-300 font-semibold underline cursor-pointer bg-transparent border-0 p-0 text-xs"
                   >
                     Sign In
                   </button>
@@ -395,9 +347,13 @@ export default function LoginPage() {
               type="button"
               onClick={handleGoogleLogin}
               disabled={isLoading}
-              whileHover={{ scale: 1.01 }}
+              whileHover={{ scale: 1.01, boxShadow: 'var(--glow-cyan)', borderColor: 'rgba(56, 189, 248, 0.4)' }}
               whileTap={{ scale: 0.99 }}
-              className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-3 cursor-pointer transition-all duration-300 border border-white/10 hover:border-white/20 text-white bg-white/5 hover:bg-white/10 disabled:opacity-50"
+              style={{
+                border: '1px solid var(--glass-border)',
+                background: 'var(--surface-glass)',
+              }}
+              className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-3 cursor-pointer transition-all duration-300 text-white disabled:opacity-50"
             >
               <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24">
                 <path
@@ -417,21 +373,25 @@ export default function LoginPage() {
                   d="M5.237 14.41A7.054 7.054 0 0 1 12 19.091c1.618 0 3.09-.54 4.273-1.455l3.866 3C17.964 22.82 15.118 24 12 24 7.354 24 3.307 21.32 1.306 17.42l3.93-3.01Z"
                 />
               </svg>
-              <span>Continue with Google</span>
+              <span>{isLoading ? 'Connecting...' : 'Continue with Google'}</span>
             </motion.button>
 
             <motion.button
               type="button"
               onClick={handleGithubLogin}
               disabled={isLoading}
-              whileHover={{ scale: 1.01 }}
+              whileHover={{ scale: 1.01, boxShadow: 'var(--glow-purple)', borderColor: 'rgba(167, 139, 250, 0.4)' }}
               whileTap={{ scale: 0.99 }}
-              className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-3 cursor-pointer transition-all duration-300 border border-white/10 hover:border-white/20 text-white bg-white/5 hover:bg-white/10 disabled:opacity-50"
+              style={{
+                border: '1px solid var(--glass-border)',
+                background: 'var(--surface-glass)',
+              }}
+              className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-3 cursor-pointer transition-all duration-300 text-white disabled:opacity-50"
             >
               <svg className="w-4 h-4 mr-1 fill-current" viewBox="0 0 24 24">
                 <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.11.82-.26.82-.577v-2.234c-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22v3.293c0 .319.22.694.825.576C20.565 21.795 24 17.3 24 12c0-6.63-5.37-12-12-12z" />
               </svg>
-              <span>Continue with GitHub</span>
+              <span>{isLoading ? 'Connecting...' : 'Continue with GitHub'}</span>
             </motion.button>
           </div>
 
@@ -480,6 +440,7 @@ export default function LoginPage() {
                         placeholder="What should we call you?"
                         className="w-full pl-10 pr-4 py-3 glass-input text-sm"
                         required={mode === 'register'}
+                        disabled={isLoading}
                         suppressHydrationWarning
                       />
                     </div>
@@ -505,6 +466,7 @@ export default function LoginPage() {
                     placeholder="you@example.com"
                     className="w-full pl-10 pr-4 py-3 glass-input text-sm"
                     required
+                    disabled={isLoading}
                     suppressHydrationWarning
                   />
                 </div>
@@ -529,6 +491,7 @@ export default function LoginPage() {
                     className="w-full pl-10 pr-12 py-3 glass-input text-sm"
                     required
                     minLength={8}
+                    disabled={isLoading}
                     suppressHydrationWarning
                   />
                   <button

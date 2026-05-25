@@ -89,15 +89,15 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   // Route protection redirect checks
   useEffect(() => {
     if (!isLoading) {
-      const storedToken = localStorage.getItem('esona_token');
-      const storedUser = getStoredUser();
+      const storedToken = localStorage.getItem('esona_token') || token;
+      const storedUser = getStoredUser() || user;
 
       if (!storedToken) {
         if (protectedRoutes.some(route => pathname.startsWith(route)) && pathname !== '/login') {
           router.push('/login');
         }
       } else {
-        const hasCompletedOnboarding = user?.onboardingCompleted ?? storedUser?.onboardingCompleted ?? false;
+        const hasCompletedOnboarding = storedUser?.onboardingCompleted ?? false;
         
         if (pathname === '/login') {
           if (!hasCompletedOnboarding) {
@@ -113,7 +113,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     }
-  }, [pathname, isLoading, router, user]);
+  }, [pathname, isLoading, router, user, token]);
 
   const login = (newToken: string, newUser: User) => {
     localStorage.setItem('esona_token', newToken);
@@ -134,11 +134,26 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.warn('[AuthProvider] Signout error:', e);
     }
-    localStorage.removeItem('esona_token');
-    localStorage.removeItem('esona_user');
+    
+    // Clear all storage
+    localStorage.clear();
+    sessionStorage.clear();
+    
+    // Clear document cookies manually to prevent any stale state
+    if (typeof document !== 'undefined') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i];
+        const eqPos = cookie.indexOf('=');
+        const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
+        document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+        document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=' + window.location.hostname;
+      }
+    }
+    
     setTokenState(null);
     setUser(null);
-    router.push('/login');
+    window.location.href = '/login';
   };
 
   const refreshUser = async () => {

@@ -1,40 +1,42 @@
 @import "tailwindcss";
 
 /* ============================================= */
-/* ESONA DESIGN SYSTEM - CSS Custom Properties   */
+/* ESONA DESIGN SYSTEM - Cloud Theme             */
 /* ============================================= */
 
 :root {
-  /* Background Colors */
-  --bg-primary: #0a0e1a;
-  --bg-secondary: #111827;
-  --bg-tertiary: #1e293b;
+  /* Background Colors — Sky-inspired */
+  --bg-primary: #0b1120;
+  --bg-secondary: #0f172a;
+  --bg-tertiary: #1a2540;
 
   /* Surface Colors */
-  --surface-glass: rgba(17, 24, 39, 0.6);
+  --surface-glass: rgba(15, 23, 42, 0.55);
 
-  /* Accent Colors */
-  --accent-cyan: #22d3ee;
+  /* Accent Colors — Sky & Cloud palette */
+  --accent-cyan: #38bdf8;
   --accent-blue: #3b82f6;
   --accent-purple: #a78bfa;
   --accent-pink: #f472b6;
   --accent-emerald: #34d399;
+  --accent-sky: #7dd3fc;
 
   /* Text Colors */
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
 
-  /* Glass Effects */
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-bg: rgba(15, 23, 42, 0.7);
+  /* Glass Effects — Frosted cloud glass */
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-bg: rgba(15, 23, 42, 0.6);
 
-  /* Glow Effects */
-  --glow-cyan: 0 0 20px rgba(34, 211, 238, 0.3);
+  /* Glow Effects — Cloud-inspired */
+  --glow-cyan: 0 0 20px rgba(56, 189, 248, 0.3);
   --glow-purple: 0 0 20px rgba(167, 139, 250, 0.3);
   --glow-blue: 0 0 20px rgba(59, 130, 246, 0.3);
   --glow-pink: 0 0 20px rgba(244, 114, 182, 0.3);
   --glow-emerald: 0 0 20px rgba(52, 211, 153, 0.3);
+  --glow-sky: 0 0 25px rgba(125, 211, 252, 0.25);
 }
 
 /* ============================================= */
@@ -47,9 +49,17 @@ html {
 
 body {
   background-color: var(--bg-primary);
-  background-image: linear-gradient(rgba(10, 14, 26, 0.82), rgba(10, 14, 26, 0.94)), url('/background.png');
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(11, 17, 32, 0.35) 0%,
+      rgba(11, 17, 32, 0.55) 30%,
+      rgba(11, 17, 32, 0.75) 60%,
+      rgba(11, 17, 32, 0.92) 100%
+    ),
+    url('/cloud-hero.png');
   background-size: cover;
-  background-position: center;
+  background-position: center 20%;
   background-repeat: no-repeat;
   background-attachment: fixed;
   color: var(--text-primary);
@@ -60,12 +70,12 @@ body {
 
 /* Selection Color */
 ::selection {
-  background-color: rgba(34, 211, 238, 0.3);
+  background-color: rgba(56, 189, 248, 0.3);
   color: var(--text-primary);
 }
 
 ::-moz-selection {
-  background-color: rgba(34, 211, 238, 0.3);
+  background-color: rgba(56, 189, 248, 0.3);
   color: var(--text-primary);
 }
 
@@ -83,18 +93,18 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(34, 211, 238, 0.3);
+  background: rgba(56, 189, 248, 0.3);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(34, 211, 238, 0.5);
+  background: rgba(56, 189, 248, 0.5);
 }
 
 /* Firefox scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(34, 211, 238, 0.3) var(--bg-primary);
+  scrollbar-color: rgba(56, 189, 248, 0.3) var(--bg-primary);
 }
 
 /* ============================================= */
@@ -138,7 +148,7 @@ body {
 /* ============================================= */
 
 .glow-text {
-  background: linear-gradient(135deg, #ff7e5f, #feb47b);
+  background: linear-gradient(135deg, #7dd3fc, #38bdf8, #a78bfa);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -202,12 +212,35 @@ body {
   }
 }
 
-@keyframes wave {
+@keyframes cloud-drift {
   0% {
     transform: translateX(0);
   }
+  50% {
+    transform: translateX(30px);
+  }
   100% {
-    transform: translateX(-50%);
+    transform: translateX(0);
+  }
+}
+
+@keyframes cloud-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-15px);
+  }
+}
+
+@keyframes cloud-morph {
+  0%, 100% {
+    opacity: 0.15;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.25;
+    transform: scale(1.05);
   }
 }
 
@@ -230,10 +263,10 @@ body {
 
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 0 0 10px rgba(34, 211, 238, 0.2);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
   }
   50% {
-    box-shadow: 0 0 30px rgba(34, 211, 238, 0.5);
+    box-shadow: 0 0 30px rgba(56, 189, 248, 0.5);
   }
 }
 
@@ -294,8 +327,16 @@ body {
   animation: breathe 4s ease-in-out infinite;
 }
 
-.animate-wave {
-  animation: wave 15s linear infinite;
+.animate-cloud-drift {
+  animation: cloud-drift 20s ease-in-out infinite;
+}
+
+.animate-cloud-float {
+  animation: cloud-float 8s ease-in-out infinite;
+}
+
+.animate-cloud-morph {
+  animation: cloud-morph 12s ease-in-out infinite;
 }
 
 .animate-particle {
@@ -366,7 +407,7 @@ body {
 }
 
 .markdown-content code {
-  background: rgba(34, 211, 238, 0.1);
+  background: rgba(56, 189, 248, 0.1);
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
   font-size: 0.875em;
@@ -412,4 +453,34 @@ body {
   .glass-card {
     border-radius: 0.75rem;
   }
+}
+
+/* ============================================= */
+/* PREMIUM LOGO ACTIONS & ANIMATIONS            */
+/* ============================================= */
+
+@keyframes logo-float {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+.logo-premium {
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.35)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.logo-premium:hover {
+  transform: scale(1.08) translateY(-1px);
+  filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.65)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+}
+
+.logo-float {
+  animation: logo-float 4.5s ease-in-out infinite;
 }

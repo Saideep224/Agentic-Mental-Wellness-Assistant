@@ -13,11 +13,30 @@ export default function AuthCallbackPage() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        // Exchange session and check if logged in
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError) throw sessionError;
-        
+        // 1. Check for error parameters in the URL first (e.g. access_denied, popup_closed)
+        const searchParams = new URLSearchParams(window.location.search);
+        const urlError = searchParams.get('error') || searchParams.get('error_description');
+        if (urlError) {
+          throw new Error(urlError);
+        }
+
+        const code = searchParams.get('code');
+        let session = null;
+
+        // 2. Exchange code for session if PKCE code is present
+        if (code) {
+          console.log('[Auth Callback] PKCE code found, exchanging for session...');
+          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          if (exchangeError) throw exchangeError;
+          session = data.session;
+        } else {
+          // Fallback to getting current session (implicit grant / hash fallback)
+          console.log('[Auth Callback] No code parameter, checking existing session...');
+          const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError) throw sessionError;
+          session = currentSession;
+        }
+
         if (!session || !session.user) {
           throw new Error('No active session found. Please try logging in again.');
         }

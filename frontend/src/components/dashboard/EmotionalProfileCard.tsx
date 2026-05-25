@@ -74,9 +74,9 @@ export default function EmotionalProfileCard({ profile }: EmotionalProfileCardPr
           <div
             className="px-3 py-1.5 rounded-full text-xs font-medium"
             style={{
-              background: 'rgba(34, 211, 238, 0.1)',
+              background: 'rgba(56, 189, 248, 0.1)',
               color: 'var(--accent-cyan)',
-              border: '1px solid rgba(34, 211, 238, 0.2)',
+              border: '1px solid rgba(56, 189, 248, 0.2)',
             }}
           >
             {commStyle}

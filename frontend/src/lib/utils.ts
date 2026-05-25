@@ -23,13 +23,43 @@ export function formatDate(date: Date | string | null | undefined): string {
   try {
     const d = typeof date === 'string' ? new Date(date) : date;
     if (isNaN(d.getTime())) return 'Just now';
-    if (isToday(d)) {
-      return format(d, 'h:mm a');
+
+    const getLocalDateString = (dateObj: Date) => {
+      return dateObj.toLocaleDateString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+      });
+    };
+
+    const dString = getLocalDateString(d);
+    const today = new Date();
+    const todayString = getLocalDateString(today);
+
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayString = getLocalDateString(yesterday);
+
+    const timeString = d.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: true
+    });
+
+    if (dString === todayString) {
+      return timeString;
     }
-    if (isYesterday(d)) {
-      return `Yesterday at ${format(d, 'h:mm a')}`;
+    if (dString === yesterdayString) {
+      return `Yesterday at ${timeString}`;
     }
-    return format(d, 'MMM d, yyyy');
+
+    return d.toLocaleDateString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      month: "short",
+      day: "numeric",
+      year: "numeric"
+    });
   } catch {
     return 'Just now';
   }
@@ -57,7 +87,12 @@ export function formatMessageTime(date: Date | string | null | undefined): strin
   try {
     const d = typeof date === 'string' ? new Date(date) : date;
     if (isNaN(d.getTime())) return '';
-    return format(d, 'h:mm a');
+    return d.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: true
+    });
   } catch {
     return '';
   }

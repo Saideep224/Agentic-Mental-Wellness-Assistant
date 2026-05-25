@@ -52,7 +52,7 @@ export default function MoodTrendChart({ data, title = "Mood Trends" }: MoodTren
   if (!data || data.length === 0) {
     return (
       <div className="glass-card p-8 flex flex-col items-center justify-center min-h-[320px] text-center border border-white/5 bg-white/2 hover:border-white/10 transition-all duration-300">
-        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4 text-2xl" style={{ background: 'rgba(34, 211, 238, 0.1)', color: 'var(--accent-cyan)' }}>
+        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4 text-2xl" style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-cyan)' }}>
           📈
         </div>
         <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
@@ -125,7 +125,7 @@ export default function MoodTrendChart({ data, title = "Mood Trends" }: MoodTren
               activeDot={{
                 r: 5,
                 fill: '#22d3ee',
-                stroke: 'rgba(34, 211, 238, 0.3)',
+                stroke: 'rgba(56, 189, 248, 0.3)',
                 strokeWidth: 4,
               }}
             />

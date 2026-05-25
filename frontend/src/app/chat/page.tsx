@@ -178,8 +178,8 @@ export default function ChatPage() {
                   disabled={isCreating}
                   className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 mb-4 cursor-pointer transition-all duration-300"
                   style={{
-                    background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.1), rgba(59, 130, 246, 0.05))',
-                    border: '1px solid rgba(34, 211, 238, 0.2)',
+                    background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(59, 130, 246, 0.05))',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
                     color: 'var(--accent-cyan)',
                   }}
                 >
@@ -215,11 +215,11 @@ export default function ChatPage() {
                         style={{
                           background:
                             activeConversationId === convo.id
-                              ? 'rgba(34, 211, 238, 0.08)'
+                              ? 'rgba(56, 189, 248, 0.08)'
                               : 'transparent',
                           border:
                             activeConversationId === convo.id
-                              ? '1px solid rgba(34, 211, 238, 0.15)'
+                              ? '1px solid rgba(56, 189, 248, 0.15)'
                               : '1px solid transparent',
                         }}
                       >
@@ -263,7 +263,7 @@ export default function ChatPage() {
                                   setEditingId(convo.id);
                                   setEditTitle(convo.title || 'New Conversation');
                                 }}
-                                className="p-1 text-white/40 hover:text-cyan-400 hover:bg-white/5 rounded transition-all duration-150 cursor-pointer"
+                                className="p-1 text-white/40 hover:text-sky-400 hover:bg-white/5 rounded transition-all duration-150 cursor-pointer"
                                 title="Edit Title"
                               >
                                 <Edit2 size={12} />
@@ -320,15 +320,11 @@ export default function ChatPage() {
             </button>
 
             <div className="flex items-center gap-2">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-                style={{
-                  background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-purple))',
-                  color: 'var(--bg-primary)',
-                }}
-              >
-                E
-              </div>
+              <img
+                src="/logo.png"
+                alt="Esona Logo"
+                className="w-8 h-8 object-contain logo-premium"
+              />
               <div>
                 <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                   Esona

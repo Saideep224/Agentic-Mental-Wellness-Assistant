@@ -30,10 +30,10 @@ export default function OptionCard({ option, index, isSelected, onSelect }: Opti
       )}
       style={{
         background: isSelected
-          ? 'rgba(34, 211, 238, 0.1)'
+          ? 'rgba(56, 189, 248, 0.1)'
           : 'var(--glass-bg)',
         border: isSelected
-          ? '1px solid rgba(34, 211, 238, 0.4)'
+          ? '1px solid rgba(56, 189, 248, 0.4)'
           : '1px solid var(--glass-border)',
         boxShadow: isSelected ? 'var(--glow-cyan)' : 'none',
         backdropFilter: 'blur(10px)',

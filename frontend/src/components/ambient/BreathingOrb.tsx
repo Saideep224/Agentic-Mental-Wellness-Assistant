@@ -19,7 +19,7 @@ export default function BreathingOrb({ size = 200, className }: BreathingOrbProp
         style={{
           width: size,
           height: size,
-          background: 'radial-gradient(circle, rgba(34, 211, 238, 0.12) 0%, rgba(167, 139, 250, 0.04) 50%, transparent 100%)',
+          background: 'radial-gradient(circle, rgba(56, 189, 248, 0.12) 0%, rgba(167, 139, 250, 0.04) 50%, transparent 100%)',
         }}
       />
 
@@ -29,7 +29,7 @@ export default function BreathingOrb({ size = 200, className }: BreathingOrbProp
         style={{
           width: size * 0.75,
           height: size * 0.75,
-          background: 'radial-gradient(circle, rgba(34, 211, 238, 0.22) 0%, rgba(59, 130, 246, 0.08) 60%, transparent 100%)',
+          background: 'radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, rgba(59, 130, 246, 0.08) 60%, transparent 100%)',
           animationDelay: '0.5s',
         }}
       />
@@ -40,7 +40,7 @@ export default function BreathingOrb({ size = 200, className }: BreathingOrbProp
         style={{
           width: size * 0.45,
           height: size * 0.45,
-          background: 'radial-gradient(circle, rgba(34, 211, 238, 0.45) 0%, rgba(34, 211, 238, 0.1) 70%, transparent 100%)',
+          background: 'radial-gradient(circle, rgba(56, 189, 248, 0.45) 0%, rgba(56, 189, 248, 0.1) 70%, transparent 100%)',
           animationDelay: '1s',
         }}
       />
@@ -51,7 +51,7 @@ export default function BreathingOrb({ size = 200, className }: BreathingOrbProp
         style={{
           width: size * 0.1,
           height: size * 0.1,
-          background: 'radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(34, 211, 238, 0.5) 50%, transparent 100%)',
+          background: 'radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(56, 189, 248, 0.5) 50%, transparent 100%)',
         }}
       />
     </div>

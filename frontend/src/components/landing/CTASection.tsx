@@ -11,7 +11,7 @@ export default function CTASection() {
         className="absolute inset-0"
         style={{
           background:
-            'radial-gradient(ellipse at center, rgba(34, 211, 238, 0.06) 0%, rgba(167, 139, 250, 0.03) 40%, transparent 70%)',
+            'radial-gradient(ellipse at center, rgba(56, 189, 248, 0.06) 0%, rgba(125, 211, 252, 0.03) 40%, transparent 70%)',
         }}
       />
 

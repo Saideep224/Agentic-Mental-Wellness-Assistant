@@ -83,7 +83,7 @@ export default function AmbientAudioToggle() {
           className="w-12 h-12 rounded-full glass-card flex items-center justify-center cursor-pointer transition-all duration-300"
           style={{
             boxShadow: isPlaying ? 'var(--glow-cyan)' : 'none',
-            borderColor: isPlaying ? 'rgba(34, 211, 238, 0.3)' : 'var(--glass-border)',
+            borderColor: isPlaying ? 'rgba(56, 189, 248, 0.3)' : 'var(--glass-border)',
           }}
           aria-label={isPlaying ? 'Mute ambient sounds' : 'Play ambient sounds'}
         >

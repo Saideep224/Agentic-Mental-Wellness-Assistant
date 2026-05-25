@@ -42,10 +42,10 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           className="px-4 py-3 rounded-2xl text-sm leading-relaxed"
           style={{
             background: isUser
-              ? 'rgba(34, 211, 238, 0.12)'
+              ? 'rgba(56, 189, 248, 0.12)'
               : 'rgba(167, 139, 250, 0.08)',
             border: isUser
-              ? '1px solid rgba(34, 211, 238, 0.2)'
+              ? '1px solid rgba(56, 189, 248, 0.2)'
               : '1px solid rgba(167, 139, 250, 0.15)',
             borderBottomRightRadius: isUser ? '6px' : '18px',
             borderBottomLeftRadius: isUser ? '18px' : '6px',

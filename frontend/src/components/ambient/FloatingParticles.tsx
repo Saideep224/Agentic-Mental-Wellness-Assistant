@@ -18,14 +18,14 @@ export default function FloatingParticles() {
 
   useEffect(() => {
     const colors = [
-      'rgba(34, 211, 238, 0.4)',  // cyan
-      'rgba(167, 139, 250, 0.35)', // purple
-      'rgba(59, 130, 246, 0.3)',   // blue
-      'rgba(34, 211, 238, 0.25)',  // dim cyan
-      'rgba(167, 139, 250, 0.2)', // dim purple
+      'rgba(255, 255, 255, 0.35)',  // white wisps
+      'rgba(125, 211, 252, 0.3)',   // sky blue
+      'rgba(56, 189, 248, 0.25)',   // bright sky
+      'rgba(167, 139, 250, 0.2)',   // soft lavender
+      'rgba(255, 255, 255, 0.2)',   // dim white
     ];
 
-    const generated: Particle[] = Array.from({ length: 40 }, (_, i) => ({
+    const generated: Particle[] = Array.from({ length: 30 }, (_, i) => ({
       id: i,
       x: Math.random() * 100,
       y: Math.random() * 100,

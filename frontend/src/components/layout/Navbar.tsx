@@ -8,8 +8,10 @@ import { MessageCircle, BarChart3, Menu, X, LogOut, User as UserIcon } from 'luc
 import { cn } from '@/lib/utils';
 import { getToken, getStoredUser, clearAuth } from '@/lib/api';
 import ProfileModal from '@/components/layout/ProfileModal';
+import { useAuth } from '@/providers/AuthProvider';
 
 export default function Navbar() {
+  const { logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -28,9 +30,8 @@ export default function Navbar() {
     { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   ];
 
-  const handleLogout = () => {
-    clearAuth();
-    window.location.href = '/';
+  const handleLogout = async () => {
+    await logout();
   };
 
   return (
@@ -50,17 +51,11 @@ export default function Navbar() {
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 group">
-            <div
-              className="w-8 h-8 rounded-full flex items-center justify-center"
-              style={{
-                background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-purple))',
-                boxShadow: 'var(--glow-cyan)',
-              }}
-            >
-              <span className="text-sm font-bold" style={{ color: 'var(--bg-primary)' }}>
-                E
-              </span>
-            </div>
+            <img
+              src="/logo.png"
+              alt="Esona Logo"
+              className="w-8 h-8 object-contain logo-premium"
+            />
             <span
               className="text-xl font-bold glow-text"
               style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
@@ -81,14 +76,14 @@ export default function Navbar() {
                     className={cn(
                       'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300',
                       isActive
-                        ? 'text-[var(--accent-cyan)]'
+                        ? 'text-sky-400'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     )}
                     style={
                       isActive
                         ? {
-                            background: 'rgba(34, 211, 238, 0.1)',
-                            boxShadow: 'inset 0 0 10px rgba(34, 211, 238, 0.1)',
+                            background: 'rgba(56, 189, 248, 0.1)',
+                            boxShadow: 'inset 0 0 10px rgba(56, 189, 248, 0.1)',
                           }
                         : {}
                     }
@@ -106,7 +101,7 @@ export default function Navbar() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setIsProfileModalOpen(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass-card hover:border-[rgba(34,211,238,0.3)] transition-all duration-300 cursor-pointer"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass-card hover:border-[rgba(56,189,248,0.3)] transition-all duration-300 cursor-pointer"
                 >
                   <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center border border-white/10 shrink-0">
                     {user?.avatarUrl ? (
@@ -183,7 +178,7 @@ export default function Navbar() {
                         )}
                         style={
                           isActive
-                            ? { background: 'rgba(34, 211, 238, 0.1)' }
+                            ? { background: 'rgba(56, 189, 248, 0.1)' }
                             : {}
                         }
                       >
@@ -202,7 +197,7 @@ export default function Navbar() {
                       }}
                       className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-300 cursor-pointer"
                     >
-                      <UserIcon size={18} className="text-cyan-400" />
+                      <UserIcon size={18} className="text-sky-400" />
                       View Profile
                     </button>
                     <button

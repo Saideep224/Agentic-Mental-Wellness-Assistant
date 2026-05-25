@@ -20,7 +20,7 @@ export default function CategoryTransition({ category, onContinue }: CategoryTra
   };
 
   const glowMap: Record<string, string> = {
-    cyan: '0 0 40px rgba(34, 211, 238, 0.2)',
+    cyan: '0 0 40px rgba(56, 189, 248, 0.2)',
     purple: '0 0 40px rgba(167, 139, 250, 0.2)',
     emerald: '0 0 40px rgba(52, 211, 153, 0.2)',
     pink: '0 0 40px rgba(244, 114, 182, 0.2)',

@@ -37,7 +37,7 @@ function PersonalityCard({ profile }: { profile: any }) {
       </p>
       
       <div>
-        <div className="text-sm font-bold mb-2 text-cyan-400">
+        <div className="text-sm font-bold mb-2 text-sky-400">
           Type: {personalityType}
         </div>
         <p className="text-sm text-slate-300 mb-4 font-medium italic">
@@ -75,7 +75,7 @@ function InterestsSection({ profile }: { profile: any }) {
 
       <div className="space-y-4">
         <div>
-          <h4 className="text-xs font-semibold mb-1 text-cyan-400">Safest Environment 🏠</h4>
+          <h4 className="text-xs font-semibold mb-1 text-sky-400">Safest Environment 🏠</h4>
           <p className="text-sm text-slate-300">{safestEnv}</p>
         </div>
 
@@ -97,7 +97,7 @@ function InterestsSection({ profile }: { profile: any }) {
         </div>
 
         {hasAnime && (
-          <p className="text-xs text-cyan-300/80 bg-cyan-950/10 p-2.5 rounded-lg border border-cyan-500/10">
+          <p className="text-xs text-sky-300/80 bg-sky-950/10 p-2.5 rounded-lg border border-sky-500/10">
             ✨ Tip: When you feel overwhelmed, try taking a 15-minute break to listen to some chill Lo-Fi anime soundtracks!
           </p>
         )}
@@ -182,7 +182,7 @@ function PersonalizedSuggestionsCard({ profile }: { profile: any }) {
       <ul className="space-y-3">
         {suggestions.slice(0, 4).map((s, idx) => (
           <li key={idx} className="text-xs sm:text-sm text-slate-300 flex items-start gap-2 bg-white/2 p-2.5 rounded-lg border border-white/5">
-            <span className="text-cyan-400 select-none">✨</span>
+            <span className="text-sky-400 select-none">✨</span>
             <span>{s}</span>
           </li>
         ))}
@@ -339,7 +339,7 @@ export default function DashboardPage() {
             whileTap={{ scale: 0.95 }}
             onClick={refresh}
             disabled={isLoading}
-            className="p-3 rounded-xl glass-card cursor-pointer transition-all duration-300 hover:border-[rgba(34,211,238,0.3)]"
+            className="p-3 rounded-xl glass-card cursor-pointer transition-all duration-300 hover:border-[rgba(56,189,248,0.3)]"
             title="Refresh data"
           >
             <RefreshCw
@@ -367,11 +367,11 @@ export default function DashboardPage() {
             animate={{ opacity: 1, scale: 1 }}
             className="mb-8 p-6 rounded-2xl border text-center glass-card"
             style={{
-              borderColor: 'rgba(34, 211, 238, 0.15)',
-              background: 'rgba(34, 211, 238, 0.03)',
+              borderColor: 'rgba(56, 189, 248, 0.15)',
+              background: 'rgba(56, 189, 248, 0.03)',
             }}
           >
-            <p className="text-lg font-semibold text-cyan-400 flex items-center justify-center gap-2">
+            <p className="text-lg font-semibold text-sky-400 flex items-center justify-center gap-2">
               Start chatting to generate insights 🌱
             </p>
             <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">

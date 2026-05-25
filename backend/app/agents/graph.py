@@ -390,8 +390,10 @@ async def response_agent(state: AgentState) -> dict:
     if memories:
         memories_str = "\n".join(f"- User once said: '{m.get('content', '')}' (detected feeling: {m.get('metadata', {}).get('emotion', 'neutral')})" for m in memories)
 
-    tz_name = time.tzname[0] if hasattr(time, 'tzname') else 'local time'
-    current_time_str = f"{datetime.now().strftime('%A, %B %d, %Y %I:%M %p')} ({tz_name})"
+    from zoneinfo import ZoneInfo
+    ist_tz = ZoneInfo("Asia/Kolkata")
+    current_time_ist = datetime.now(ist_tz)
+    current_time_str = current_time_ist.strftime('%A, %B %d, %Y %I:%M %p (IST)')
 
     formatted_system_prompt = RESPONSE_SYSTEM_PROMPT.replace("{user_name}", user_name) \
                                                     .replace("{personality_type}", personality_type) \

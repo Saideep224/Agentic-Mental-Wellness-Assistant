@@ -88,7 +88,14 @@ export default function OnboardingPage() {
           transition={{ duration: 0.6, ease: 'easeOut' }}
           className="text-center max-w-md w-full"
         >
-          <BreathingOrb size={120} className="mx-auto mb-8 animate-pulse" />
+          <div className="relative w-32 h-32 mx-auto mb-8 flex items-center justify-center">
+            <BreathingOrb size={120} className="absolute inset-0 opacity-60" />
+            <img
+              src="/logo.png"
+              alt="Esona Logo"
+              className="w-16 h-16 object-contain logo-premium logo-float relative z-10"
+            />
+          </div>
 
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -98,7 +105,7 @@ export default function OnboardingPage() {
           >
             <Sparkles
               size={36}
-              className="mx-auto mb-2 text-cyan-400 animate-bounce"
+              className="mx-auto mb-2 text-sky-400 animate-bounce"
             />
             <h2
               className="text-3xl font-bold mb-3 glow-text"
@@ -123,7 +130,7 @@ export default function OnboardingPage() {
               className="h-full"
               style={{
                 background: 'linear-gradient(90deg, var(--accent-cyan), var(--accent-purple))',
-                boxShadow: '0 0 10px rgba(34, 211, 238, 0.5)',
+                boxShadow: '0 0 10px rgba(56, 189, 248, 0.5)',
               }}
             />
           </div>

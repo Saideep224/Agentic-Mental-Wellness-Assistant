@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Brain, MessageCircle, Waves } from 'lucide-react';
+import { Brain, MessageCircle, Cloud } from 'lucide-react';
 
 const features = [
   {
@@ -10,7 +10,7 @@ const features = [
     title: 'Understands You',
     description:
       'A multi-agent system that analyzes your personality, emotional patterns, and communication style to truly get who you are.',
-    gradient: 'linear-gradient(135deg, rgba(34, 211, 238, 0.1), rgba(59, 130, 246, 0.05))',
+    gradient: 'linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(59, 130, 246, 0.05))',
     glowColor: 'var(--glow-cyan)',
     iconColor: 'var(--accent-cyan)',
   },
@@ -25,12 +25,12 @@ const features = [
     iconColor: 'var(--accent-purple)',
   },
   {
-    icon: Waves,
-    emoji: '🌊',
+    icon: Cloud,
+    emoji: '☁️',
     title: 'Adapts to You',
     description:
       'Communication style that matches your preferences — whether you need a friend, a listener, or honest perspective.',
-    gradient: 'linear-gradient(135deg, rgba(52, 211, 153, 0.1), rgba(34, 211, 238, 0.05))',
+    gradient: 'linear-gradient(135deg, rgba(52, 211, 153, 0.1), rgba(56, 189, 248, 0.05))',
     glowColor: 'var(--glow-emerald)',
     iconColor: 'var(--accent-emerald)',
   },

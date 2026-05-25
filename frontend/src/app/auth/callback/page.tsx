@@ -62,15 +62,20 @@ export default function AuthCallbackPage() {
           
         const onboardingCompleted = profile?.onboarding_completed ?? false;
 
+        const avatarUrl = userMeta.avatar_url || userMeta.picture || null;
+        const githubUsername = provider === 'github' ? (userMeta.user_name || null) : null;
+
         // Upsert profile in Supabase database
         await supabase.from("profiles").upsert({
           id: session.user.id,
           email: session.user.email,
           name: userMeta.full_name || userMeta.name || session.user.email?.split('@')[0] || 'OAuth User',
           provider: provider,
+          avatar_url: avatarUrl,
+          github_username: githubUsername,
           onboarding_completed: onboardingCompleted
         });
-        console.log('[Auth Callback] Profile upserted in Supabase database.');
+        console.log('[Auth Callback] Profile upserted with avatar in Supabase database.');
 
         // Sync and register in backend SQLite/Postgres DB using getMe JWT call
         const jwtToken = session.access_token;

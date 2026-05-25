@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RefreshCw, BarChart3, Sparkles, ChevronDown, ChevronUp, Loader2, Edit2, Save, X } from 'lucide-react';
+import { RefreshCw, BarChart3, Sparkles, ChevronDown, ChevronUp, Loader2, Edit2, Save, X, Heart } from 'lucide-react';
+import Link from 'next/link';
 import Navbar from '@/components/layout/Navbar';
 import MoodTrendChart from '@/components/dashboard/MoodTrendChart';
 import StressPatternChart from '@/components/dashboard/StressPatternChart';
@@ -696,38 +697,140 @@ export default function DashboardPage() {
         )}
 
         {/* Dashboard grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Mood Journey - Full width */}
-          <div className="lg:col-span-2">
-            <MoodTrendChart data={moodTrends} title="📈 Mood Journey" />
-          </div>
+        {(() => {
+          // Check if user has actual onboarding answers (non-empty selections)
+          const onboardingAnswers = (emotionalProfile as any)?.onboardingAnswers || [];
+          const hasOnboardingAnswers = onboardingAnswers.length > 0 &&
+            onboardingAnswers.some((a: any) => a.selected_answers && a.selected_answers.length > 0);
 
-          {/* Your Answers Card - Full width */}
-          <YourAnswersCard profile={emotionalProfile} onUpdate={refresh} />
+          return (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Mood Journey - Full width */}
+              <div className="lg:col-span-2">
+                <MoodTrendChart data={moodTrends} title="📈 Mood Journey" />
+              </div>
 
-          {/* Personality Card */}
-          <PersonalityCard profile={emotionalProfile} />
+              {/* Knowing Me link card - Full width */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.1 }}
+                className="glass-card p-5 lg:col-span-2"
+              >
+                <Link
+                  href="/knowing-me"
+                  className="flex items-center justify-between group cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                      style={{
+                        background: 'rgba(244, 114, 182, 0.1)',
+                        border: '1px solid rgba(244, 114, 182, 0.15)',
+                      }}
+                    >
+                      <Heart size={18} className="text-pink-400" />
+                    </div>
+                    <div>
+                      <h3
+                        className="text-base font-semibold text-white group-hover:text-pink-300 transition-colors"
+                        style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+                      >
+                        Knowing Me
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        {hasOnboardingAnswers
+                          ? 'Review and update your personality answers'
+                          : 'Answer questions to personalize your experience'
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-slate-500 group-hover:text-pink-400 transition-colors text-lg">→</span>
+                </Link>
+              </motion.div>
 
-          {/* Emotional Style 💭 */}
-          <EmotionalProfileCard profile={emotionalProfile} />
+              {hasOnboardingAnswers ? (
+                <>
+                  {/* Personality Card */}
+                  <PersonalityCard profile={emotionalProfile} />
 
-          {/* Interests Section */}
-          <InterestsSection profile={emotionalProfile} />
+                  {/* Emotional Style 💭 */}
+                  <EmotionalProfileCard profile={emotionalProfile} />
 
-          {/* Emotional Pattern Analysis 🧠 */}
-          <StressPatternChart data={stressPatterns} title="🧠 Emotional Pattern Analysis" />
+                  {/* Interests Section */}
+                  <InterestsSection profile={emotionalProfile} />
 
-          {/* Motivation Style Card */}
-          <MotivationStyleCard profile={emotionalProfile} />
+                  {/* Emotional Pattern Analysis 🧠 */}
+                  <StressPatternChart data={stressPatterns} title="🧠 Emotional Pattern Analysis" />
 
-          {/* Emotional Growth Tracker 🌱 */}
-          <GrowthTrackerCard profile={emotionalProfile} />
+                  {/* Motivation Style Card */}
+                  <MotivationStyleCard profile={emotionalProfile} />
 
-          {/* AI Insights / Personalized Suggestions */}
-          <PersonalizedSuggestionsCard profile={emotionalProfile} />
-          
-          <PersonalityInsights insights={insights} />
-        </div>
+                  {/* Emotional Growth Tracker 🌱 */}
+                  <GrowthTrackerCard profile={emotionalProfile} />
+
+                  {/* AI Insights / Personalized Suggestions */}
+                  <PersonalizedSuggestionsCard profile={emotionalProfile} />
+                  
+                  <PersonalityInsights insights={insights} />
+                </>
+              ) : (
+                /* CTA when no onboarding answers */
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.15 }}
+                  className="lg:col-span-2 p-8 rounded-2xl text-center relative overflow-hidden"
+                  style={{
+                    background: 'rgba(56, 189, 248, 0.03)',
+                    border: '1px solid rgba(56, 189, 248, 0.12)',
+                  }}
+                >
+                  {/* Glow accent */}
+                  <div
+                    className="absolute top-0 left-1/2 -translate-x-1/2 w-60 h-1 rounded-full"
+                    style={{
+                      background: 'linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), rgba(167, 139, 250, 0.4), transparent)',
+                    }}
+                  />
+                  <div className="mb-4">
+                    <div
+                      className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center mb-4"
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.08)',
+                        border: '1px solid rgba(56, 189, 248, 0.15)',
+                      }}
+                    >
+                      <Sparkles size={28} className="text-sky-400" />
+                    </div>
+                    <h3
+                      className="text-xl font-bold text-white mb-2"
+                      style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+                    >
+                      Unlock Your Emotional Insights
+                    </h3>
+                    <p className="text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
+                      Complete your &ldquo;Knowing Me&rdquo; section to unlock personalized emotional insights and adaptive AI conversations.
+                    </p>
+                  </div>
+                  <Link
+                    href="/knowing-me"
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300"
+                    style={{
+                      background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))',
+                      color: 'var(--bg-primary)',
+                      boxShadow: '0 0 20px rgba(56, 189, 248, 0.25)',
+                    }}
+                  >
+                    <Heart size={16} />
+                    Complete Knowing Me
+                  </Link>
+                </motion.div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Footer note */}
         <motion.p

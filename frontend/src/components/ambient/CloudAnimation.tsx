@@ -1,8 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Cloud, Eye, EyeOff, X, Minus, Plus } from 'lucide-react';
+import { useEffect, useRef, useCallback } from 'react';
 
 interface CloudLayer {
   id: number;
@@ -34,11 +32,6 @@ const CLOUD_LAYERS: CloudLayer[] = [
 ];
 
 export default function CloudAnimation() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [driftMultiplier, setDriftMultiplier] = useState(1);
-  const [cursorSensitivity, setCursorSensitivity] = useState(1);
-  const [showClouds, setShowClouds] = useState(true);
-
   // Mouse position ref (not state, to avoid re-renders)
   const mouseRef = useRef({ x: 0, y: 0 });
   const smoothMouseRef = useRef({ x: 0, y: 0 });
@@ -46,32 +39,6 @@ export default function CloudAnimation() {
   const rafIdRef = useRef<number>(0);
   const cloudContainerRef = useRef<HTMLDivElement>(null);
   const cloudRefs = useRef<(HTMLDivElement | null)[]>([]);
-
-  // Load from localStorage
-  useEffect(() => {
-    const savedDrift = localStorage.getItem('esona-cloud-drift');
-    const savedSens = localStorage.getItem('esona-cloud-sensitivity');
-    const savedShow = localStorage.getItem('esona-cloud-show');
-
-    if (savedDrift) setDriftMultiplier(Number(savedDrift));
-    if (savedSens) setCursorSensitivity(Number(savedSens));
-    if (savedShow) setShowClouds(savedShow === 'true');
-  }, []);
-
-  const handleSetDrift = (val: number) => {
-    setDriftMultiplier(val);
-    localStorage.setItem('esona-cloud-drift', String(val));
-  };
-
-  const handleSetSensitivity = (val: number) => {
-    setCursorSensitivity(val);
-    localStorage.setItem('esona-cloud-sensitivity', String(val));
-  };
-
-  const handleSetShowClouds = (val: boolean) => {
-    setShowClouds(val);
-    localStorage.setItem('esona-cloud-show', String(val));
-  };
 
   // Mouse tracking
   useEffect(() => {
@@ -97,15 +64,15 @@ export default function CloudAnimation() {
     smoothMouseRef.current.y += (mouseRef.current.y - smoothMouseRef.current.y) * lerpFactor;
 
     // Drift offset (continuous horizontal movement)
-    driftOffsetRef.current += 0.015 * driftMultiplier;
+    driftOffsetRef.current += 0.015 * 1;
 
     // Apply transforms to each cloud layer
     CLOUD_LAYERS.forEach((cloud, i) => {
       const el = cloudRefs.current[i];
       if (!el) return;
 
-      const parallaxX = smoothMouseRef.current.x * cloud.sensitivity * cursorSensitivity * 40;
-      const parallaxY = smoothMouseRef.current.y * cloud.sensitivity * cursorSensitivity * 20;
+      const parallaxX = smoothMouseRef.current.x * cloud.sensitivity * 1 * 40;
+      const parallaxY = smoothMouseRef.current.y * cloud.sensitivity * 1 * 20;
 
       // Drift offset varies per cloud
       const driftX = Math.sin(driftOffsetRef.current * cloud.driftSpeed + cloud.id * 0.7) * 30;
@@ -115,168 +82,46 @@ export default function CloudAnimation() {
     });
 
     rafIdRef.current = requestAnimationFrame(animate);
-  }, [driftMultiplier, cursorSensitivity]);
+  }, []);
 
   useEffect(() => {
-    if (showClouds) {
-      rafIdRef.current = requestAnimationFrame(animate);
-    }
+    rafIdRef.current = requestAnimationFrame(animate);
     return () => {
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
-  }, [animate, showClouds]);
-
-  const getDriftLabel = (val: number) => {
-    if (val <= 0.5) return 'Still Air ☁️';
-    if (val <= 1) return 'Gentle Breeze 🍃';
-    if (val <= 1.5) return 'Drifting ☁️';
-    if (val <= 2) return 'Breezy 💨';
-    return 'Rushing Wind 🌬️';
-  };
+  }, [animate]);
 
   return (
-    <>
-      {/* Cloud layers */}
-      {showClouds && (
+    <div
+      ref={cloudContainerRef}
+      className="fixed inset-0 pointer-events-none overflow-hidden"
+      style={{ zIndex: 1 }}
+      aria-hidden="true"
+    >
+      {CLOUD_LAYERS.map((cloud, i) => (
         <div
-          ref={cloudContainerRef}
-          className="fixed inset-0 pointer-events-none overflow-hidden"
-          style={{ zIndex: 1 }}
-          aria-hidden="true"
+          key={cloud.id}
+          ref={(el) => { cloudRefs.current[i] = el; }}
+          className="absolute will-change-transform"
+          style={{
+            left: `${cloud.x}%`,
+            top: `${cloud.y}%`,
+            width: `${cloud.width}px`,
+            height: `${cloud.height}px`,
+            opacity: cloud.opacity,
+            filter: cloud.blur > 0 ? `blur(${cloud.blur}px)` : undefined,
+            zIndex: cloud.zIndex,
+            transition: 'opacity 0.5s ease',
+          }}
         >
-          {CLOUD_LAYERS.map((cloud, i) => (
-            <div
-              key={cloud.id}
-              ref={(el) => { cloudRefs.current[i] = el; }}
-              className="absolute will-change-transform"
-              style={{
-                left: `${cloud.x}%`,
-                top: `${cloud.y}%`,
-                width: `${cloud.width}px`,
-                height: `${cloud.height}px`,
-                opacity: cloud.opacity,
-                filter: cloud.blur > 0 ? `blur(${cloud.blur}px)` : undefined,
-                zIndex: cloud.zIndex,
-                transition: 'opacity 0.5s ease',
-              }}
-            >
-              <div
-                className="w-full h-full rounded-full"
-                style={{
-                  background: 'radial-gradient(ellipse at center, rgba(56, 189, 248, 0.15) 0%, rgba(167, 139, 250, 0.06) 50%, transparent 100%)',
-                }}
-              />
-            </div>
-          ))}
+          <div
+            className="w-full h-full rounded-full"
+            style={{
+              background: 'radial-gradient(ellipse at center, rgba(56, 189, 248, 0.15) 0%, rgba(167, 139, 250, 0.06) 50%, transparent 100%)',
+            }}
+          />
         </div>
-      )}
-
-      {/* Cloud Controller Widget */}
-      <div className="fixed bottom-6 left-6 z-50 pointer-events-auto">
-        <AnimatePresence>
-          {!isOpen ? (
-            <motion.button
-              layoutId="cloud-panel"
-              onClick={() => setIsOpen(true)}
-              whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(91, 155, 213, 0.3)' }}
-              whileTap={{ scale: 0.95 }}
-              className="flex items-center justify-center w-12 h-12 rounded-full cursor-pointer glass-card text-white"
-              title="Adjust Cloud Settings"
-            >
-              <motion.div
-                animate={{ y: [0, -3, 0] }}
-                transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
-              >
-                <Cloud size={20} className="text-sky-400" />
-              </motion.div>
-            </motion.button>
-          ) : (
-            <motion.div
-              layoutId="cloud-panel"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="w-72 rounded-2xl glass-card p-5 shadow-2xl relative overflow-hidden"
-              style={{
-                background: 'rgba(10, 14, 30, 0.8)',
-                backdropFilter: 'blur(20px)',
-              }}
-            >
-              <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
-                <div className="flex items-center gap-2">
-                  <Cloud size={18} className="text-sky-400 animate-pulse" />
-                  <h3
-                    className="font-semibold text-sm text-white"
-                    style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
-                  >
-                    Cloud Controller
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="text-white/40 hover:text-white cursor-pointer transition-colors duration-200"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              <div className="space-y-4 text-xs">
-                {/* Drift Speed */}
-                <div className="space-y-1.5">
-                  <div className="flex justify-between items-center text-white/70">
-                    <span>Drift Speed</span>
-                    <span className="font-medium text-sky-400">{driftMultiplier.toFixed(1)}×</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="3"
-                    step="0.1"
-                    value={driftMultiplier}
-                    onChange={(e) => handleSetDrift(Number(e.target.value))}
-                    className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-sky-400"
-                  />
-                  <div className="text-[10px] text-white/50 italic text-right font-medium">
-                    {getDriftLabel(driftMultiplier)}
-                  </div>
-                </div>
-
-                {/* Cursor Sensitivity */}
-                <div className="space-y-1.5">
-                  <div className="flex justify-between items-center text-white/70">
-                    <span>Cursor Effect</span>
-                    <span className="font-medium text-sky-400">{cursorSensitivity.toFixed(1)}×</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="3"
-                    step="0.1"
-                    value={cursorSensitivity}
-                    onChange={(e) => handleSetSensitivity(Number(e.target.value))}
-                    className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-sky-400"
-                  />
-                </div>
-
-                {/* Toggle Clouds */}
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-white/70">Show Clouds</span>
-                  <button
-                    onClick={() => handleSetShowClouds(!showClouds)}
-                    className="p-1.5 rounded-lg border cursor-pointer hover:bg-white/5 transition-all duration-200"
-                    style={{
-                      color: showClouds ? 'rgb(56, 189, 248)' : 'rgba(255, 255, 255, 0.3)',
-                      borderColor: showClouds ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                    }}
-                  >
-                    {showClouds ? <Eye size={16} /> : <EyeOff size={16} />}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </>
+      ))}
+    </div>
   );
 }

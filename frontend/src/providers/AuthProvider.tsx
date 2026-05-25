@@ -18,7 +18,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const protectedRoutes = ['/chat', '/dashboard', '/onboarding'];
+const protectedRoutes = ['/chat', '/dashboard', '/onboarding', '/knowing-me'];
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -103,7 +103,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           if (!hasCompletedOnboarding) {
             router.push('/onboarding');
           } else {
-            router.push('/dashboard');
+            router.push('/chat');
           }
         } else if (!hasCompletedOnboarding && (pathname.startsWith('/chat') || pathname.startsWith('/dashboard'))) {
           console.log('[AuthProvider] Redirecting to onboarding...');
@@ -124,7 +124,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     if (!newUser.onboardingCompleted) {
       router.push('/onboarding');
     } else {
-      router.push('/dashboard');
+      router.push('/chat');
     }
   };
 

@@ -4,12 +4,13 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, BarChart3, Menu, X, LogOut, User as UserIcon } from 'lucide-react';
+import { MessageCircle, BarChart3, Heart, Menu, X, LogOut, User as UserIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getToken, getStoredUser, clearAuth } from '@/lib/api';
 import ProfileModal from '@/components/layout/ProfileModal';
 import { useAuth } from '@/providers/AuthProvider';
 import EsonaLogo from '@/components/layout/EsonaLogo';
+import UserAvatar from '@/components/layout/UserAvatar';
 
 export default function Navbar() {
   const { logout } = useAuth();
@@ -28,6 +29,7 @@ export default function Navbar() {
 
   const navLinks = [
     { href: '/chat', label: 'Chat', icon: MessageCircle },
+    { href: '/knowing-me', label: 'Knowing Me', icon: Heart },
     { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   ];
 
@@ -100,20 +102,13 @@ export default function Navbar() {
                   onClick={() => setIsProfileModalOpen(true)}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass-card hover:border-[rgba(56,189,248,0.3)] transition-all duration-300 cursor-pointer"
                 >
-                  <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center border border-white/10 shrink-0">
-                    {user?.avatarUrl ? (
-                      <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div
-                        className="w-full h-full flex items-center justify-center text-xs font-bold text-white"
-                        style={{
-                          background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))',
-                        }}
-                      >
-                        {user?.name?.charAt(0).toUpperCase() || <UserIcon size={14} />}
-                      </div>
-                    )}
-                  </div>
+                  <UserAvatar
+                    size={28}
+                    avatarUrl={user?.avatarUrl}
+                    name={user?.name}
+                    glow={false}
+                    enableHover={false}
+                  />
                   <span className="text-sm font-medium text-slate-300">
                     {user?.name || 'User'}
                   </span>

@@ -65,30 +65,58 @@ async def get_current_user(
     
     user_meta = payload.get("user_metadata", {}) if payload else {}
     onboarding_completed_meta = bool(user_meta.get("onboarding_completed", False))
+    avatar_url = user_meta.get("avatar_url") or user_meta.get("picture") or None
+    
+    # Detect OAuth provider
+    provider = "credentials"
+    if payload:
+        provider = payload.get("app_metadata", {}).get("provider", "credentials")
+        
+    github_username = user_meta.get("user_name") if provider == "github" else None
+    name = user_meta.get("full_name") or user_meta.get("name") or None
 
     if user is None:
         # Auto-create profile row if it doesn't exist yet (robust sync bridge)
         try:
             email = payload.get("email", "")
-            name = user_meta.get("full_name") or user_meta.get("name") or email.split("@")[0] or "Esona User"
-            provider = payload.get("app_metadata", {}).get("provider", "credentials")
+            if not name:
+                name = email.split("@")[0] or "Esona User"
             
             user = User(
                 id=user_id,
                 email=email,
                 name=name,
+                avatar_url=avatar_url,
                 provider=provider,
+                github_username=github_username,
                 onboarding_completed=onboarding_completed_meta,
             )
             db.add(user)
             await db.flush()
             await db.refresh(user)
-        except Exception:
+        except Exception as e:
+            print(f"[Auth Dependency] Failed to auto-create user: {e}")
             raise credentials_exception
     else:
-        # Sync onboarding status if metadata says true
+        # Sync onboarding status and OAuth metadata changes if any
+        updated = False
         if onboarding_completed_meta and not user.onboarding_completed:
             user.onboarding_completed = True
+            updated = True
+        if avatar_url and user.avatar_url != avatar_url:
+            user.avatar_url = avatar_url
+            updated = True
+        if name and user.name != name:
+            user.name = name
+            updated = True
+        if provider and user.provider != provider:
+            user.provider = provider
+            updated = True
+        if github_username and user.github_username != github_username:
+            user.github_username = github_username
+            updated = True
+            
+        if updated:
             await db.flush()
             
     return user

@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Sparkles, Loader2, SkipForward, AlertTriangle } from 'lucide-react';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import ProgressBar from '@/components/onboarding/ProgressBar';
 import QuestionCard from '@/components/onboarding/QuestionCard';
@@ -27,11 +27,13 @@ export default function OnboardingPage() {
     isComplete,
     direction,
     showCategoryTransition,
+    showSkipModal,
+    setShowSkipModal,
     error,
     selectOption,
     setCustomText,
     goToNext,
-    skipQuestion,
+    skipAllQuestions,
     goToPrevious,
     continuePastTransition,
   } = useOnboarding();
@@ -48,7 +50,7 @@ export default function OnboardingPage() {
       // First check local storage
       const user = getStoredUser();
       if (user && user.onboardingCompleted) {
-        router.push('/dashboard');
+        router.push('/chat');
         return;
       }
 
@@ -60,7 +62,7 @@ export default function OnboardingPage() {
             user.onboardingCompleted = true;
             setStoredUser(user);
           }
-          router.push('/dashboard');
+          router.push('/chat');
         }
       } catch (err) {
         console.error('Failed to check onboarding status:', err);
@@ -273,14 +275,16 @@ export default function OnboardingPage() {
           Back
         </motion.button>
 
+        {/* Skip ALL Questions button */}
         <motion.button
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
-          onClick={skipQuestion}
+          onClick={() => setShowSkipModal(true)}
           disabled={isSubmitting}
           className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent"
         >
-          {isLastQuestion ? 'Skip & Complete' : 'Skip Question'}
+          <SkipForward size={14} />
+          Skip Questions
         </motion.button>
 
         <motion.button
@@ -315,6 +319,112 @@ export default function OnboardingPage() {
           )}
         </motion.button>
       </div>
+
+      {/* ━━━ Skip Confirmation Modal ━━━ */}
+      <AnimatePresence>
+        {showSkipModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center px-4"
+            style={{ background: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(8px)' }}
+            onClick={() => setShowSkipModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              className="w-full max-w-md rounded-2xl p-6 sm:p-8 relative overflow-hidden"
+              style={{
+                background: 'rgba(10, 14, 30, 0.92)',
+                border: '1px solid rgba(56, 189, 248, 0.15)',
+                backdropFilter: 'blur(30px)',
+                boxShadow: '0 0 60px rgba(56, 189, 248, 0.08), 0 20px 50px rgba(0, 0, 0, 0.5)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Glow accent */}
+              <div
+                className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-1 rounded-full"
+                style={{
+                  background: 'linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.5), transparent)',
+                }}
+              />
+
+              {/* Icon */}
+              <div className="flex items-center justify-center mb-5">
+                <div
+                  className="w-14 h-14 rounded-full flex items-center justify-center"
+                  style={{
+                    background: 'rgba(251, 191, 36, 0.1)',
+                    border: '1px solid rgba(251, 191, 36, 0.2)',
+                  }}
+                >
+                  <AlertTriangle size={26} className="text-amber-400" />
+                </div>
+              </div>
+
+              {/* Title */}
+              <h3
+                className="text-xl font-bold text-center mb-3 text-white"
+                style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+              >
+                Skip All Questions?
+              </h3>
+
+              {/* Message */}
+              <p className="text-sm text-center leading-relaxed mb-8" style={{ color: 'rgba(203, 213, 225, 0.9)' }}>
+                Are you sure you want to skip these questions? Answering them helps Esona understand your personality, emotions, and communication style better, allowing more personalized and emotionally adaptive responses.
+              </p>
+
+              {/* Buttons */}
+              <div className="flex flex-col gap-3">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setShowSkipModal(false)}
+                  className="w-full py-3 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer"
+                  style={{
+                    background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))',
+                    color: 'var(--bg-primary)',
+                    boxShadow: '0 0 20px rgba(56, 189, 248, 0.25)',
+                  }}
+                >
+                  Continue Answering
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => {
+                    setShowSkipModal(false);
+                    skipAllQuestions();
+                  }}
+                  disabled={isSubmitting}
+                  className="w-full py-3 rounded-xl text-sm font-medium transition-all duration-300 cursor-pointer disabled:opacity-50"
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.04)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    color: 'rgba(203, 213, 225, 0.7)',
+                  }}
+                >
+                  {isSubmitting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 size={14} className="animate-spin" />
+                      Skipping...
+                    </span>
+                  ) : (
+                    'Skip Anyway'
+                  )}
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }

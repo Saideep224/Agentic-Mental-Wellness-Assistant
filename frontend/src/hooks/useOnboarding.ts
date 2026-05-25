@@ -17,6 +17,7 @@ export function useOnboarding() {
   const [isComplete, setIsComplete] = useState(false);
   const [direction, setDirection] = useState(1);
   const [showCategoryTransition, setShowCategoryTransition] = useState(false);
+  const [showSkipModal, setShowSkipModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const currentQuestion = questions[currentIndex];
@@ -131,55 +132,18 @@ export function useOnboarding() {
     }
   }, [selectedOptions, customText, currentIndex, currentQuestion, totalQuestions, currentCategory, responses]);
 
-  const skipQuestion = useCallback(() => {
-    const response: OnboardingResponse = {
-      questionId: currentQuestion.id,
-      category: currentQuestion.category,
-      selectedAnswers: [], // Empty indicates skipped
+  const skipAllQuestions = useCallback(() => {
+    // Build empty responses for all 20 questions
+    const emptyResponses: OnboardingResponse[] = questions.map((q) => ({
+      questionId: q.id,
+      category: q.category,
+      selectedAnswers: [],
       customAnswer: undefined,
-    };
+    }));
 
-    // Save live to database
-    const token = api.getToken();
-    if (token) {
-      api.saveOnboardingAnswer(response, token).catch((err) => {
-        console.warn('[Onboarding] Live answer saving failed:', err);
-      });
-    }
-
-    // Update or add response
-    const updatedResponses = [...responses];
-    const existingIdx = responses.findIndex((r) => r.questionId === currentQuestion.id);
-    if (existingIdx >= 0) {
-      updatedResponses[existingIdx] = response;
-    } else {
-      updatedResponses.push(response);
-    }
-    setResponses(updatedResponses);
-
-    if (currentIndex < totalQuestions - 1) {
-      const nextIdx = currentIndex + 1;
-      const nextCat = getCategoryForQuestion(nextIdx);
-      if (nextCat !== currentCategory) {
-        setShowCategoryTransition(true);
-        saveProgress(nextIdx, updatedResponses);
-      } else {
-        setDirection(1);
-        setCurrentIndex(nextIdx);
-        
-        // Restore next question's answers if they exist
-        const nextResponse = updatedResponses.find(
-          (r) => r.questionId === questions[nextIdx].id
-        );
-        setSelectedOptions(nextResponse?.selectedAnswers || []);
-        setCustomText(nextResponse?.customAnswer || '');
-        saveProgress(nextIdx, updatedResponses);
-      }
-    } else {
-      // Last question - submit all
-      handleSubmit(updatedResponses);
-    }
-  }, [currentIndex, currentQuestion, totalQuestions, currentCategory, responses]);
+    // Submit all with empty answers — marks onboarding as completed
+    handleSubmit(emptyResponses);
+  }, []);
 
   const continuePastTransition = useCallback(() => {
     setShowCategoryTransition(false);
@@ -293,13 +257,15 @@ export function useOnboarding() {
     isComplete,
     direction,
     showCategoryTransition,
+    showSkipModal,
+    setShowSkipModal,
     error,
     isNewCategory,
     nextCategory,
     selectOption,
     setCustomText,
     goToNext,
-    skipQuestion,
+    skipAllQuestions,
     goToPrevious,
     continuePastTransition,
   };

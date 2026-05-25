@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, User as UserIcon, Calendar, Shield, Mail, Key, Sparkles, LogOut, Edit } from 'lucide-react';
 import { getToken, getStoredUser, clearAuth, getEmotionalProfile } from '@/lib/api';
 import { useAuth } from '@/providers/AuthProvider';
+import UserAvatar from '@/components/layout/UserAvatar';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -100,23 +101,13 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 {/* User Avatar + Name Block */}
                 <div className="flex flex-col items-center text-center pb-4 border-b border-white/5">
                   <div className="relative mb-3">
-                    {user?.avatarUrl ? (
-                      <img
-                        src={user.avatarUrl}
-                        alt={user.name}
-                        className="w-24 h-24 rounded-full object-cover border-2 border-cyan-400/20 shadow-lg shadow-cyan-400/5"
-                      />
-                    ) : (
-                      <div
-                        className="w-24 h-24 rounded-full flex items-center justify-center text-3xl font-bold border-2 border-purple-400/20"
-                        style={{
-                          background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))',
-                          color: 'white',
-                        }}
-                      >
-                        {user?.name?.charAt(0).toUpperCase() || '?'}
-                      </div>
-                    )}
+                    <UserAvatar
+                      size={96}
+                      avatarUrl={user?.avatarUrl}
+                      name={user?.name}
+                      glow={true}
+                      enableHover={true}
+                    />
                   </div>
                   <h3 className="text-lg font-semibold text-white">{user?.name || 'Anonymous User'}</h3>
                   <p className="text-xs text-sky-400 capitalize flex items-center gap-1.5 justify-center mt-1">

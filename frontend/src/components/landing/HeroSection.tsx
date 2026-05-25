@@ -33,7 +33,7 @@ export default function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.2, ease: 'easeOut' as const }}
           className="text-xl sm:text-2xl mb-8 tracking-wide"
-          style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-outfit), sans-serif' }}
+          style={{ color: 'rgba(148, 207, 255, 0.9)', textShadow: '0 2px 15px rgba(0, 0, 0, 0.4), 0 0 30px rgba(56, 189, 248, 0.12)', fontFamily: 'var(--font-outfit), sans-serif' }}
         >
           your supporting buddie
         </motion.p>
@@ -44,7 +44,7 @@ export default function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.4, ease: 'easeOut' as const }}
           className="text-base sm:text-lg mb-10 max-w-xl mx-auto leading-relaxed"
-          style={{ color: 'rgba(255, 255, 255, 0.6)' }}
+          style={{ color: 'rgba(226, 232, 240, 0.85)', textShadow: '0 2px 20px rgba(0, 0, 0, 0.5), 0 0 40px rgba(56, 189, 248, 0.15)' }}
         >
           An emotionally adaptive AI that truly understands you — your moods, your words, your silence.
         </motion.p>

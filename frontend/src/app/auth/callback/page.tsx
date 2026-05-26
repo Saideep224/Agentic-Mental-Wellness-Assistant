@@ -68,8 +68,9 @@ export default function AuthCallbackPage() {
         // Upsert profile in Supabase database
         await supabase.from("profiles").upsert({
           id: session.user.id,
+          user_id: session.user.id,
           email: session.user.email,
-          name: userMeta.full_name || userMeta.name || session.user.email?.split('@')[0] || 'OAuth User',
+          full_name: userMeta.full_name || userMeta.name || session.user.email?.split('@')[0] || 'OAuth User',
           provider: provider,
           avatar_url: avatarUrl,
           github_username: githubUsername,

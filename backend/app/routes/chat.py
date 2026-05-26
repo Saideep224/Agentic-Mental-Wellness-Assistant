@@ -6,6 +6,7 @@ import json
 import uuid
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -233,10 +234,12 @@ async def send_message(
     # 2. Save the user's message
     user_msg = Message(
         conversation_id=conversation.id,
+        user_id=current_user.id,
         role=MessageRole.user,
         content=body.message,
     )
     db.add(user_msg)
+    conversation.updated_at = datetime.now(timezone.utc)
     
     # Save to chat_history
     chat_user = ChatHistory(
@@ -308,6 +311,7 @@ async def send_message(
         # Save assistant message to DB
         assistant_msg = Message(
             conversation_id=conversation.id,
+            user_id=current_user.id,
             role=MessageRole.assistant,
             content=full_response,
             emotion_detected=detected_emotion,
@@ -345,6 +349,7 @@ async def send_message(
         # Also update conversation emotional_tag
         if detected_emotion:
             conversation.emotional_tag = detected_emotion
+        conversation.updated_at = datetime.now(timezone.utc)
 
         await db.commit()
         logger.info(f"[CHAT] Assistant response + mood log saved to chat_history (user={current_user.id}, conv={conversation.id})")
@@ -402,10 +407,12 @@ async def stream_message_sse(
     # 3. Save the user's message
     user_msg = Message(
         conversation_id=conversation.id,
+        user_id=current_user.id,
         role=MessageRole.user,
         content=message,
     )
     db.add(user_msg)
+    conversation.updated_at = datetime.now(timezone.utc)
     
     # Save to chat_history
     chat_user = ChatHistory(
@@ -468,6 +475,7 @@ async def stream_message_sse(
 
                 assistant_msg = Message(
                     conversation_id=conversation.id,
+                    user_id=current_user.id,
                     role=MessageRole.assistant,
                     content=full_response,
                     emotion_detected=detected_emotion,
@@ -509,6 +517,7 @@ async def stream_message_sse(
                 if db_conv:
                     if detected_emotion:
                         db_conv.emotional_tag = detected_emotion
+                    db_conv.updated_at = datetime.now(timezone.utc)
                     if len(history) <= 1:
                         try:
                             title_msgs = [
@@ -586,7 +595,7 @@ async def list_conversations(
         .outerjoin(Message, Message.conversation_id == Conversation.id)
         .where(Conversation.user_id == current_user.id)
         .group_by(Conversation.id)
-        .order_by(Conversation.created_at.desc())
+        .order_by(Conversation.updated_at.desc())
     )
     rows = result.all()
     return [

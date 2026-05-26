@@ -19,10 +19,13 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID, primary_key=True, default=uuid.uuid4
     )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID, unique=True, index=True, nullable=False
+    )
     email: Mapped[str] = mapped_column(
         String(320), unique=True, index=True, nullable=False
     )
-    name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    name: Mapped[str] = mapped_column("full_name", String(255), default="", nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     provider: Mapped[str] = mapped_column(String(50), default="credentials", nullable=False)
     github_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -39,6 +42,12 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
     last_login: Mapped[datetime | None] = mapped_column(

@@ -27,7 +27,7 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
-      router.replace('/dashboard');
+      router.replace('/chat');
     }
   }, [isAuthenticated, authLoading, router]);
 
@@ -130,8 +130,9 @@ export default function LoginPage() {
         // Create initial profile row
         await supabase.from('profiles').upsert({
           id: data.user.id,
+          user_id: data.user.id,
           email: data.user.email,
-          name: data.user.user_metadata?.full_name || name.trim() || '',
+          full_name: data.user.user_metadata?.full_name || name.trim() || '',
           provider: 'credentials',
           onboarding_completed: false,
         });
@@ -152,7 +153,7 @@ export default function LoginPage() {
         if (!freshUser.onboardingCompleted) {
           router.push('/onboarding');
         } else {
-          router.push('/dashboard');
+          router.push('/chat');
         }
       } else {
         console.log('[Auth] Logging in via Supabase Auth...');
@@ -177,8 +178,9 @@ export default function LoginPage() {
         // Upsert user profile
         await supabase.from('profiles').upsert({
           id: data.user.id,
+          user_id: data.user.id,
           email: data.user.email,
-          name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0] || '',
+          full_name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0] || '',
           provider: 'credentials',
           onboarding_completed: onboardingCompleted,
         });
@@ -195,7 +197,7 @@ export default function LoginPage() {
         if (!freshUser.onboardingCompleted) {
           router.push('/onboarding');
         } else {
-          router.push('/dashboard');
+          router.push('/chat');
         }
       }
     } catch (err: any) {

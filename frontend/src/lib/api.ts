@@ -1,4 +1,5 @@
 import { ApiResponse, LoginResponse, RegisterResponse, User, Message, Conversation, MoodDataPoint, EmotionalProfile, StressPattern, PersonalityInsight } from '@/types';
+import { supabase } from '@/lib/supabase';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
@@ -256,7 +257,7 @@ function mapUser(backendUser: any): User {
   if (!backendUser) return backendUser;
   return {
     id: backendUser.id,
-    name: backendUser.name,
+    name: backendUser.name ?? backendUser.full_name ?? '',
     email: backendUser.email,
     onboardingCompleted: backendUser.onboarding_completed ?? backendUser.onboardingCompleted ?? false,
     avatarUrl: backendUser.avatar_url ?? backendUser.avatarUrl ?? null,
@@ -316,6 +317,39 @@ export async function saveOnboardingAnswer(
     custom_answer: response.customAnswer || null,
   };
   return apiPost<ApiResponse>('/api/onboarding/answer', answer, token);
+}
+
+export async function getOnboardingAnswers(token: string): Promise<any[]> {
+  return apiGet<any[]>('/api/onboarding/answers', token);
+}
+
+export async function upsertQuestionAnswersToSupabase(
+  responses: Array<{
+    questionId: number;
+    questionText: string;
+    category: string;
+    selectedAnswers: string[];
+    customAnswer?: string;
+  }>
+): Promise<void> {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error('Not authenticated');
+
+  const rows = responses.map((response) => ({
+    user_id: user.id,
+    question_id: response.questionId,
+    question_text: response.questionText,
+    selected_answer: response.selectedAnswers,
+    category: response.category,
+    custom_answer: response.customAnswer || null,
+  }));
+
+  const { error } = await supabase
+    .from('user_question_answers')
+    .upsert(rows, { onConflict: 'user_id,question_id' });
+
+  if (error) throw error;
 }
 
 export async function getOnboardingStatus(token: string): Promise<{ completed: boolean }> {

@@ -99,7 +99,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         const hasCompletedOnboarding = storedUser?.onboardingCompleted ?? false;
         
-        if (pathname === '/login') {
+        if (pathname === '/' || pathname === '/login') {
           if (!hasCompletedOnboarding) {
             router.push('/onboarding');
           } else {

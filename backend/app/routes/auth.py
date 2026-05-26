@@ -84,6 +84,7 @@ async def get_current_user(
             
             user = User(
                 id=user_id,
+                user_id=user_id,
                 email=email,
                 name=name,
                 avatar_url=avatar_url,
@@ -173,6 +174,7 @@ async def supabase_login(body: dict, db: AsyncSession = Depends(get_db)):
     if user is None:
         user = User(
             id=user_id,
+            user_id=user_id,
             email=body.get("email", ""),
             name=body.get("name", ""),
             avatar_url=body.get("avatar_url"),

@@ -5,7 +5,7 @@ UserProfile model – storing personality metrics and maps to the 'user_personal
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, UUID, JSON, Text, Boolean
+from sqlalchemy import DateTime, ForeignKey, UUID, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -26,8 +26,8 @@ class UserProfile(Base):
 
     # ── Required profiles sections ────────────────────────────
     personality_profile: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    personality_type: Mapped[str | None] = mapped_column(Text, nullable=True)
-    communication_style: Mapped[str | None] = mapped_column(Text, nullable=True)
+    personality_type: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    communication_style: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     interests: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     stress_indicators: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     

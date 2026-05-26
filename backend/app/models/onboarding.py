@@ -5,16 +5,19 @@ Onboarding response model – stores answers to the onboarding questionnaire ins
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, UUID, JSON
+from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, UUID, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 
 class UserAnswer(Base):
-    """One answer from the onboarding questionnaire stored in user_answers table."""
+    """One answer from the onboarding questionnaire stored in user_question_answers table."""
 
-    __tablename__ = "user_answers"
+    __tablename__ = "user_question_answers"
+    __table_args__ = (
+        UniqueConstraint("user_id", "question_id", name="uq_user_question_answers_user_question"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID, primary_key=True, default=uuid.uuid4
@@ -26,12 +29,19 @@ class UserAnswer(Base):
         index=True,
     )
     question_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    question_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
     category: Mapped[str] = mapped_column(String(100), nullable=False)
-    selected_answers: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    selected_answers: Mapped[list[str]] = mapped_column("selected_answer", JSON, default=list, nullable=False)
     custom_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 

@@ -33,7 +33,7 @@ async def main():
         tables = await conn.run_sync(get_tables)
         print("Tables in database:", tables)
         
-        expected_tables = {"profiles", "conversations", "messages", "user_personality", "user_answers", "memories", "chat_history", "mood_logs"}
+        expected_tables = {"profiles", "conversations", "chat_messages", "user_personality", "user_question_answers", "memories", "chat_history", "mood_logs"}
         missing_tables = expected_tables - set(tables)
         if not missing_tables:
             print("SUCCESS: All tables created successfully!")

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { OnboardingResponse } from '@/types';
 import { questions, getCategoryForQuestion } from '@/data/questions';
 import * as api from '@/lib/api';
@@ -32,6 +32,13 @@ export function useOnboarding() {
 
   const isNewCategory = nextCategory !== null && nextCategory !== currentCategory;
 
+  const saveProgress = useCallback((newIndex: number, newResponses: OnboardingResponse[]) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('esona_onboarding_index', newIndex.toString());
+      localStorage.setItem('esona_onboarding_responses', JSON.stringify(newResponses));
+    }
+  }, []);
+
   // Load initial progress on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -60,14 +67,46 @@ export function useOnboarding() {
         }
       }
     }
-  }, []);
 
-  const saveProgress = (newIndex: number, newResponses: OnboardingResponse[]) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('esona_onboarding_index', newIndex.toString());
-      localStorage.setItem('esona_onboarding_responses', JSON.stringify(newResponses));
-    }
-  };
+    const loadSavedAnswers = async () => {
+      const token = api.getToken();
+      if (!token) return;
+
+      try {
+        const saved = await api.getOnboardingAnswers(token);
+        if (!saved.length) return;
+
+        const savedResponses: OnboardingResponse[] = saved.map((answer: {
+          question_id: number;
+          category: string;
+          selected_answers?: string[];
+          custom_answer?: string | null;
+        }) => ({
+          questionId: answer.question_id,
+          category: answer.category,
+          selectedAnswers: answer.selected_answers || [],
+          customAnswer: answer.custom_answer || undefined,
+        }));
+
+        setResponses(savedResponses);
+        const firstUnansweredIndex = questions.findIndex((question) => {
+          const savedAnswer = savedResponses.find((item) => item.questionId === question.id);
+          return !savedAnswer || (savedAnswer.selectedAnswers.length === 0 && !savedAnswer.customAnswer);
+        });
+        const nextIndex = firstUnansweredIndex >= 0 ? firstUnansweredIndex : Math.max(0, questions.length - 1);
+        setCurrentIndex(nextIndex);
+
+        const currentSaved = savedResponses.find((item) => item.questionId === questions[nextIndex]?.id);
+        setSelectedOptions(currentSaved?.selectedAnswers || []);
+        setCustomText(currentSaved?.customAnswer || '');
+        saveProgress(nextIndex, savedResponses);
+      } catch (err) {
+        console.warn('[Onboarding] Could not load saved answers:', err);
+      }
+    };
+
+    loadSavedAnswers();
+  }, [saveProgress]);
 
   const handleSubmit = useCallback(async (allResponses: OnboardingResponse[]) => {
     setIsSubmitting(true);
@@ -81,6 +120,12 @@ export function useOnboarding() {
         return;
       }
 
+      await api.upsertQuestionAnswersToSupabase(
+        allResponses.map((response) => ({
+          ...response,
+          questionText: questions.find((question) => question.id === response.questionId)?.text || '',
+        }))
+      );
       await api.submitOnboarding(allResponses, token);
 
       // Update onboarding_completed in Supabase profiles table & user metadata

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import { questions } from '@/data/questions';
-import { getToken, getStoredUser, submitOnboarding, getEmotionalProfile } from '@/lib/api';
+import { getToken, submitOnboarding, getOnboardingAnswers, upsertQuestionAnswersToSupabase } from '@/lib/api';
 import { useAuth } from '@/providers/AuthProvider';
 
 const CATEGORIES = [
@@ -72,11 +72,7 @@ export default function KnowingMePage() {
   const fetchAnswers = async (token: string) => {
     setIsLoading(true);
     try {
-      const profile = await getEmotionalProfile(token);
-      // Handle both snake_case (API) and camelCase (mapped) field names
-      const rawAnswers = (profile as any)?.onboarding_answers?.answers
-        || (profile as any)?.onboardingAnswers
-        || [];
+      const rawAnswers = await getOnboardingAnswers(token);
       setAnswers(rawAnswers);
       setEditedAnswers(JSON.parse(JSON.stringify(rawAnswers)));
     } catch (err: any) {
@@ -194,6 +190,12 @@ export default function KnowingMePage() {
         };
       });
 
+      await upsertQuestionAnswersToSupabase(
+        completeAnswers.map(answer => ({
+          ...answer,
+          questionText: questions.find(q => q.id === answer.questionId)?.text || '',
+        }))
+      );
       await submitOnboarding(completeAnswers, token);
 
       // Refresh data
@@ -214,7 +216,7 @@ export default function KnowingMePage() {
   // Calculate progress
   const totalAnswered = questions.filter(q => {
     const ans = editedAnswers.find(a => a.question_id === q.id);
-    return ans && ans.selected_answers && ans.selected_answers.length > 0;
+    return ans && ((ans.selected_answers && ans.selected_answers.length > 0) || Boolean(ans.custom_answer?.trim()));
   }).length;
   const totalQuestions = questions.length;
   const progressPercent = Math.round((totalAnswered / totalQuestions) * 100);
@@ -348,10 +350,10 @@ export default function KnowingMePage() {
               const isExpanded = expandedCategories.has(cat.id);
               const isEditing = editingCategory === cat.id;
               const catQuestions = questions.filter(q => q.id >= cat.range[0] && q.id <= cat.range[1]);
-              const catAnswered = catQuestions.filter(q => {
-                const ans = editedAnswers.find(a => a.question_id === q.id);
-                return ans && ans.selected_answers && ans.selected_answers.length > 0;
-              }).length;
+                const catAnswered = catQuestions.filter(q => {
+                  const ans = editedAnswers.find(a => a.question_id === q.id);
+                  return ans && ((ans.selected_answers && ans.selected_answers.length > 0) || Boolean(ans.custom_answer?.trim()));
+                }).length;
 
               return (
                 <motion.div

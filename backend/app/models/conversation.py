@@ -46,6 +46,12 @@ class Conversation(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="conversations")  # noqa: F821
@@ -61,7 +67,7 @@ class Conversation(Base):
 class Message(Base):
     """A single message inside a conversation."""
 
-    __tablename__ = "messages"
+    __tablename__ = "chat_messages"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID, primary_key=True, default=uuid.uuid4
@@ -72,11 +78,17 @@ class Message(Base):
         nullable=False,
         index=True,
     )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID,
+        ForeignKey("profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     role: Mapped[MessageRole] = mapped_column(
         SAEnum(MessageRole, name="message_role", create_constraint=True),
         nullable=False,
     )
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column("message", Text, nullable=False)
     emotion_detected: Mapped[str | None] = mapped_column(String(100), nullable=True)
     mood_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     agent_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)

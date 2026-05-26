@@ -89,8 +89,8 @@ export default function AuthCallbackPage() {
           setStatus('Redirecting to onboarding...');
           router.push('/onboarding');
         } else {
-          setStatus('Redirecting to dashboard...');
-          router.push('/dashboard');
+          setStatus('Redirecting to chat...');
+          router.push('/chat');
         }
       } catch (err: any) {
         console.error('[Esona Auth Callback] Error:', err);

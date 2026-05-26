@@ -99,6 +99,7 @@ export function useChat({ conversationId }: UseChatOptions) {
         const responseText = response.response;
         const detectedEmotion = response.emotionDetected;
         const moodScore = response.moodScore;
+        const agentAnalysis = response.agentAnalysis;
 
         // Split raw response by |||
         const parts = responseText.split('|||').map(p => p.trim()).filter(Boolean);
@@ -118,6 +119,7 @@ export function useChat({ conversationId }: UseChatOptions) {
             timestamp: new Date(),
             emotionDetected: i === parts.length - 1 ? detectedEmotion : undefined,
             moodScore: i === parts.length - 1 ? moodScore : undefined,
+            agentAnalysis: i === parts.length - 1 ? agentAnalysis : undefined,
           };
 
           setMessages((prev) => [...prev, partMessage]);

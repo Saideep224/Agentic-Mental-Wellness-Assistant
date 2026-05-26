@@ -191,6 +191,7 @@ async def _get_emotional_profile_dict(
         "strengths": {},
         "weaknesses": {},
         "onboarding_answers": {},
+        "personality_profile": {},
     }
     
     if profile is not None:
@@ -209,6 +210,7 @@ async def _get_emotional_profile_dict(
             "strengths": profile.strengths or {},
             "weaknesses": profile.weaknesses or {},
             "onboarding_answers": profile.onboarding_answers or {},
+            "personality_profile": profile.personality_profile or {},
         })
         
     return profile_dict
@@ -245,6 +247,7 @@ async def send_message(
     )
     db.add(chat_user)
     await db.flush()
+    logger.info(f"[CHAT] User message saved to chat_history (user={current_user.id}, conv={conversation.id})")
 
     # 3. Build context for agents
     history = await _build_conversation_history(db, conversation.id)
@@ -263,6 +266,15 @@ async def send_message(
         full_response = result.get("response", "I'm here for you. Could you tell me more?")
         detected_emotion = result.get("detected_emotion", None)
         mood_score = result.get("mood_score", None)
+        agent_analysis = result.get("agent_analysis", {})
+        logger.info(f"[CHAT] Gemini response generated (user={current_user.id}, emotion={detected_emotion}, mood={mood_score})")
+
+        # Log memory retrieval status
+        retrieved_memories = result.get("memories", [])
+        if retrieved_memories:
+            logger.info(f"[MEMORY] Retrieved {len(retrieved_memories)} relevant memories for user {current_user.id}")
+        else:
+            logger.info(f"[MEMORY] No relevant memories found for user {current_user.id}")
 
         # Update conversation title from first message using LLM
         if len(history) <= 1:
@@ -275,29 +287,23 @@ async def send_message(
             except Exception:
                 conversation.title = generate_emotional_title(body.message, detected_emotion or "neutral")
             await db.flush()
-        agent_analysis = {
-            "emotion_analysis": result.get("emotion_analysis", {}),
-            "personality_analysis": result.get("personality_analysis", {}),
-            "context_analysis": result.get("context_analysis", {}),
-            "recommendations": result.get("recommendations", []),
-        }
 
-        # Store memory
+        # Store memory using structured output from single analyzer call
         try:
-            memory_mgr = MemoryManager()
-            metadata = {
-                "emotion": detected_emotion or "neutral",
-                "mood_score": mood_score or 0.5,
-                "message_type": result.get("router_decision", {}).get("message_type", "casual"),
-            }
-            await memory_mgr.store_memory(
-                db=db,
-                user_id=str(current_user.id),
-                content=body.message,
-                metadata=metadata,
-            )
+            from app.services.memory_service import memory_service
+            mem_extraction = result.get("memory_extraction", {})
+            if mem_extraction.get("is_meaningful"):
+                await memory_service.saveMemory(
+                    db=db,
+                    user_id=str(current_user.id),
+                    memory_summary=mem_extraction.get("memory_summary"),
+                    behavior_patterns=mem_extraction.get("behavior_patterns") or {},
+                )
+                logger.info(f"[MEMORY] Memory saved for user {current_user.id}: '{mem_extraction.get('memory_summary', '')[:80]}'")
+            else:
+                logger.info(f"[MEMORY] Skipped (small talk / not meaningful) for user {current_user.id}")
         except Exception as mem_err:
-            logger.warning(f"Failed to store memory: {mem_err}")
+            logger.error(f"Failed to process and store memory: {mem_err}", exc_info=True)
 
         # Save assistant message to DB
         assistant_msg = Message(
@@ -341,11 +347,13 @@ async def send_message(
             conversation.emotional_tag = detected_emotion
 
         await db.commit()
+        logger.info(f"[CHAT] Assistant response + mood log saved to chat_history (user={current_user.id}, conv={conversation.id})")
 
         return {
             "response": full_response,
             "emotionDetected": detected_emotion,
             "moodScore": mood_score,
+            "agentAnalysis": agent_analysis,
         }
 
     except Exception as e:
@@ -408,6 +416,7 @@ async def stream_message_sse(
     )
     db.add(chat_user)
     await db.flush()
+    logger.info(f"[CHAT] User message saved to chat_history via SSE (user={current_user.id}, conv={conversation.id})")
 
     # 4. Build context
     history = await _build_conversation_history(db, conversation.id)
@@ -428,31 +437,34 @@ async def stream_message_sse(
             full_response = result.get("response", "I'm here for you. Could you tell me more?")
             detected_emotion = result.get("detected_emotion", None)
             mood_score = result.get("mood_score", None)
-            agent_analysis = {
-                "emotion_analysis": result.get("emotion_analysis", {}),
-                "personality_analysis": result.get("personality_analysis", {}),
-                "context_analysis": result.get("context_analysis", {}),
-                "recommendations": result.get("recommendations", []),
-            }
+            agent_analysis = result.get("agent_analysis", {})
+            logger.info(f"[CHAT] Gemini response generated via SSE (user={current_user.id}, emotion={detected_emotion}, mood={mood_score})")
+
+            # Log memory retrieval
+            retrieved_memories = result.get("memories", [])
+            if retrieved_memories:
+                logger.info(f"[MEMORY] Retrieved {len(retrieved_memories)} memories for SSE user {current_user.id}")
+            else:
+                logger.info(f"[MEMORY] No relevant memories for SSE user {current_user.id}")
 
             # Save assistant message & store memory
             async with get_db_session() as save_db:
                 # Store memory
                 try:
-                    memory_mgr = MemoryManager()
-                    metadata = {
-                        "emotion": detected_emotion or "neutral",
-                        "mood_score": mood_score or 0.5,
-                        "message_type": result.get("router_decision", {}).get("message_type", "casual"),
-                    }
-                    await memory_mgr.store_memory(
-                        db=save_db,
-                        user_id=str(current_user.id),
-                        content=message,
-                        metadata=metadata,
-                    )
+                    from app.services.memory_service import memory_service
+                    mem_extraction = result.get("memory_extraction", {})
+                    if mem_extraction.get("is_meaningful"):
+                        await memory_service.saveMemory(
+                            db=save_db,
+                            user_id=str(current_user.id),
+                            memory_summary=mem_extraction.get("memory_summary"),
+                            behavior_patterns=mem_extraction.get("behavior_patterns") or {},
+                        )
+                        logger.info(f"[MEMORY] Memory saved via SSE for user {current_user.id}: '{mem_extraction.get('memory_summary', '')[:80]}'")
+                    else:
+                        logger.info(f"[MEMORY] Skipped (small talk) for SSE user {current_user.id}")
                 except Exception as mem_err:
-                    logger.warning(f"Failed to store memory: {mem_err}")
+                    logger.error(f"Failed to process and store memory in stream: {mem_err}", exc_info=True)
 
                 assistant_msg = Message(
                     conversation_id=conversation.id,
@@ -510,6 +522,7 @@ async def stream_message_sse(
                 await save_db.commit()
                 await save_db.refresh(assistant_msg)
                 msg_id = str(assistant_msg.id)
+                logger.info(f"[CHAT] SSE assistant response + mood log saved (user={current_user.id}, conv={conversation.id})")
 
             # Stream chunks
             chunk_size = 12
@@ -534,6 +547,7 @@ async def stream_message_sse(
                     "conversation_id": str(conversation.id),
                     "emotion_detected": detected_emotion,
                     "mood_score": mood_score,
+                    "agent_analysis": agent_analysis,
                 }),
             }
 

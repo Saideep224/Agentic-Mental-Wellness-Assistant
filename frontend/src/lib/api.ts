@@ -342,7 +342,7 @@ export async function sendMessage(
   conversationId: string,
   message: string,
   token: string
-): Promise<{ response: string; emotionDetected?: string; moodScore?: number }> {
+): Promise<{ response: string; emotionDetected?: string; moodScore?: number; agentAnalysis?: any }> {
   return apiPost('/api/chat/message', { message, conversation_id: conversationId }, token);
 }
 
@@ -365,6 +365,7 @@ export async function getConversationMessages(conversationId: string, token: str
     timestamp: m.created_at ? new Date(m.created_at) : new Date(),
     emotionDetected: m.emotion_detected ?? m.emotionDetected,
     moodScore: m.mood_score ?? m.moodScore,
+    agentAnalysis: m.agent_analysis ?? m.agentAnalysis,
   }));
 }
 

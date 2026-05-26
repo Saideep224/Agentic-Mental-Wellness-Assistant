@@ -73,11 +73,23 @@ export default function KnowingMePage() {
     setIsLoading(true);
     try {
       const profile = await getEmotionalProfile(token);
-      const rawAnswers = (profile as any)?.onboarding_answers?.answers || [];
+      // Handle both snake_case (API) and camelCase (mapped) field names
+      const rawAnswers = (profile as any)?.onboarding_answers?.answers
+        || (profile as any)?.onboardingAnswers
+        || [];
       setAnswers(rawAnswers);
       setEditedAnswers(JSON.parse(JSON.stringify(rawAnswers)));
-    } catch (err) {
-      console.error('[KnowingMe] Failed to fetch answers:', err);
+    } catch (err: any) {
+      console.warn('[KnowingMe] Profile fetch failed, starting fresh:', err);
+      // If no profile exists yet (404), initialize with empty answers for all questions
+      const emptyAnswers = questions.map(q => ({
+        question_id: q.id,
+        category: q.category,
+        selected_answers: [],
+        custom_answer: null,
+      }));
+      setAnswers(emptyAnswers);
+      setEditedAnswers(JSON.parse(JSON.stringify(emptyAnswers)));
     } finally {
       setIsLoading(false);
     }

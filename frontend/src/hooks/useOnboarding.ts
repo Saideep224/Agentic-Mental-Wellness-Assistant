@@ -69,115 +69,7 @@ export function useOnboarding() {
     }
   };
 
-  const selectOption = useCallback((value: string) => {
-    setSelectedOptions((prev) => {
-      if (prev.includes(value)) {
-        return prev.filter((v) => v !== value);
-      } else {
-        return [...prev, value];
-      }
-    });
-  }, []);
-
-  const goToNext = useCallback(() => {
-    const hasCustomText = customText.trim().length > 0;
-    if (selectedOptions.length === 0 && !hasCustomText) return;
-
-    const response: OnboardingResponse = {
-      questionId: currentQuestion.id,
-      category: currentQuestion.category,
-      selectedAnswers: selectedOptions,
-      customAnswer: hasCustomText ? customText.trim() : undefined,
-    };
-
-    // Save live to database
-    const token = api.getToken();
-    if (token) {
-      api.saveOnboardingAnswer(response, token).catch((err) => {
-        console.warn('[Onboarding] Live answer saving failed:', err);
-      });
-    }
-
-    // Update or add response
-    const updatedResponses = [...responses];
-    const existingIdx = responses.findIndex((r) => r.questionId === currentQuestion.id);
-    if (existingIdx >= 0) {
-      updatedResponses[existingIdx] = response;
-    } else {
-      updatedResponses.push(response);
-    }
-    setResponses(updatedResponses);
-
-    if (currentIndex < totalQuestions - 1) {
-      const nextIdx = currentIndex + 1;
-      const nextCat = getCategoryForQuestion(nextIdx);
-      if (nextCat !== currentCategory) {
-        setShowCategoryTransition(true);
-        saveProgress(nextIdx, updatedResponses);
-      } else {
-        setDirection(1);
-        setCurrentIndex(nextIdx);
-        
-        // Restore next question's answers if they exist
-        const nextResponse = updatedResponses.find(
-          (r) => r.questionId === questions[nextIdx].id
-        );
-        setSelectedOptions(nextResponse?.selectedAnswers || []);
-        setCustomText(nextResponse?.customAnswer || '');
-        saveProgress(nextIdx, updatedResponses);
-      }
-    } else {
-      // Last question - submit all
-      handleSubmit(updatedResponses);
-    }
-  }, [selectedOptions, customText, currentIndex, currentQuestion, totalQuestions, currentCategory, responses]);
-
-  const skipAllQuestions = useCallback(() => {
-    // Build empty responses for all 20 questions
-    const emptyResponses: OnboardingResponse[] = questions.map((q) => ({
-      questionId: q.id,
-      category: q.category,
-      selectedAnswers: [],
-      customAnswer: undefined,
-    }));
-
-    // Submit all with empty answers — marks onboarding as completed
-    handleSubmit(emptyResponses);
-  }, []);
-
-  const continuePastTransition = useCallback(() => {
-    setShowCategoryTransition(false);
-    setDirection(1);
-    const nextIdx = currentIndex + 1;
-    setCurrentIndex(nextIdx);
-    
-    // Restore next question's answers if they exist
-    const nextResponse = responses.find(
-      (r) => r.questionId === questions[nextIdx].id
-    );
-    setSelectedOptions(nextResponse?.selectedAnswers || []);
-    setCustomText(nextResponse?.customAnswer || '');
-    saveProgress(nextIdx, responses);
-  }, [currentIndex, responses]);
-
-  const goToPrevious = useCallback(() => {
-    if (currentIndex > 0) {
-      const prevIdx = currentIndex - 1;
-      setDirection(-1);
-      setCurrentIndex(prevIdx);
-      const prevResponse = responses.find(
-        (r) => r.questionId === questions[prevIdx].id
-      );
-      setSelectedOptions(prevResponse?.selectedAnswers || []);
-      setCustomText(prevResponse?.customAnswer || '');
-      
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('esona_onboarding_index', prevIdx.toString());
-      }
-    }
-  }, [currentIndex, responses]);
-
-  const handleSubmit = async (allResponses: OnboardingResponse[]) => {
+  const handleSubmit = useCallback(async (allResponses: OnboardingResponse[]) => {
     setIsSubmitting(true);
     setError(null);
 
@@ -243,7 +135,117 @@ export function useOnboarding() {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [refreshUser]);
+
+
+  const selectOption = useCallback((value: string) => {
+    setSelectedOptions((prev) => {
+      if (prev.includes(value)) {
+        return prev.filter((v) => v !== value);
+      } else {
+        return [...prev, value];
+      }
+    });
+  }, []);
+
+  const goToNext = useCallback(() => {
+    const hasCustomText = customText.trim().length > 0;
+    if (selectedOptions.length === 0 && !hasCustomText) return;
+
+    const response: OnboardingResponse = {
+      questionId: currentQuestion.id,
+      category: currentQuestion.category,
+      selectedAnswers: selectedOptions,
+      customAnswer: hasCustomText ? customText.trim() : undefined,
+    };
+
+    // Save live to database
+    const token = api.getToken();
+    if (token) {
+      api.saveOnboardingAnswer(response, token).catch((err) => {
+        console.warn('[Onboarding] Live answer saving failed:', err);
+      });
+    }
+
+    // Update or add response
+    const updatedResponses = [...responses];
+    const existingIdx = responses.findIndex((r) => r.questionId === currentQuestion.id);
+    if (existingIdx >= 0) {
+      updatedResponses[existingIdx] = response;
+    } else {
+      updatedResponses.push(response);
+    }
+    setResponses(updatedResponses);
+
+    if (currentIndex < totalQuestions - 1) {
+      const nextIdx = currentIndex + 1;
+      const nextCat = getCategoryForQuestion(nextIdx);
+      if (nextCat !== currentCategory) {
+        setShowCategoryTransition(true);
+        saveProgress(nextIdx, updatedResponses);
+      } else {
+        setDirection(1);
+        setCurrentIndex(nextIdx);
+        
+        // Restore next question's answers if they exist
+        const nextResponse = updatedResponses.find(
+          (r) => r.questionId === questions[nextIdx].id
+        );
+        setSelectedOptions(nextResponse?.selectedAnswers || []);
+        setCustomText(nextResponse?.customAnswer || '');
+        saveProgress(nextIdx, updatedResponses);
+      }
+    } else {
+      // Last question - submit all
+      handleSubmit(updatedResponses);
+    }
+  }, [selectedOptions, customText, currentIndex, currentQuestion, totalQuestions, currentCategory, responses, handleSubmit]);
+
+  const skipAllQuestions = useCallback(() => {
+    // Build empty responses for all 20 questions
+    const emptyResponses: OnboardingResponse[] = questions.map((q) => ({
+      questionId: q.id,
+      category: q.category,
+      selectedAnswers: [],
+      customAnswer: undefined,
+    }));
+
+    // Submit all with empty answers — marks onboarding as completed
+    handleSubmit(emptyResponses);
+  }, [questions, handleSubmit]);
+
+  const continuePastTransition = useCallback(() => {
+    setShowCategoryTransition(false);
+    setDirection(1);
+    const nextIdx = currentIndex + 1;
+    setCurrentIndex(nextIdx);
+    
+    // Restore next question's answers if they exist
+    const nextResponse = responses.find(
+      (r) => r.questionId === questions[nextIdx].id
+    );
+    setSelectedOptions(nextResponse?.selectedAnswers || []);
+    setCustomText(nextResponse?.customAnswer || '');
+    saveProgress(nextIdx, responses);
+  }, [currentIndex, responses]);
+
+  const goToPrevious = useCallback(() => {
+    if (currentIndex > 0) {
+      const prevIdx = currentIndex - 1;
+      setDirection(-1);
+      setCurrentIndex(prevIdx);
+      const prevResponse = responses.find(
+        (r) => r.questionId === questions[prevIdx].id
+      );
+      setSelectedOptions(prevResponse?.selectedAnswers || []);
+      setCustomText(prevResponse?.customAnswer || '');
+      
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('esona_onboarding_index', prevIdx.toString());
+      }
+    }
+  }, [currentIndex, responses]);
+
 
   return {
     currentQuestion,

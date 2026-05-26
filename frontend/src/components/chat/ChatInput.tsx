@@ -43,6 +43,7 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: 0.2 }}
       className="px-4 sm:px-6 py-4"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
       <div
         className="flex items-end gap-3 p-3 rounded-2xl transition-all duration-300"
@@ -62,6 +63,7 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
           placeholder={disabled ? 'Esona is thinking...' : 'Type your message...'}
           disabled={disabled}
           rows={1}
+          inputMode="text"
           className="flex-1 bg-transparent resize-none text-sm leading-relaxed outline-none px-2 py-1.5"
           style={{
             color: 'var(--text-primary)',
@@ -91,7 +93,7 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
         </motion.button>
       </div>
 
-      <p className="text-center mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+      <p className="text-center mt-2 text-[10px] sm:text-xs" style={{ color: 'var(--text-muted)' }}>
         Press Enter to send · Shift+Enter for new line
       </p>
     </motion.div>

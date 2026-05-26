@@ -31,8 +31,8 @@ class Settings(BaseSettings):
 
     # ── Gemini ────────────────────────────────────────────────
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-1.5-flash"
-    GEMINI_EMBEDDING_MODEL: str = "text-embedding-004"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-2"
     GEMINI_API_BASE: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
     # ── OpenRouter ────────────────────────────────────────────

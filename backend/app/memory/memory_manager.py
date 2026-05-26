@@ -138,11 +138,11 @@ class MemoryManager:
     async def get_emotional_patterns(self, db: AsyncSession, user_id: str) -> dict:
         """Aggregate all stored memories to extract recurring emotional patterns."""
         result = await db.execute(
-            select(Memory.metadata_json).where(Memory.user_id == user_id)
+            select(Memory).where(Memory.user_id == user_id)
         )
-        rows = result.scalars().all()
+        memories = result.scalars().all()
 
-        if not rows:
+        if not memories:
             return {
                 "emotion_counts": {},
                 "dominant_emotion": "neutral",
@@ -154,7 +154,8 @@ class MemoryManager:
         stress_levels = []
         triggers = []
 
-        for meta in rows:
+        for mem in memories:
+            meta = mem.metadata_json
             if not meta:
                 continue
             try:

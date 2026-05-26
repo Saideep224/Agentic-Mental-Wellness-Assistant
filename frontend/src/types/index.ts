@@ -47,6 +47,7 @@ export interface Message {
   timestamp: Date;
   emotionDetected?: string;
   moodScore?: number;
+  agentAnalysis?: Record<string, any>;
 }
 
 export interface Conversation {

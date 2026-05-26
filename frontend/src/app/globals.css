@@ -453,6 +453,25 @@ body {
   .glass-card {
     border-radius: 0.75rem;
   }
+
+  /* Mobile chat improvements */
+  .chat-message-bubble {
+    max-width: 88% !important;
+    font-size: 0.875rem;
+  }
+
+  /* Ensure chat input doesn't get hidden behind mobile keyboard */
+  .chat-input-container {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+  }
+}
+
+@media (max-width: 480px) {
+  .glass-card {
+    border-radius: 12px;
+  }
 }
 
 /* ============================================= */

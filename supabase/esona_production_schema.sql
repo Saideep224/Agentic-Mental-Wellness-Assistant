@@ -141,13 +141,13 @@ drop policy if exists "profiles_delete_own" on public.profiles;
 create policy "profiles_delete_own" on public.profiles for delete to authenticated using (auth.uid() = user_id);
 
 drop policy if exists "answers_select_own" on public.user_question_answers;
-create policy "answers_select_own" on public.user_question_answers for select to authenticated using (exists (select 1 from public.profiles p where p.id = user_question_answers.user_id and p.user_id = auth.uid()));
+create policy "answers_select_own" on public.user_question_answers for select to authenticated using (auth.uid() = user_id);
 drop policy if exists "answers_insert_own" on public.user_question_answers;
-create policy "answers_insert_own" on public.user_question_answers for insert to authenticated with check (exists (select 1 from public.profiles p where p.id = user_question_answers.user_id and p.user_id = auth.uid()));
+create policy "answers_insert_own" on public.user_question_answers for insert to authenticated with check (auth.uid() = user_id);
 drop policy if exists "answers_update_own" on public.user_question_answers;
-create policy "answers_update_own" on public.user_question_answers for update to authenticated using (exists (select 1 from public.profiles p where p.id = user_question_answers.user_id and p.user_id = auth.uid())) with check (exists (select 1 from public.profiles p where p.id = user_question_answers.user_id and p.user_id = auth.uid()));
+create policy "answers_update_own" on public.user_question_answers for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 drop policy if exists "answers_delete_own" on public.user_question_answers;
-create policy "answers_delete_own" on public.user_question_answers for delete to authenticated using (exists (select 1 from public.profiles p where p.id = user_question_answers.user_id and p.user_id = auth.uid()));
+create policy "answers_delete_own" on public.user_question_answers for delete to authenticated using (auth.uid() = user_id);
 
 drop policy if exists "conversations_select_own" on public.conversations;
 create policy "conversations_select_own" on public.conversations for select to authenticated using (exists (select 1 from public.profiles p where p.id = conversations.user_id and p.user_id = auth.uid()));

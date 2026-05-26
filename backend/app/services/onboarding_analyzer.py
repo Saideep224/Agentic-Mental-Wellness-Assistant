@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.models.user import User
 from app.models.user_profile import UserProfile
 
 logger = logging.getLogger(__name__)
@@ -189,6 +190,15 @@ async def analyze_onboarding(
             "energy": "supportive"
         })
     }
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalar_one_or_none()
+    if user:
+        user.personality_profile = profile.personality_profile
+        user.personality_type = p_type
+        user.communication_style = c_style
+        user.interests = {"items": p_interests}
+        user.onboarding_completed = True
+
     profile.personality_type_text = p_type
     profile.communication_style_text = c_style
 

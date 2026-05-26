@@ -41,6 +41,44 @@ QUESTION_TEXT_BY_ID = {
 }
 
 
+def derive_personality_profile(answers: list[dict]) -> dict:
+    selected = {
+        value
+        for answer in answers
+        for value in (answer.get("selected_answers") or [])
+    }
+
+    def has(*values: str) -> bool:
+        return any(value in selected for value in values)
+
+    if has("straightforward", "handle_truth"):
+        communication_style = "direct"
+    elif has("gentle", "comfort", "listening"):
+        communication_style = "gentle"
+    elif has("close_friend", "smart_chill"):
+        communication_style = "casual"
+    else:
+        communication_style = "warm"
+
+    if has("overthink", "overthinking", "future", "anxious"):
+        stress_pattern = "overthinking"
+    elif has("isolate", "go_silent", "need_space"):
+        stress_pattern = "shutdown"
+    elif has("pressure", "career"):
+        stress_pattern = "performance_pressure"
+    else:
+        stress_pattern = "mixed"
+
+    return {
+        "communication_style": communication_style,
+        "humor_preference": has("humor_hide", "distraction", "laugh", "memes"),
+        "reply_length": "short" if has("short_replies", "long_paragraphs") else "medium",
+        "stress_pattern": stress_pattern,
+        "support_preference": "practical_advice" if has("advice") else ("listening" if has("listening", "need_space") else "validation"),
+        "emotional_tone": "numb" if has("numb") else ("intense" if has("storms", "unpredictable") else ("calm" if has("calm") else "reflective")),
+    }
+
+
 async def analyze_onboarding_background(user_id: uuid.UUID, answers: list):
     """Run onboarding profiling in background with a dedicated DB session context."""
     from app.database import async_session_maker
@@ -144,6 +182,7 @@ async def submit_onboarding(
 
     # Mark user onboarding as complete on User table (profiles)
     current_user.onboarding_completed = True
+    current_user.personality_profile = derive_personality_profile(answers_to_analyze)
     await db.flush()
     await db.commit()
 

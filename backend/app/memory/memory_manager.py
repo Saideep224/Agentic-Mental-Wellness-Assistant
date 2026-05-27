@@ -7,6 +7,7 @@ Uses async sessions so it works with both local SQLite and Supabase PostgreSQL.
 import json
 import logging
 import uuid
+import asyncio
 from datetime import datetime, timezone, timedelta
 from collections import Counter
 
@@ -19,6 +20,9 @@ from app.utils.llm import get_embedding_client
 
 logger = logging.getLogger(__name__)
 
+# Global cache for embeddings to prevent duplicate API requests
+_embedding_cache: dict[str, list[float]] = {}
+
 
 class MemoryManager:
     """
@@ -30,18 +34,27 @@ class MemoryManager:
         pass
 
     async def _get_embedding(self, text: str) -> list[float] | None:
-        """Fetch OpenAI vector embedding for text asynchronously."""
+        """Fetch OpenAI vector embedding for text asynchronously with caching and a 2s timeout."""
+        if not text:
+            return None
         if settings.USE_UNCLOSEAI:
             return None
+        if text in _embedding_cache:
+            return _embedding_cache[text]
         try:
             client = get_embedding_client()
-            response = await client.embeddings.create(
-                input=[text],
-                model=settings.embedding_model
+            response = await asyncio.wait_for(
+                client.embeddings.create(
+                    input=[text],
+                    model=settings.embedding_model
+                ),
+                timeout=2.0
             )
-            return response.data[0].embedding
+            embedding = response.data[0].embedding
+            _embedding_cache[text] = embedding
+            return embedding
         except Exception as e:
-            logger.warning(f"Failed to generate embedding: {e}")
+            logger.warning(f"Failed to generate embedding (timeout or error): {e}")
             return None
 
     async def store_memory(

@@ -225,7 +225,8 @@ export function useChat({ conversationId }: UseChatOptions) {
           const eventSource = new EventSource(url);
           eventSourceRef.current = eventSource;
 
-          // Timeout if first chunk doesn't arrive within 12 seconds
+          // Timeout if first chunk doesn't arrive within 4 seconds (attempt 1) or 8 seconds (attempt 2)
+          const timeoutMs = attempt === 0 ? 4000 : 8000;
           connectionTimeout = setTimeout(() => {
             console.warn(`[useChat] Stream connection attempt ${attempt + 1} timed out.`);
             cleanUpConnection();
@@ -240,7 +241,7 @@ export function useChat({ conversationId }: UseChatOptions) {
                 const fallbackMsg: Message = {
                   id: generateId(),
                   role: 'assistant',
-                  content: "I'm having trouble reaching my database right now. Please try again. 💙",
+                  content: "my imaginary wifi betrayed me for a second... 😭 wait, what were we saying?",
                   timestamp: new Date(),
                 };
                 setMessages((prev) => [...prev, fallbackMsg]);
@@ -253,12 +254,12 @@ export function useChat({ conversationId }: UseChatOptions) {
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === messageId
-                    ? { ...msg, content: msg.content + "\n\n[Connection was lost. Please try again. 💙]" }
+                    ? { ...msg, content: msg.content + "\n\n(wait, my brain froze for a second... 😭 let's try that again.)" }
                     : msg
                 )
               );
             }
-          }, 12000);
+          }, timeoutMs);
 
           eventSource.onmessage = (e) => {
             // Clear connection timeout on the very first message/chunk received
@@ -321,7 +322,7 @@ export function useChat({ conversationId }: UseChatOptions) {
                   const errorMsg: Message = {
                     id: generateId(),
                     role: 'assistant',
-                    content: data.content || "I encountered an error trying to process that. Please try again. 💙",
+                    content: "wait, I lost my train of thought for a moment... 😭 let's try that again.",
                     timestamp: new Date(),
                   };
                   setMessages((prev) => [...prev, errorMsg]);
@@ -329,7 +330,7 @@ export function useChat({ conversationId }: UseChatOptions) {
                   setMessages((prev) =>
                     prev.map((msg) =>
                       msg.id === messageId
-                        ? { ...msg, content: msg.content + `\n\n[Error: ${data.content || "Connection lost."} 💙]` }
+                        ? { ...msg, content: msg.content + "\n\n(hold on, my train of thought got completely lost there 😭)" }
                         : msg
                     )
                   );
@@ -360,7 +361,7 @@ export function useChat({ conversationId }: UseChatOptions) {
                 const fallbackMsg: Message = {
                   id: generateId(),
                   role: 'assistant',
-                  content: "I'm having trouble connecting right now. Please try again in a moment. 💙",
+                  content: "my thoughts buffered for a moment 😭 let's try again! what's on your mind?",
                   timestamp: new Date(),
                 };
                 setMessages((prev) => [...prev, fallbackMsg]);
@@ -372,7 +373,7 @@ export function useChat({ conversationId }: UseChatOptions) {
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === messageId
-                    ? { ...msg, content: msg.content + "\n\n[Connection was lost. Please try again. 💙]" }
+                    ? { ...msg, content: msg.content + "\n\n(sorry, my brain lagged for a moment... 😭 what were we saying?)" }
                     : msg
                 )
               );
@@ -388,7 +389,7 @@ export function useChat({ conversationId }: UseChatOptions) {
             const fallbackMsg: Message = {
               id: generateId(),
               role: 'assistant',
-              content: "I failed to initiate the chat stream. Please try again. 💙",
+              content: "wait, I lost my train of thought for a second... 😭 what was that?",
               timestamp: new Date(),
             };
             setMessages((prev) => [...prev, fallbackMsg]);

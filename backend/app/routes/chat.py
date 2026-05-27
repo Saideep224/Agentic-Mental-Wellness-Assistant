@@ -23,6 +23,19 @@ from app.models.conversation import Conversation, Message, MessageRole
 from app.models.user_profile import UserProfile
 from app.models.mood_log import MoodLog
 from app.routes.auth import get_current_user
+from app.database import _history_cache, _profile_cache, write_queue
+from app.utils.helpers import get_random_human_fallback, get_speculative_transition, normalize_uuid
+
+
+class MockConversation:
+    def __init__(self, id, user_id, title="Temporary Conversation"):
+        self.id = id
+        self.user_id = user_id
+        self.title = title
+        self.emotional_tag = "neutral"
+        self.created_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
+
 from app.schemas.chat import (
     ChatMessageRequest,
     MessageResponse,
@@ -127,7 +140,7 @@ async def _get_or_create_conversation(
     user_id: uuid.UUID,
     conversation_id: uuid.UUID | None,
 ) -> Conversation:
-    """Return an existing conversation or create a new one."""
+    """Return an existing conversation or create a new one, recovering gracefully on DB issues."""
     logger.info(f"[CHAT FLOW] _get_or_create_conversation called: user_id={user_id}, conversation_id={conversation_id}")
     if conversation_id:
         try:
@@ -140,18 +153,13 @@ async def _get_or_create_conversation(
             )
             conv = result.scalar_one_or_none()
             if conv is None:
-                logger.error(f"[DB SELECT] Conversation {conversation_id} not found for user {user_id}")
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Conversation not found",
-                )
+                logger.warning(f"[DB SELECT] Conversation {conversation_id} not found for user {user_id}. Creating mock fallback.")
+                return MockConversation(conversation_id, user_id, "Temporary Conversation")
             logger.info(f"[DB SELECT] Found conversation: id={conv.id}, title='{conv.title}'")
             return conv
         except Exception as e:
-            if isinstance(e, HTTPException):
-                raise
-            logger.error(f"[DB SELECT ERROR] Failed to fetch conversation {conversation_id}: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail="Database select query failed")
+            logger.error(f"[DB SELECT ERROR] Failed to fetch conversation {conversation_id}: {e}. Returning mock fallback.", exc_info=True)
+            return MockConversation(conversation_id, user_id, "Temporary Conversation")
 
     try:
         logger.info(f"[DB INSERT] Creating new Conversation entry for user_id={user_id}...")
@@ -162,36 +170,40 @@ async def _get_or_create_conversation(
         logger.info(f"[DB INSERT] Created conversation: id={conv.id}, title='{conv.title}'")
         return conv
     except Exception as e:
-        logger.error(f"[DB INSERT ERROR] Failed to create new conversation: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create new conversation in DB")
+        logger.error(f"[DB INSERT ERROR] Failed to create new conversation: {e}. Returning mock fallback.", exc_info=True)
+        # Recreate a random uuid for the new conversation to allow the chat session to proceed
+        temp_id = uuid.uuid4()
+        return MockConversation(temp_id, user_id, "New Conversation")
 
 
 async def _build_conversation_history(
     db: AsyncSession, conversation_id: uuid.UUID, limit: int = 20
 ) -> list[dict]:
-    """Load the last N messages in a conversation as dicts for the agents."""
-    result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at.desc())
-        .limit(limit)
-    )
-    messages = result.scalars().all()
-    return [
-        {"role": m.role.value, "content": m.content}
-        for m in reversed(messages)
-    ]
+    """Load the last N messages in a conversation as dicts for the agents, with in-memory caching."""
+    try:
+        result = await db.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.desc())
+            .limit(limit)
+        )
+        messages = result.scalars().all()
+        history = [
+            {"role": m.role.value, "content": m.content}
+            for m in reversed(messages)
+        ]
+        # Update in-memory fallback cache
+        _history_cache[str(conversation_id)] = history
+        return history
+    except Exception as e:
+        logger.warning(f"[DB FAIL] _build_conversation_history failed: {e}. Falling back to in-memory cache.")
+        return _history_cache.get(str(conversation_id), [])
 
 
 async def _get_emotional_profile_dict(
     db: AsyncSession, user_id: uuid.UUID, user_name: str
 ) -> dict:
-    """Load the emotional profile as a plain dict (empty dict if none)."""
-    result = await db.execute(
-        select(UserProfile).where(UserProfile.user_id == user_id)
-    )
-    profile = result.scalar_one_or_none()
-    
+    """Load the emotional profile as a plain dict, with in-memory caching."""
     profile_dict = {
         "user_name": user_name,
         "personality_type": {},
@@ -210,27 +222,38 @@ async def _get_emotional_profile_dict(
         "onboarding_answers": {},
         "personality_profile": {},
     }
-    
-    if profile is not None:
-        profile_dict.update({
-            "personality_type": profile.personality_type or {},
-            "emotional_baseline": profile.emotional_baseline or {},
-            "comfort_preferences": profile.comfort_preferences or {},
-            "communication_style": profile.communication_style or {},
-            "emotional_summary": profile.emotional_summary or {},
-            "stress_patterns": profile.stress_patterns or {},
-            "emotional_triggers": profile.emotional_triggers or {},
-            "preferred_response_style": profile.preferred_response_style or {},
-            "emotional_style": profile.emotional_style or {},
-            "interests": profile.interests or {},
-            "stress_triggers": profile.stress_triggers or {},
-            "strengths": profile.strengths or {},
-            "weaknesses": profile.weaknesses or {},
-            "onboarding_answers": profile.onboarding_answers or {},
-            "personality_profile": profile.personality_profile or {},
-        })
+
+    try:
+        result = await db.execute(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )
+        profile = result.scalar_one_or_none()
         
-    return profile_dict
+        if profile is not None:
+            profile_dict.update({
+                "personality_type": profile.personality_type or {},
+                "emotional_baseline": profile.emotional_baseline or {},
+                "comfort_preferences": profile.comfort_preferences or {},
+                "communication_style": profile.communication_style or {},
+                "emotional_summary": profile.emotional_summary or {},
+                "stress_patterns": profile.stress_patterns or {},
+                "emotional_triggers": profile.emotional_triggers or {},
+                "preferred_response_style": profile.preferred_response_style or {},
+                "emotional_style": profile.emotional_style or {},
+                "interests": profile.interests or {},
+                "stress_triggers": profile.stress_triggers or {},
+                "strengths": profile.strengths or {},
+                "weaknesses": profile.weaknesses or {},
+                "onboarding_answers": profile.onboarding_answers or {},
+                "personality_profile": profile.personality_profile or {},
+            })
+            
+        # Update in-memory fallback cache
+        _profile_cache[str(user_id)] = profile_dict
+        return profile_dict
+    except Exception as e:
+        logger.warning(f"[DB FAIL] _get_emotional_profile_dict failed: {e}. Falling back to in-memory cache.")
+        return _profile_cache.get(str(user_id), profile_dict)
 
 
 async def summarize_and_store_conversation(db: AsyncSession, user_id: uuid.UUID, conversation_id: uuid.UUID, history: list[dict]):
@@ -308,6 +331,69 @@ Summary:"""
         logger.error(f"Failed to generate and store conversation summary: {e}", exc_info=True)
 
 
+async def async_save_message(conversation_id, user_id, role, content, emotion_detected=None, mood_score=None, agent_analysis=None):
+    """Asynchronously inserts a message inside a fresh DB session on failure."""
+    logger.info(f"[BackgroundWriteQueue] Executing async message save: conversation_id={conversation_id}, role={role}")
+    from app.routes.chat import get_db_session
+    async with get_db_session() as save_db:
+        try:
+            # Resolve conversation exists
+            result = await save_db.execute(select(Conversation).where(Conversation.id == conversation_id))
+            conv = result.scalar_one_or_none()
+            if not conv:
+                # If conversation was also lost, recreate it first
+                conv = Conversation(id=conversation_id, user_id=user_id, title="Recovered Conversation")
+                save_db.add(conv)
+                await save_db.flush()
+                
+            msg = Message(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                role=role,
+                content=content,
+                emotion_detected=emotion_detected,
+                mood_score=mood_score,
+                agent_analysis=agent_analysis,
+                emotional_context=agent_analysis.get("emotion_analysis", {}) if agent_analysis else None
+            )
+            save_db.add(msg)
+            conv.updated_at = datetime.now(timezone.utc)
+            save_db.add(conv)
+            await save_db.commit()
+            logger.info(f"[BackgroundWriteQueue] Async message save successful: message_id={msg.id}")
+        except Exception as e:
+            logger.error(f"[BackgroundWriteQueue] Async message save failed: {e}", exc_info=True)
+            await save_db.rollback()
+            raise
+
+
+async def async_save_mood_log(user_id, mood_score, mood_label, dims):
+    """Asynchronously inserts a mood log inside a fresh DB session on failure."""
+    logger.info(f"[BackgroundWriteQueue] Executing async mood log save: user_id={user_id}")
+    from app.routes.chat import get_db_session
+    async with get_db_session() as save_db:
+        try:
+            mood_log = MoodLog(
+                user_id=user_id,
+                mood_score=mood_score or 0.5,
+                mood_label=mood_label or "neutral",
+                detected_emotion=mood_label or "neutral",
+                stress=dims.get("stress", 0.3),
+                happiness=dims.get("happiness", 0.5),
+                sadness=dims.get("sadness", 0.3),
+                anxiety=dims.get("anxiety", 0.3),
+                motivation=dims.get("motivation", 0.5),
+                confidence=dims.get("confidence", 0.5)
+            )
+            save_db.add(mood_log)
+            await save_db.commit()
+            logger.info(f"[BackgroundWriteQueue] Async mood log save successful.")
+        except Exception as e:
+            logger.error(f"[BackgroundWriteQueue] Async mood log save failed: {e}", exc_info=True)
+            await save_db.rollback()
+            raise
+
+
 @router.post("/message")
 async def send_message(
     body: ChatMessageRequest,
@@ -344,13 +430,22 @@ async def send_message(
         logger.info(f"[DB COMMIT] Saving User message and Conversation to the database...")
         try:
             await db.commit()
-            await db.refresh(conversation)
-            await db.refresh(user_msg)
-            logger.info(f"[DB COMMIT SUCCESS] User message (id={user_msg.id}) and Conversation (id={conversation.id}) successfully saved.")
+            try:
+                await db.refresh(conversation)
+                await db.refresh(user_msg)
+            except Exception:
+                pass
+            logger.info(f"[DB COMMIT SUCCESS] User message (id={getattr(user_msg, 'id', 'N/A')}) and Conversation (id={getattr(conversation, 'id', 'N/A')}) successfully saved.")
         except Exception as commit_err:
-            logger.error(f"[DB COMMIT ERROR] Failed to save conversation/user message to DB: {commit_err}", exc_info=True)
+            logger.error(f"[DB COMMIT ERROR] Failed to save conversation/user message to DB: {commit_err}. Queueing async recovery.", exc_info=True)
             await db.rollback()
-            raise HTTPException(status_code=500, detail="Failed to persist user message in the database")
+            await write_queue.add_task(
+                async_save_message,
+                conversation_id=conversation_id_resolved,
+                user_id=current_user.id,
+                role=MessageRole.user,
+                content=body.message
+            )
 
         # 4. Build context for agents
         logger.info(f"[CONTEXT] Loading conversation history for id={conversation_id_resolved}...")
@@ -373,14 +468,17 @@ async def send_message(
                 db=db,
             )
             logger.info(f"[AI AGENT SUCCESS] Multi-agent processing complete.")
+            full_response = result.get("response", "I'm here for you. Could you tell me more?")
+            detected_emotion = result.get("detected_emotion", None)
+            mood_score = result.get("mood_score", None)
+            agent_analysis = result.get("agent_analysis", {})
         except Exception as agent_err:
-            logger.error(f"[AI AGENT ERROR] Multi-agent execution failed: {agent_err}", exc_info=True)
-            raise HTTPException(status_code=500, detail="I encountered an error trying to process that. Could you try again?")
-
-        full_response = result.get("response", "I'm here for you. Could you tell me more?")
-        detected_emotion = result.get("detected_emotion", None)
-        mood_score = result.get("mood_score", None)
-        agent_analysis = result.get("agent_analysis", {})
+            logger.error(f"[AI AGENT ERROR] Multi-agent execution failed: {agent_err}. Falling back to randomized human reply.", exc_info=True)
+            full_response = get_random_human_fallback()
+            detected_emotion = "neutral"
+            mood_score = 0.5
+            agent_analysis = {}
+            result = {}
         
         # Log memory retrieval details
         retrieved_memories = result.get("memories", [])
@@ -470,11 +568,31 @@ async def send_message(
 
             # Commit assistant message + mood logs
             await db.commit()
-            await db.refresh(assistant_msg)
-            logger.info(f"[DB COMMIT SUCCESS] AI response (id={assistant_msg.id}) and MoodLog saved successfully.")
+            try:
+                await db.refresh(assistant_msg)
+            except Exception:
+                pass
+            logger.info(f"[DB COMMIT SUCCESS] AI response (id={getattr(assistant_msg, 'id', 'N/A')}) and MoodLog saved successfully.")
         except Exception as db_err:
-            logger.error(f"[DB COMMIT ERROR] Failed to save assistant message/mood log: {db_err}", exc_info=True)
+            logger.error(f"[DB COMMIT ERROR] Failed to save assistant message/mood log: {db_err}. Queueing async recovery.", exc_info=True)
             await db.rollback()
+            await write_queue.add_task(
+                async_save_message,
+                conversation_id=conversation_id_resolved,
+                user_id=current_user.id,
+                role=MessageRole.assistant,
+                content=full_response,
+                emotion_detected=detected_emotion,
+                mood_score=mood_score,
+                agent_analysis=agent_analysis
+            )
+            await write_queue.add_task(
+                async_save_mood_log,
+                user_id=current_user.id,
+                mood_score=mood_score,
+                mood_label=detected_emotion,
+                dims=result.get("emotion_dimensions", {}) if 'result' in locals() and result else {}
+            )
 
         return {
             "response": full_response,
@@ -490,6 +608,174 @@ async def send_message(
             status_code=500,
             detail="I encountered an internal server error. Please try again in a moment.",
         )
+
+
+async def generate_and_persist_sse_response(
+    message: str,
+    current_user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    history: list[dict],
+    emotional_profile: dict,
+) -> dict:
+    """
+    Runs the agent graph, generates the response, updates/saves the chat message,
+    mood logs, conversation metadata, and memory asynchronously using a fresh DB session.
+    """
+    logger.info(f"[SSE PERSIST] Starting background processing for conversation_id={conversation_id}")
+    
+    # 1. Run agent graph
+    async with get_db_session() as db:
+        try:
+            logger.info(f"[SSE AI] Running agent graph...")
+            result = await run_agent_graph(
+                user_message=message,
+                user_id=str(current_user_id),
+                conversation_history=history,
+                emotional_profile=emotional_profile,
+                conversation_id=conversation_id,
+                db=db,
+            )
+            full_response = result.get("response", "I'm here for you. Could you tell me more?")
+            detected_emotion = result.get("detected_emotion", None)
+            mood_score = result.get("mood_score", None)
+            agent_analysis = result.get("agent_analysis", {})
+        except Exception as agent_err:
+            logger.error(f"[SSE AI ERROR] Agent graph execution failed: {agent_err}. Falling back to randomized human reply.", exc_info=True)
+            full_response = get_random_human_fallback()
+            detected_emotion = "neutral"
+            mood_score = 0.5
+            agent_analysis = {}
+            result = {}
+
+        # 2. Get/recreate conversation
+        conversation = None
+        try:
+            conversation_res = await db.execute(
+                select(Conversation).where(
+                    Conversation.id == conversation_id,
+                    Conversation.user_id == current_user_id
+                )
+            )
+            conversation = conversation_res.scalar_one_or_none()
+        except Exception as db_err:
+            logger.warning(f"[SSE DB WARNING] Failed to query conversation {conversation_id} inside background task: {db_err}")
+
+        # If conversation is missing (deleted or failed query), create a temp mock so DB saves don't raise Foreign Key errors
+        if not conversation:
+            try:
+                conversation = Conversation(id=conversation_id, user_id=current_user_id, title="New Conversation")
+                db.add(conversation)
+                await db.flush()
+            except Exception as create_err:
+                logger.error(f"[SSE DB ERROR] Failed to recreate missing conversation: {create_err}")
+
+        # 3. Update title if first message
+        if len(history) <= 1 and conversation:
+            try:
+                logger.info(f"[SSE TITLE] Generating title for new conversation...")
+                title_msgs = [
+                    {"role": "user", "content": message},
+                    {"role": "assistant", "content": full_response}
+                ]
+                conversation.title = await generate_chat_title_llm(title_msgs)
+                logger.info(f"[SSE TITLE SUCCESS] Title set: '{conversation.title}'")
+            except Exception as title_err:
+                logger.warning(f"[SSE TITLE WARNING] LLM title failed: {title_err}. Falling back to default.")
+                conversation.title = generate_emotional_title(message, detected_emotion or "neutral")
+
+        # 4. Save assistant message and mood logs
+        logger.info(f"[SSE DB INSERT] Instantiating AI response Message...")
+        assistant_msg = Message(
+            conversation_id=conversation_id,
+            user_id=current_user_id,
+            role=MessageRole.assistant,
+            content=full_response,
+            emotion_detected=detected_emotion,
+            mood_score=mood_score,
+            agent_analysis=agent_analysis,
+            emotional_context=agent_analysis.get("emotion_analysis", {}),
+        )
+        db.add(assistant_msg)
+
+        # Save mood log
+        dims = result.get("emotion_dimensions", {})
+        mood_log = MoodLog(
+            user_id=current_user_id,
+            mood_score=mood_score or 0.5,
+            mood_label=detected_emotion or "neutral",
+            detected_emotion=detected_emotion or "neutral",
+            stress=dims.get("stress", 0.3),
+            happiness=dims.get("happiness", 0.5),
+            sadness=dims.get("sadness", 0.3),
+            anxiety=dims.get("anxiety", 0.3),
+            motivation=dims.get("motivation", 0.5),
+            confidence=dims.get("confidence", 0.5),
+        )
+        db.add(mood_log)
+
+        if conversation:
+            if detected_emotion:
+                conversation.emotional_tag = detected_emotion
+            conversation.updated_at = datetime.now(timezone.utc)
+            db.add(conversation)
+
+        # 5. Commit everything
+        try:
+            await db.commit()
+            logger.info(f"[SSE DB SUCCESS] Background save successful for conversation_id={conversation_id}")
+        except Exception as commit_err:
+            logger.error(f"[SSE DB COMMIT ERROR] Failed to save background SSE updates: {commit_err}. Queueing async recovery.", exc_info=True)
+            await db.rollback()
+            await write_queue.add_task(
+                async_save_message,
+                conversation_id=conversation_id,
+                user_id=current_user_id,
+                role=MessageRole.assistant,
+                content=full_response,
+                emotion_detected=detected_emotion,
+                mood_score=mood_score,
+                agent_analysis=agent_analysis
+            )
+            await write_queue.add_task(
+                async_save_mood_log,
+                user_id=current_user_id,
+                mood_score=mood_score,
+                mood_label=detected_emotion,
+                dims=dims
+            )
+
+        # 6. Save memory in background if meaningful
+        try:
+            from app.services.memory_service import memory_service
+            mem_extraction = result.get("memory_extraction", {})
+            if mem_extraction.get("is_meaningful"):
+                logger.info(f"[SSE MEMORY] Storing memory: '{mem_extraction.get('memory_summary', '')[:80]}'...")
+                await memory_service.saveMemory(
+                    db=db,
+                    user_id=str(current_user_id),
+                    memory_summary=mem_extraction.get("memory_summary"),
+                    behavior_patterns=mem_extraction.get("behavior_patterns") or {},
+                )
+                await db.commit()
+                logger.info(f"[SSE MEMORY SUCCESS] Memory stored successfully.")
+        except Exception as mem_err:
+            logger.error(f"[SSE MEMORY ERROR] Failed to save memory: {mem_err}", exc_info=True)
+
+        # 7. Thread summary trigger if needed
+        if len(history) >= 12 and len(history) % 6 == 0:
+            try:
+                await summarize_and_store_conversation(db, current_user_id, conversation_id, history)
+                await db.commit()
+            except Exception as sum_err:
+                logger.error(f"[SSE SUMMARIZATION ERROR] Summarization trigger failed: {sum_err}", exc_info=True)
+
+        return {
+            "full_response": full_response,
+            "detected_emotion": detected_emotion,
+            "mood_score": mood_score,
+            "agent_analysis": agent_analysis,
+            "message_id": str(assistant_msg.id) if hasattr(assistant_msg, "id") else str(uuid.uuid4()),
+        }
 
 
 @router.get("/{conversation_id}/stream")
@@ -524,7 +810,7 @@ async def stream_message_sse(
         except Exception as auth_err:
             logger.error(f"[AUTH SSE ERROR] JWT validation failed: {auth_err}")
             raise credentials_exception
-
+ 
         # Load user from profiles table
         result = await db.execute(select(User).where(User.id == user_id))
         current_user = result.scalar_one_or_none()
@@ -532,11 +818,11 @@ async def stream_message_sse(
             logger.error(f"[AUTH SSE ERROR] User profile not found in DB for user_id={user_id}")
             raise credentials_exception
         logger.info(f"[AUTH SSE SUCCESS] Authenticated user details: id={current_user.id}, email={current_user.email}")
-
+ 
         # 2. Get the conversation
         conversation = await _get_or_create_conversation(db, current_user.id, conversation_id)
         conversation_id_resolved = conversation.id
-
+ 
         # 3. Save the user's message
         logger.info(f"[DB INSERT SSE] Saving User message: conversation_id={conversation_id_resolved}, user_id={current_user.id}")
         logger.info(f"[TYPE LOG] stream_message_sse user: conversation_id type: {type(conversation_id_resolved)}, value: {conversation_id_resolved}")
@@ -561,121 +847,57 @@ async def stream_message_sse(
             logger.error(f"[DB COMMIT SSE ERROR] Failed to save user message: {db_msg_err}", exc_info=True)
             await db.rollback()
             raise HTTPException(status_code=500, detail="Failed to save user message")
-
+ 
         # 4. Build context
         logger.info(f"[CONTEXT SSE] Loading history and emotional profile...")
         history = await _build_conversation_history(db, conversation_id_resolved)
         emotional_profile = await _get_emotional_profile_dict(db, current_user.id, current_user.name)
-
+ 
         # 5. Event generator for Starlette SSE EventSourceResponse
         async def event_generator() -> AsyncGenerator[dict, None]:
             logger.info("[EVENT GENERATOR] Stream generator started.")
+            
+            # Yield speculative transition immediately
+            speculative_chunk = get_speculative_transition(message)
+            logger.info(f"[SSE STREAM] Yielding speculative transition: '{speculative_chunk}'")
+            yield {
+                "event": "message",
+                "data": json.dumps({
+                    "type": "chunk",
+                    "content": speculative_chunk,
+                    "conversation_id": str(conversation_id_resolved),
+                }),
+            }
+            # Short yield pause
+            await asyncio.sleep(0.05)
+            
             try:
-                # Execute agents Graph
-                logger.info(f"[AI AGENT SSE] Executing agent pipeline graph...")
-                result = await run_agent_graph(
-                    user_message=message,
-                    user_id=str(current_user.id),
-                    conversation_history=history,
-                    emotional_profile=emotional_profile,
-                    conversation_id=conversation_id_resolved,
-                    db=None,  # We pass None because we'll use a separate session for saving
+                persist_task = asyncio.create_task(
+                    generate_and_persist_sse_response(
+                        message=message,
+                        current_user_id=current_user.id,
+                        conversation_id=conversation_id_resolved,
+                        history=history,
+                        emotional_profile=emotional_profile,
+                    )
                 )
-                logger.info(f"[AI AGENT SSE SUCCESS] Pipeline graph execution complete.")
-
-                full_response = result.get("response", "I'm here for you. Could you tell me more?")
-                detected_emotion = result.get("detected_emotion", None)
-                mood_score = result.get("mood_score", None)
-                agent_analysis = result.get("agent_analysis", {})
-
-                # Save assistant message & mood log inside a separate DB context to prevent connection locks
-                logger.info(f"[DB INSERT SSE ASSISTANT] Saving assistant response outside the request context...")
-                async with get_db_session() as save_db:
-                    try:
-                        # Store memory
-                        mem_extraction = result.get("memory_extraction", {})
-                        if mem_extraction.get("is_meaningful"):
-                            logger.info(f"[DB INSERT SSE MEMORY] Storing memory: '{mem_extraction.get('memory_summary', '')[:80]}'...")
-                            from app.services.memory_service import memory_service
-                            await memory_service.saveMemory(
-                                db=save_db,
-                                user_id=str(current_user.id),
-                                memory_summary=mem_extraction.get("memory_summary"),
-                                behavior_patterns=mem_extraction.get("behavior_patterns") or {},
-                            )
-                            logger.info("[DB INSERT SSE MEMORY SUCCESS] Memory saved successfully.")
-                    except Exception as mem_err:
-                        logger.error(f"[MEMORY SSE ERROR] Failed to store memory: {mem_err}", exc_info=True)
-
-                    try:
-                        logger.info(f"[TYPE LOG] stream_message_sse assistant: conversation_id type: {type(conversation_id_resolved)}, value: {conversation_id_resolved}")
-                        logger.info(f"[TYPE LOG] stream_message_sse assistant: user_id type: {type(current_user.id)}, value: {current_user.id}")
-                        assistant_msg = Message(
-                            conversation_id=conversation_id_resolved,
-                            user_id=current_user.id,
-                            role=MessageRole.assistant,
-                            content=full_response,
-                            emotion_detected=detected_emotion,
-                            mood_score=mood_score,
-                            agent_analysis=agent_analysis,
-                            emotional_context=agent_analysis.get("emotion_analysis", {}),
-                        )
-                        save_db.add(assistant_msg)
-
-                        # Save mood log
-                        dims = result.get("emotion_dimensions", {})
-                        mood_log = MoodLog(
-                            user_id=current_user.id,
-                            mood_score=mood_score or 0.5,
-                            mood_label=detected_emotion or "neutral",
-                            detected_emotion=detected_emotion or "neutral",
-                            stress=dims.get("stress", 0.3),
-                            happiness=dims.get("happiness", 0.5),
-                            sadness=dims.get("sadness", 0.3),
-                            anxiety=dims.get("anxiety", 0.3),
-                            motivation=dims.get("motivation", 0.5),
-                            confidence=dims.get("confidence", 0.5),
-                        )
-                        save_db.add(mood_log)
-                        
-                        # Update conversation tag/title
-                        stmt = select(Conversation).where(Conversation.id == conversation_id_resolved)
-                        conv_res = await save_db.execute(stmt)
-                        db_conv = conv_res.scalar_one_or_none()
-                        if db_conv:
-                            if detected_emotion:
-                                db_conv.emotional_tag = detected_emotion
-                            db_conv.updated_at = datetime.now(timezone.utc)
-                            if len(history) <= 1:
-                                try:
-                                    logger.info(f"[TITLE GENERATION SSE] Generating title...")
-                                    title_msgs = [
-                                        {"role": "user", "content": message},
-                                        {"role": "assistant", "content": full_response}
-                                    ]
-                                    db_conv.title = await generate_chat_title_llm(title_msgs)
-                                except Exception:
-                                    db_conv.title = generate_emotional_title(message, detected_emotion or "neutral")
-                                save_db.add(db_conv)
-                        
-                        # Trigger summarization
-                        if len(history) >= 12 and len(history) % 6 == 0:
-                            try:
-                                logger.info(f"[DB CONTEXT SSE] Triggering summarization...")
-                                await summarize_and_store_conversation(save_db, current_user.id, conversation_id_resolved, history)
-                            except Exception as sum_err:
-                                logger.error(f"[SUMMARIZATION SSE ERROR] Summarization trigger failed: {sum_err}", exc_info=True)
-
-                        await save_db.commit()
-                        await save_db.refresh(assistant_msg)
-                        msg_id = str(assistant_msg.id)
-                        logger.info(f"[DB COMMIT SSE ASSISTANT SUCCESS] Saved assistant response (id={msg_id}) and MoodLog.")
-                    except Exception as sse_db_err:
-                        logger.error(f"[DB COMMIT SSE ASSISTANT ERROR] Failed to save assistant message/mood log: {sse_db_err}", exc_info=True)
-                        await save_db.rollback()
-                        msg_id = ""
-
-                # Yield chunks
+                try:
+                    persisted = await asyncio.shield(persist_task)
+                except asyncio.CancelledError:
+                    logger.warning(
+                        "[SSE DISCONNECT] Client disconnected while AI/save task was running. "
+                        "Persistence task remains shielded for conversation_id=%s",
+                        conversation_id_resolved,
+                    )
+                    raise
+ 
+                full_response = persisted["full_response"]
+                detected_emotion = persisted["detected_emotion"]
+                mood_score = persisted["mood_score"]
+                agent_analysis = persisted["agent_analysis"]
+                msg_id = persisted["message_id"]
+ 
+                # Yield actual chunks
                 logger.info(f"[SSE STREAM] Yielding response text chunks...")
                 chunk_size = 12
                 for i in range(0, len(full_response), chunk_size):
@@ -689,7 +911,7 @@ async def stream_message_sse(
                         }),
                     }
                     await asyncio.sleep(0.03)
-
+ 
                 # Yield done event
                 logger.info(f"[SSE STREAM] Yielding final 'done' event.")
                 yield {
@@ -703,17 +925,30 @@ async def stream_message_sse(
                         "agent_analysis": agent_analysis,
                     }),
                 }
-
+ 
             except Exception as gen_err:
                 logger.error(f"[SSE STREAM ERROR] Error inside event_generator: {gen_err}", exc_info=True)
+                fallback_excuse = get_random_human_fallback()
                 yield {
-                    "event": "error",
+                    "event": "message",
                     "data": json.dumps({
-                        "type": "error",
-                        "content": "I encountered an error trying to process that. Could you try again?",
+                        "type": "chunk",
+                        "content": fallback_excuse,
+                        "conversation_id": str(conversation_id_resolved),
                     }),
                 }
-
+                yield {
+                    "event": "message",
+                    "data": json.dumps({
+                        "type": "done",
+                        "message_id": str(uuid.uuid4()),
+                        "conversation_id": str(conversation_id_resolved),
+                        "emotion_detected": "neutral",
+                        "mood_score": 0.5,
+                        "agent_analysis": {},
+                    }),
+                }
+ 
         # Return the EventSourceResponse
         return EventSourceResponse(event_generator())
 

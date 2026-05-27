@@ -89,10 +89,22 @@ async def create_conversation(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new empty conversation."""
-    conv = Conversation(user_id=current_user.id, title=body.title)
-    db.add(conv)
-    await db.flush()
-    await db.refresh(conv)
+    logger.info("[CONVERSATION CREATE] user_id=%s title=%s", current_user.id, body.title)
+    try:
+        conv = Conversation(user_id=current_user.id, title=body.title)
+        db.add(conv)
+        await db.flush()
+        await db.commit()
+        await db.refresh(conv)
+        logger.info("[CONVERSATION CREATE SUCCESS] conversation_id=%s user_id=%s", conv.id, current_user.id)
+    except Exception as exc:
+        logger.error("[CONVERSATION CREATE ERROR] user_id=%s error=%s", current_user.id, exc, exc_info=True)
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create conversation",
+        )
+
     return ConversationResponse(
         id=conv.id,
         title=conv.title,

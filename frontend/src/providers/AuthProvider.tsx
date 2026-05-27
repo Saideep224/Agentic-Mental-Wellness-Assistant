@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { User } from '@/types';
-import { getToken, getStoredUser, clearAuth, getMe } from '@/api';
+import { getToken, getStoredUser, clearAuth, getMe, checkBackendHealth } from '@/api';
 import { supabase } from '@/database/supabase';
 
 interface AuthContextType {
@@ -27,6 +27,27 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   
   const router = useRouter();
   const pathname = usePathname();
+
+  // Warmup Backend Mount Ping and 4-minute heartbeat to keep connection pool active and prevent Render cold starts
+  useEffect(() => {
+    const runPing = async () => {
+      console.log('[AuthProvider] Sending backend warmup ping...');
+      try {
+        const healthy = await checkBackendHealth();
+        console.log('[AuthProvider] Backend warmup ping status:', healthy ? 'SUCCESS' : 'FAILED');
+      } catch (err) {
+        console.warn('[AuthProvider] Backend warmup ping failed:', err);
+      }
+    };
+
+    // Run immediately on mount
+    runPing();
+
+    // Set interval for every 4 minutes (4 * 60 * 1000 ms)
+    const intervalId = setInterval(runPing, 4 * 60 * 1000);
+
+    return () => clearInterval(intervalId);
+  }, []);
 
   // Load and listen to Supabase Auth State changes
   useEffect(() => {

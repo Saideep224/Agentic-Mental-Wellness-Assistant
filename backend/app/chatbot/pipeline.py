@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.database import async_session_maker
+from app.database import async_session_maker, _memory_cache
 from app.utils.llm import generate_chat_completion_with_fallback
 from app.chatbot.state import AgentState
 from app.chatbot.prompts import MULTI_AGENT_ANALYZER_SYSTEM_PROMPT
@@ -47,19 +47,24 @@ logger = logging.getLogger(__name__)
 
 # ── Helper: Retrieve Conversation Summary ─────────────────────
 async def _get_conversation_summary(db: AsyncSession, user_id: str, conversation_id: str) -> str | None:
-    """Query the memories table for a conversation summary memory."""
+    """Query the memories table for a conversation summary memory with a 600ms timeout."""
     try:
         from app.models.memory import Memory
-        result = await db.execute(
-            select(Memory).where(Memory.user_id == user_id)
-        )
-        memories = result.scalars().all()
-        for m in memories:
-            meta = m.metadata_json or {}
-            if meta.get("source") == "conversation_summary" and meta.get("conversation_id") == str(conversation_id):
-                return m.memory_summary
+        
+        async def _query():
+            result = await db.execute(
+                select(Memory).where(Memory.user_id == user_id)
+            )
+            memories = result.scalars().all()
+            for m in memories:
+                meta = m.metadata_json or {}
+                if meta.get("source") == "conversation_summary" and meta.get("conversation_id") == str(conversation_id):
+                    return m.memory_summary
+            return None
+
+        return await asyncio.wait_for(_query(), timeout=0.6)
     except Exception as e:
-        logger.warning(f"Failed to fetch conversation summary: {e}")
+        logger.warning(f"Failed to fetch conversation summary (timeout or error): {e}")
     return None
 
 
@@ -206,7 +211,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
 
 # ── 2. Memory Agent ───────────────────────────────────────────
 async def memory_agent_node(state: AgentState) -> dict:
-    """Use Memory Agent to recall context and emotional patterns from DB."""
+    """Use Memory Agent to recall context and emotional patterns from DB with an 800ms timeout."""
     user_message = state.get("user_message", "")
     user_id = state.get("user_id", "")
 
@@ -217,14 +222,24 @@ async def memory_agent_node(state: AgentState) -> dict:
         close_db = True
 
     try:
-        # Retrieve memories and patterns using the memory agent (limit top 3 to optimize tokens)
-        result = await memory_agent.retrieve_context(db, user_id, user_message, limit=3)
-        retrieved_memories = result["memories"]
-        patterns = result["emotional_patterns"]
+        # Retrieve memories and patterns using the memory agent (limit top 3 to optimize tokens) with an 800ms timeout
+        result = await asyncio.wait_for(
+            memory_agent.retrieve_context(db, user_id, user_message, limit=3),
+            timeout=0.8
+        )
+        retrieved_memories = result.get("memories", [])
+        patterns = result.get("emotional_patterns", {})
+        
+        # Populate in-memory cache
+        _memory_cache[str(user_id)] = (retrieved_memories, patterns)
     except Exception as e:
-        logger.warning(f"[MEMORY] Memory agent node error: {e}", exc_info=True)
-        retrieved_memories = []
-        patterns = {}
+        logger.warning(f"[MEMORY] Memory agent node error or timeout: {e}. Using cached memories if available.")
+        # Try to retrieve from cache
+        cached = _memory_cache.get(str(user_id))
+        if cached:
+            retrieved_memories, patterns = cached
+        else:
+            retrieved_memories, patterns = [], {}
     finally:
         if close_db:
             await db.close()

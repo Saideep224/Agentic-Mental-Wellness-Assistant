@@ -14,13 +14,14 @@ Folder purpose explanations:
 
 from contextlib import asynccontextmanager
 import logging
+from sqlalchemy import text
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.database import create_tables
+from app.database import create_tables, engine
 from app.routes import auth_router, chat_router, conversations_router, onboarding_router, dashboard_router
 
 # ── Logging ───────────────────────────────────────────────────
@@ -112,16 +113,31 @@ async def root():
 # ── Simple Health check (for Render Deployment) ───────────────
 @app.get("/health", tags=["Health"])
 async def simple_health():
-    """Simple health check endpoint returning status ok."""
-    return {"status": "ok"}
+    """Simple health check endpoint returning status ok and pre-warming DB connection."""
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        logger.warning(f"Database pre-warm failed: {e}")
+        db_status = "error"
+    return {"status": "ok", "database": db_status}
 
 
 # ── Detailed Health check ─────────────────────────────────────
 @app.get("/api/health", tags=["Health"])
 async def health_check():
     """Verify that the API server is running and database is reachable."""
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        db_status = "healthy"
+    except Exception as e:
+        logger.error(f"Detailed health check database connection failed: {e}")
+        db_status = "unhealthy"
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "healthy" else "degraded",
         "app": "Esona API",
         "version": "1.0.0",
+        "database": db_status,
     }

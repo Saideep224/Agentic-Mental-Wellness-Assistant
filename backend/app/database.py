@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import uuid
 from sqlalchemy.types import TypeDecorator, CHAR
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -5,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class SafeUUID(TypeDecorator):
@@ -105,3 +109,48 @@ async def create_tables() -> None:
     """Create all tables (used during app startup / dev)."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+# ── In-Memory Session Caches for Fallback Resilience ─────────
+_history_cache: dict[tuple[str, str], list[dict]] = {}  # key: (user_id, conversation_id)
+_profile_cache: dict[str, dict] = {}                   # key: user_id
+_memory_cache: dict[str, list] = {}                     # key: user_id
+
+
+# ── Background Task Writing Queue for Async Recovery ────────
+class BackgroundWriteQueue:
+    def __init__(self):
+        self.queue = asyncio.Queue()
+        self._worker_task = None
+
+    def start_worker(self):
+        if self._worker_task is None or self._worker_task.done():
+            self._worker_task = asyncio.create_task(self._worker())
+
+    async def add_task(self, func, *args, **kwargs):
+        await self.queue.put((func, args, kwargs))
+        self.start_worker()
+
+    async def _worker(self):
+        logger.info("[BackgroundWriteQueue] Worker started.")
+        while True:
+            func, args, kwargs = await self.queue.get()
+            retries = 3
+            success = False
+            for attempt in range(retries):
+                try:
+                    await func(*args, **kwargs)
+                    success = True
+                    break
+                except Exception as e:
+                    delay = 2 ** attempt
+                    logger.warning(f"[BackgroundWriteQueue] Write task failed (attempt {attempt+1}/{retries}): {e}. Retrying in {delay}s...")
+                    await asyncio.sleep(delay)
+            
+            if not success:
+                logger.error(f"[BackgroundWriteQueue] Write task failed permanently after {retries} retries.")
+            self.queue.task_done()
+
+
+write_queue = BackgroundWriteQueue()
+

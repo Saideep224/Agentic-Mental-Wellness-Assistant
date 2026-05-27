@@ -21,8 +21,11 @@ class Memory(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID, primary_key=True, default=uuid.uuid4
     )
-    user_id: Mapped[str] = mapped_column(
-        String(255), nullable=False, index=True
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID,
+        ForeignKey("profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
     )
     memory_summary: Mapped[str] = mapped_column(Text, nullable=False)
     behavior_patterns: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

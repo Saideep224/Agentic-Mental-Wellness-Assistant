@@ -56,15 +56,11 @@ export function useChat({ conversationId }: UseChatOptions) {
 
         const parts = responseText.split('|||').map(p => p.trim()).filter(Boolean);
         
-        // Display parts sequentially with typing/streaming delay
+        // Display parts sequentially with burst typing
         const loadedMsgs: Message[] = [];
         for (let i = 0; i < parts.length; i++) {
           setIsLoading(true);
           
-          // Typing delay for the stream
-          const typingDelay = Math.max(700, Math.min(2000, parts[i].length * 15));
-          await new Promise((resolve) => setTimeout(resolve, typingDelay));
-
           const messageId = `${generateId()}-${i}`;
           const partMessage: Message = {
             id: messageId,
@@ -75,30 +71,31 @@ export function useChat({ conversationId }: UseChatOptions) {
             moodScore: i === parts.length - 1 ? moodScore : undefined,
           };
           
-          // Pre-add message so stream is visible in UI
           loadedMsgs.push(partMessage);
           setMessages([...loadedMsgs]);
           setIsLoading(false);
 
-          // Stream typing
+          // Burst stream typing
           const fullText = parts[i];
           let currentText = '';
           const chars = Array.from(fullText);
           for (let charIdx = 0; charIdx < chars.length; charIdx++) {
             currentText += chars[charIdx];
-            // Update messages state
             setMessages((prev) =>
               prev.map((msg) => (msg.id === messageId ? { ...msg, content: currentText } : msg))
             );
-            await new Promise((resolve) => setTimeout(resolve, 15));
+            
+            let delay = Math.floor(Math.random() * 8) + 2; // 2-10ms burst
+            if (['.', '!', '?'].includes(chars[charIdx])) delay = 100;
+            else if ([',', ';', ':'].includes(chars[charIdx])) delay = 50;
+            
+            await new Promise((resolve) => setTimeout(resolve, delay));
           }
           
-          // Update local accumulator message content
           partMessage.content = fullText;
 
           if (i < parts.length - 1) {
-            setIsLoading(true);
-            await new Promise((resolve) => setTimeout(resolve, 400));
+            await new Promise((resolve) => setTimeout(resolve, 200));
           }
         }
       } else {
@@ -150,57 +147,100 @@ export function useChat({ conversationId }: UseChatOptions) {
       setIsLoading(true);
       setIsStreaming(false);
 
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+
       try {
-        // Send message directly to receive fully compiled response (with splits)
-        const response = await api.sendMessage(targetId, content.trim(), token);
-        const responseText = response.response;
-        const detectedEmotion = response.emotionDetected;
-        const moodScore = response.moodScore;
-        const agentAnalysis = response.agentAnalysis;
+        const url = `${api.API_BASE}/api/chat/${targetId}/stream?message=${encodeURIComponent(content.trim())}&token=${encodeURIComponent(token)}`;
+        const eventSource = new EventSource(url);
+        eventSourceRef.current = eventSource;
 
-        // Split raw response by |||
-        const parts = responseText.split('|||').map(p => p.trim()).filter(Boolean);
+        const messageId = generateId();
+        const partMessage: Message = {
+          id: messageId,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, partMessage]);
 
-        // Display parts sequentially with typing delay
-        for (let i = 0; i < parts.length; i++) {
-          setIsLoading(true); // Keep typing indicator active
+        let accumulatedContent = '';
+        let burstQueue = '';
+        let isProcessingBurst = false;
 
-          // Typing delay: e.g. minimum 700ms, maximum 2000ms
-          const typingDelay = Math.max(700, Math.min(2000, parts[i].length * 15));
-          await new Promise((resolve) => setTimeout(resolve, typingDelay));
-
-          const messageId = `${generateId()}-${i}`;
-          const partMessage: Message = {
-            id: messageId,
-            role: 'assistant',
-            content: '', // Start empty
-            timestamp: new Date(),
-            emotionDetected: i === parts.length - 1 ? detectedEmotion : undefined,
-            moodScore: i === parts.length - 1 ? moodScore : undefined,
-            agentAnalysis: i === parts.length - 1 ? agentAnalysis : undefined,
-          };
-
-          setMessages((prev) => [...prev, partMessage]);
-          setIsLoading(false); // Hide the typing indicator while typing this bubble
-
-          // Stream the characters
-          const fullText = parts[i];
-          let currentText = '';
-          const chars = Array.from(fullText);
-          for (let charIdx = 0; charIdx < chars.length; charIdx++) {
-            currentText += chars[charIdx];
+        const processBurst = async () => {
+          if (isProcessingBurst) return;
+          isProcessingBurst = true;
+          
+          while (burstQueue.length > 0) {
+            const char = burstQueue[0];
+            burstQueue = burstQueue.slice(1);
+            accumulatedContent += char;
+            
+            // Render chunk
             setMessages((prev) =>
-              prev.map((msg) => (msg.id === messageId ? { ...msg, content: currentText } : msg))
+              prev.map((msg) => (msg.id === messageId ? { ...msg, content: accumulatedContent } : msg))
             );
-            await new Promise((resolve) => setTimeout(resolve, 15));
+            
+            // Dynamic burst typing delay
+            let delay = Math.floor(Math.random() * 10) + 5; // 5-15ms for normal characters
+            if (['.', '!', '?'].includes(char)) delay = 250; // pause on punctuation
+            else if ([',', ';', ':'].includes(char)) delay = 100; // soft pause
+            
+            await new Promise(r => setTimeout(r, delay));
           }
+          isProcessingBurst = false;
+        };
 
-          // Small gap between typing bubbles
-          if (i < parts.length - 1) {
-            setIsLoading(true);
-            await new Promise((resolve) => setTimeout(resolve, 400));
+        eventSource.onmessage = (e) => {
+          const data = JSON.parse(e.data);
+          
+          if (data.type === 'chunk') {
+            setIsLoading(false);
+            setIsStreaming(true);
+            
+            // Handle splitting inside chunks if LLM still emits |||
+            let chunkText = data.content.replace(/\|\|\|/g, '\n\n');
+            burstQueue += chunkText;
+            processBurst();
+          } else if (data.type === 'done') {
+            // Wait for burst queue to empty before finalizing
+            const finalize = setInterval(() => {
+              if (burstQueue.length === 0 && !isProcessingBurst) {
+                clearInterval(finalize);
+                setIsStreaming(false);
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === messageId
+                      ? {
+                          ...msg,
+                          id: data.message_id || messageId,
+                          emotionDetected: data.emotion_detected,
+                          moodScore: data.mood_score,
+                          agentAnalysis: data.agent_analysis,
+                        }
+                      : msg
+                  )
+                );
+                eventSource.close();
+              }
+            }, 50);
+          } else if (data.type === 'error') {
+            console.error('SSE Error:', data.content);
+            eventSource.close();
+            setIsLoading(false);
+            setIsStreaming(false);
+            setError('Stream error occurred');
           }
-        }
+        };
+
+        eventSource.onerror = (e) => {
+          console.error('EventSource connection error:', e);
+          eventSource.close();
+          setIsLoading(false);
+          setIsStreaming(false);
+        };
       } catch (err) {
         console.error('Message send failed:', err);
         setMessages((prev) => [
@@ -213,7 +253,6 @@ export function useChat({ conversationId }: UseChatOptions) {
           },
         ]);
         setError('Failed to send message');
-      } finally {
         setIsLoading(false);
       }
     },

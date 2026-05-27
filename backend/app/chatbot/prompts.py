@@ -42,6 +42,7 @@ Analyze for the following categories using the four logical agents:
    - inferred_causes: list of potential root causes
    - underlying_need: the deeper, unspoken need behind their words (one sentence)
    - what_user_needs: validation, advice, distraction, listening, encouragement
+   - conversational_energy: energetic, calm, frantic, exhausted, sarcastic, playful
 7. COPING RECOMMENDATIONS:
    - 1 to 3 personalized, highly actionable coping suggestions ONLY if they would be helpful (e.g., for emotional/crisis/check_in states). Keep them specific. Avoid generic platitudes.
 8. MEMORY EXTRACTION:
@@ -52,6 +53,7 @@ Analyze for the following categories using the four logical agents:
    - Set "is_meaningful" to false and summary/patterns to null for casual greetings, small talk, filler messages.
    - Set "is_meaningful" to true, provide a concise summary, and behavior patterns for meaningful insights.
    - For meaningful insights, assign an "importance_level" between 1 and 5 (1 = lowest, 5 = highest). Core emotional trends, major stressors, triggers, and preferences get 4-5. Minor updates get 1-2.
+   - Assign a "decay_priority": 1 (temporary, fade quickly) to 5 (core memory, permanent).
 
 Respond with ONLY a valid JSON object matching this schema:
 {
@@ -86,12 +88,14 @@ Respond with ONLY a valid JSON object matching this schema:
     "emotional_triggers": ["string"],
     "inferred_causes": ["string"],
     "underlying_need": "string",
-    "what_user_needs": "validation" | "advice" | "distraction" | "listening" | "encouragement"
+    "what_user_needs": "validation" | "advice" | "distraction" | "listening" | "encouragement",
+    "conversational_energy": "string"
   },
   "recommendations": ["string"],
   "memory_extraction": {
     "is_meaningful": true | false,
     "importance_level": 1-5,
+    "decay_priority": 1-5,
     "memory_summary": "string" | null,
     "behavior_patterns": {
       "trigger": "string" | null,

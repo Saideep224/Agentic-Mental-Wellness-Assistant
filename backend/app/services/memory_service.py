@@ -148,7 +148,7 @@ class MemoryService:
                 matches.sort(key=lambda x: x[1], reverse=True)
                 return [m[0] for m in matches if m[1] > 0][:limit]
 
-            # Vector similarity search
+            # Vector similarity search with confidence scoring and decay priority
             matches = []
             for mem in rows:
                 db_vector = mem.embedding_json
@@ -160,7 +160,19 @@ class MemoryService:
                     content_words = set(mem.memory_summary.lower().split())
                     overlap = len(set(query.lower().split()).intersection(content_words))
                     similarity = overlap / max(len(query.lower().split()), 1)
-                matches.append((mem, similarity))
+                
+                # Apply decay priority and confidence weighting
+                patterns = mem.behavior_patterns or {}
+                decay_priority = patterns.get("decay_priority", 3)
+                importance = patterns.get("importance_level", 3)
+                
+                # Confidence score is base similarity + importance boost + decay preservation
+                # Core memories (decay_priority=5) get a permanent boost
+                # Temporary memories (decay_priority=1) lose relevance easily if similarity isn't very high
+                boost = (importance * 0.05) + (decay_priority * 0.02)
+                final_score = similarity + boost
+                
+                matches.append((mem, final_score))
 
             matches.sort(key=lambda x: x[1], reverse=True)
             return [m[0] for m in matches][:limit]

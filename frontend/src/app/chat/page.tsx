@@ -390,7 +390,12 @@ export default function ChatPage() {
             </button>
 
             <div className="flex items-center gap-2">
-              <EsonaLogo size={32} showParticles={false} glowIntensity="low" />
+              <EsonaLogo 
+                size={32} 
+                showParticles={false} 
+                glowIntensity="low" 
+                aiState={isStreaming ? 'speaking' : isLoading ? 'listening' : 'idle'}
+              />
               <div>
                 <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                   Esona

@@ -7,7 +7,6 @@ from app.models.conversation import Conversation, Message
 from app.models.user_profile import UserProfile
 from app.models.onboarding import UserAnswer
 from app.models.memory import Memory
-from app.models.chat_history import ChatHistory
 from app.models.mood_log import MoodLog
 
 __all__ = [
@@ -17,6 +16,5 @@ __all__ = [
     "UserProfile",
     "UserAnswer",
     "Memory",
-    "ChatHistory",
     "MoodLog",
 ]

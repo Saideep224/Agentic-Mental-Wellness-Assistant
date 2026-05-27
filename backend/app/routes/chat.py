@@ -21,7 +21,6 @@ from app.database import get_db
 from app.models.user import User
 from app.models.conversation import Conversation, Message, MessageRole
 from app.models.user_profile import UserProfile
-from app.models.chat_history import ChatHistory
 from app.models.mood_log import MoodLog
 from app.routes.auth import get_current_user
 from app.schemas.chat import (
@@ -308,26 +307,21 @@ async def send_message(
     )
 
     # 2. Save the user's message
-    user_msg = Message(
-        conversation_id=conversation.id,
-        user_id=current_user.id,
-        role=MessageRole.user,
-        content=body.message,
-    )
-    db.add(user_msg)
-    
-    # Save to chat_history
-    chat_user = ChatHistory(
-        user_id=current_user.id,
-        role="user",
-        message=body.message,
-        emotion_score=None,
-    )
-    db.add(chat_user)
-    conversation.updated_at = datetime.now(timezone.utc)
-    
-    await db.flush()
-    logger.info(f"[CHAT] User message saved (user={current_user.id}, conv={conversation.id})")
+    try:
+        user_msg = Message(
+            conversation_id=conversation.id,
+            user_id=current_user.id,
+            role=MessageRole.user,
+            content=body.message,
+        )
+        db.add(user_msg)
+        conversation.updated_at = datetime.now(timezone.utc)
+        await db.flush()
+        logger.info(f"[CHAT] User message saved (user={current_user.id}, conv={conversation.id})")
+    except Exception as e:
+        logger.error(f"Failed to insert user message (RLS or Constraint error?): {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to save user message")
 
     # 3. Build context for agents
     history = await _build_conversation_history(db, conversation.id)
@@ -387,57 +381,53 @@ async def send_message(
             logger.error(f"Failed to process and store memory: {mem_err}", exc_info=True)
 
         # Save assistant message to DB
-        assistant_msg = Message(
-            conversation_id=conversation.id,
-            user_id=current_user.id,
-            role=MessageRole.assistant,
-            content=full_response,
-            emotion_detected=detected_emotion,
-            mood_score=mood_score,
-            agent_analysis=agent_analysis,
-            emotional_context=agent_analysis.get("emotion_analysis", {}),
-        )
-        db.add(assistant_msg)
+        try:
+            assistant_msg = Message(
+                conversation_id=conversation.id,
+                user_id=current_user.id,
+                role=MessageRole.assistant,
+                content=full_response,
+                emotion_detected=detected_emotion,
+                mood_score=mood_score,
+                agent_analysis=agent_analysis,
+                emotional_context=agent_analysis.get("emotion_analysis", {}),
+            )
+            db.add(assistant_msg)
 
-        # Save to chat_history
-        chat_assistant = ChatHistory(
-            user_id=current_user.id,
-            role="assistant",
-            message=full_response,
-            emotion_score=mood_score,
-        )
-        db.add(chat_assistant)
+            # Save mood log
+            dims = result.get("emotion_dimensions", {})
+            mood_log = MoodLog(
+                user_id=current_user.id,
+                mood_score=mood_score or 0.5,
+                mood_label=detected_emotion or "neutral",
+                detected_emotion=detected_emotion or "neutral",
+                stress=dims.get("stress", 0.3),
+                happiness=dims.get("happiness", 0.5),
+                sadness=dims.get("sadness", 0.3),
+                anxiety=dims.get("anxiety", 0.3),
+                motivation=dims.get("motivation", 0.5),
+                confidence=dims.get("confidence", 0.5),
+            )
+            db.add(mood_log)
+            
+            # Also update conversation emotional_tag
+            if detected_emotion:
+                conversation.emotional_tag = detected_emotion
+            conversation.updated_at = datetime.now(timezone.utc)
 
-        # Save mood log
-        dims = result.get("emotion_dimensions", {})
-        mood_log = MoodLog(
-            user_id=current_user.id,
-            mood_score=mood_score or 0.5,
-            mood_label=detected_emotion or "neutral",
-            detected_emotion=detected_emotion or "neutral",
-            stress=dims.get("stress", 0.3),
-            happiness=dims.get("happiness", 0.5),
-            sadness=dims.get("sadness", 0.3),
-            anxiety=dims.get("anxiety", 0.3),
-            motivation=dims.get("motivation", 0.5),
-            confidence=dims.get("confidence", 0.5),
-        )
-        db.add(mood_log)
-        
-        # Also update conversation emotional_tag
-        if detected_emotion:
-            conversation.emotional_tag = detected_emotion
-        conversation.updated_at = datetime.now(timezone.utc)
+            # Trigger conversation summarization if message count >= 12
+            if len(history) >= 12 and len(history) % 6 == 0:
+                try:
+                    await summarize_and_store_conversation(db, current_user.id, conversation.id, history)
+                except Exception as sum_err:
+                    logger.error(f"Summarization trigger failed: {sum_err}", exc_info=True)
 
-        # Trigger conversation summarization if message count >= 12
-        if len(history) >= 12 and len(history) % 6 == 0:
-            try:
-                await summarize_and_store_conversation(db, current_user.id, conversation.id, history)
-            except Exception as sum_err:
-                logger.error(f"Summarization trigger failed: {sum_err}", exc_info=True)
+            await db.commit()
+            logger.info(f"[CHAT] Assistant response + mood log saved (user={current_user.id}, conv={conversation.id})")
+        except Exception as e:
+            logger.error(f"Failed to insert assistant message or mood log: {e}", exc_info=True)
+            await db.rollback()
 
-        await db.commit()
-        logger.info(f"[CHAT] Assistant response + mood log saved (user={current_user.id}, conv={conversation.id})")
 
         return {
             "response": full_response,
@@ -490,26 +480,21 @@ async def stream_message_sse(
     conversation = await _get_or_create_conversation(db, current_user.id, conversation_id)
 
     # 3. Save the user's message
-    user_msg = Message(
-        conversation_id=conversation.id,
-        user_id=current_user.id,
-        role=MessageRole.user,
-        content=message,
-    )
-    db.add(user_msg)
-    
-    # Save to chat_history
-    chat_user = ChatHistory(
-        user_id=current_user.id,
-        role="user",
-        message=message,
-        emotion_score=None,
-    )
-    db.add(chat_user)
-    conversation.updated_at = datetime.now(timezone.utc)
-    
-    await db.flush()
-    logger.info(f"[CHAT] User message saved via SSE (user={current_user.id}, conv={conversation.id})")
+    try:
+        user_msg = Message(
+            conversation_id=conversation.id,
+            user_id=current_user.id,
+            role=MessageRole.user,
+            content=message,
+        )
+        db.add(user_msg)
+        conversation.updated_at = datetime.now(timezone.utc)
+        await db.flush()
+        logger.info(f"[CHAT] User message saved via SSE (user={current_user.id}, conv={conversation.id})")
+    except Exception as e:
+        logger.error(f"Failed to insert user message in SSE: {e}", exc_info=True)
+        await db.rollback()
+        raise credentials_exception
 
     # 4. Build context
     history = await _build_conversation_history(db, conversation.id)
@@ -561,72 +546,68 @@ async def stream_message_sse(
                 except Exception as mem_err:
                     logger.error(f"Failed to process and store memory in stream: {mem_err}", exc_info=True)
 
-                assistant_msg = Message(
-                    conversation_id=conversation.id,
-                    user_id=current_user.id,
-                    role=MessageRole.assistant,
-                    content=full_response,
-                    emotion_detected=detected_emotion,
-                    mood_score=mood_score,
-                    agent_analysis=agent_analysis,
-                    emotional_context=agent_analysis.get("emotion_analysis", {}),
-                )
-                save_db.add(assistant_msg)
+                try:
+                    assistant_msg = Message(
+                        conversation_id=conversation.id,
+                        user_id=current_user.id,
+                        role=MessageRole.assistant,
+                        content=full_response,
+                        emotion_detected=detected_emotion,
+                        mood_score=mood_score,
+                        agent_analysis=agent_analysis,
+                        emotional_context=agent_analysis.get("emotion_analysis", {}),
+                    )
+                    save_db.add(assistant_msg)
 
-                # Save to chat_history
-                chat_assistant = ChatHistory(
-                    user_id=current_user.id,
-                    role="assistant",
-                    message=full_response,
-                    emotion_score=mood_score,
-                )
-                save_db.add(chat_assistant)
-
-                # Save mood log
-                dims = result.get("emotion_dimensions", {})
-                mood_log = MoodLog(
-                    user_id=current_user.id,
-                    mood_score=mood_score or 0.5,
-                    mood_label=detected_emotion or "neutral",
-                    detected_emotion=detected_emotion or "neutral",
-                    stress=dims.get("stress", 0.3),
-                    happiness=dims.get("happiness", 0.5),
-                    sadness=dims.get("sadness", 0.3),
-                    anxiety=dims.get("anxiety", 0.3),
-                    motivation=dims.get("motivation", 0.5),
-                    confidence=dims.get("confidence", 0.5),
-                )
-                save_db.add(mood_log)
-                
-                # Also update conversation emotional_tag and title
-                stmt = select(Conversation).where(Conversation.id == conversation.id)
-                conv_res = await save_db.execute(stmt)
-                db_conv = conv_res.scalar_one_or_none()
-                if db_conv:
-                    if detected_emotion:
-                        db_conv.emotional_tag = detected_emotion
-                    db_conv.updated_at = datetime.now(timezone.utc)
-                    if len(history) <= 1:
+                    # Save mood log
+                    dims = result.get("emotion_dimensions", {})
+                    mood_log = MoodLog(
+                        user_id=current_user.id,
+                        mood_score=mood_score or 0.5,
+                        mood_label=detected_emotion or "neutral",
+                        detected_emotion=detected_emotion or "neutral",
+                        stress=dims.get("stress", 0.3),
+                        happiness=dims.get("happiness", 0.5),
+                        sadness=dims.get("sadness", 0.3),
+                        anxiety=dims.get("anxiety", 0.3),
+                        motivation=dims.get("motivation", 0.5),
+                        confidence=dims.get("confidence", 0.5),
+                    )
+                    save_db.add(mood_log)
+                    
+                    # Also update conversation emotional_tag and title
+                    stmt = select(Conversation).where(Conversation.id == conversation.id)
+                    conv_res = await save_db.execute(stmt)
+                    db_conv = conv_res.scalar_one_or_none()
+                    if db_conv:
+                        if detected_emotion:
+                            db_conv.emotional_tag = detected_emotion
+                        db_conv.updated_at = datetime.now(timezone.utc)
+                        if len(history) <= 1:
+                            try:
+                                title_msgs = [
+                                    {"role": "user", "content": message},
+                                    {"role": "assistant", "content": full_response}
+                                ]
+                                db_conv.title = await generate_chat_title_llm(title_msgs)
+                            except Exception:
+                                db_conv.title = generate_emotional_title(message, detected_emotion or "neutral")
+                    
+                    # Trigger conversation summarization if message count >= 12
+                    if len(history) >= 12 and len(history) % 6 == 0:
                         try:
-                            title_msgs = [
-                                {"role": "user", "content": message},
-                                {"role": "assistant", "content": full_response}
-                            ]
-                            db_conv.title = await generate_chat_title_llm(title_msgs)
-                        except Exception:
-                            db_conv.title = generate_emotional_title(message, detected_emotion or "neutral")
+                            await summarize_and_store_conversation(save_db, current_user.id, conversation.id, history)
+                        except Exception as sum_err:
+                            logger.error(f"Summarization trigger failed: {sum_err}", exc_info=True)
 
-                # Trigger conversation summarization if message count >= 12
-                if len(history) >= 12 and len(history) % 6 == 0:
-                    try:
-                        await summarize_and_store_conversation(save_db, current_user.id, conversation.id, history)
-                    except Exception as sum_err:
-                        logger.error(f"Summarization trigger failed: {sum_err}", exc_info=True)
-
-                await save_db.commit()
-                await save_db.refresh(assistant_msg)
-                msg_id = str(assistant_msg.id)
-                logger.info(f"[CHAT] SSE assistant response + mood log saved (user={current_user.id}, conv={conversation.id})")
+                    await save_db.commit()
+                    await save_db.refresh(assistant_msg)
+                    msg_id = str(assistant_msg.id)
+                    logger.info(f"[CHAT] SSE assistant response + mood log saved (user={current_user.id}, conv={conversation.id})")
+                except Exception as e:
+                    logger.error(f"Failed to insert assistant message or mood log in SSE: {e}", exc_info=True)
+                    await save_db.rollback()
+                    msg_id = ""
 
             # Stream chunks
             chunk_size = 12

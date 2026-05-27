@@ -19,6 +19,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from langgraph.graph import StateGraph, END
+import asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -341,21 +342,26 @@ async def response_agent_node(state: AgentState) -> dict:
 
 
 # ── Build the compiled graph ──────────────────────────────────
+async def preprocessing_node(state: AgentState) -> dict:
+    """Run cognitive analysis and memory retrieval concurrently to optimize speed."""
+    cog_task = asyncio.create_task(cognitive_analyzer_agent(state))
+    mem_task = asyncio.create_task(memory_agent_node(state))
+    cog_res, mem_res = await asyncio.gather(cog_task, mem_task)
+    return {**cog_res, **mem_res}
+
 def build_graph() -> StateGraph:
-    """Construct the LangGraph StateGraph with 3 nodes in a linear chain."""
+    """Construct the LangGraph StateGraph with concurrent preprocessing."""
     graph = StateGraph(AgentState)
 
     # Add optimized nodes
-    graph.add_node("cognitive_analyzer_agent", cognitive_analyzer_agent)
-    graph.add_node("memory_agent", memory_agent_node)
+    graph.add_node("preprocessing_node", preprocessing_node)
     graph.add_node("response_agent", response_agent_node)
 
     # Entry point
-    graph.set_entry_point("cognitive_analyzer_agent")
+    graph.set_entry_point("preprocessing_node")
 
-    # Linear workflow chain
-    graph.add_edge("cognitive_analyzer_agent", "memory_agent")
-    graph.add_edge("memory_agent", "response_agent")
+    # Workflow chain
+    graph.add_edge("preprocessing_node", "response_agent")
     graph.add_edge("response_agent", END)
 
     return graph

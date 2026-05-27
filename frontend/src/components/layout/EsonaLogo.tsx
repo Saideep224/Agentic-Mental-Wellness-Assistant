@@ -11,6 +11,7 @@ interface EsonaLogoProps {
   glowIntensity?: 'none' | 'low' | 'medium' | 'high';
   enableHoverEffect?: boolean;
   animateIntro?: boolean;
+  aiState?: 'idle' | 'listening' | 'speaking';
 }
 
 // Pre-defined static particles to prevent hydration mismatch
@@ -32,6 +33,7 @@ export default function EsonaLogo({
   glowIntensity = 'medium',
   enableHoverEffect = true,
   animateIntro = true,
+  aiState = 'idle',
 }: EsonaLogoProps) {
   const [mounted, setMounted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -125,12 +127,14 @@ export default function EsonaLogo({
             top: `-${size * 0.15}px`,
           }}
           animate={{
-            scale: isHovered ? 1.25 : [1, 1.08, 0.98, 1.05, 1],
-            opacity: isHovered ? 0.95 : [0.7, 0.85, 0.65, 0.8, 0.7],
+            scale: aiState === 'speaking' ? [1, 1.15, 1] : isHovered ? 1.25 : [1, 1.08, 0.98, 1.05, 1],
+            opacity: aiState === 'speaking' ? [0.6, 1, 0.6] : isHovered ? 0.95 : [0.7, 0.85, 0.65, 0.8, 0.7],
+            boxShadow: aiState === 'speaking' ? ['0 0 10px rgba(56,189,248,0.3)', '0 0 35px rgba(56,189,248,0.8)', '0 0 10px rgba(56,189,248,0.3)'] : 'none',
           }}
           transition={{
-            scale: isHovered ? { duration: 0.3 } : { duration: 6, repeat: Infinity, ease: 'easeInOut' },
-            opacity: isHovered ? { duration: 0.3 } : { duration: 6, repeat: Infinity, ease: 'easeInOut' },
+            scale: aiState === 'speaking' ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : isHovered ? { duration: 0.3 } : { duration: 6, repeat: Infinity, ease: 'easeInOut' },
+            opacity: aiState === 'speaking' ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : isHovered ? { duration: 0.3 } : { duration: 6, repeat: Infinity, ease: 'easeInOut' },
+            boxShadow: aiState === 'speaking' ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 },
           }}
         />
       )}

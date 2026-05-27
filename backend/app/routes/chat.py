@@ -863,7 +863,7 @@ async def stream_message_sse(
             yield {
                 "event": "message",
                 "data": json.dumps({
-                    "type": "chunk",
+                    "type": "placeholder",
                     "content": speculative_chunk,
                     "conversation_id": str(conversation_id_resolved),
                 }),

@@ -16,12 +16,24 @@ class User(Base):
 
     __tablename__ = "profiles"
 
+    # Map Python `id` to database column `user_id` (primary key)
     id: Mapped[uuid.UUID] = mapped_column(
-        SafeUUID, primary_key=True, default=uuid.uuid4
+        "user_id", SafeUUID, primary_key=True, index=True, nullable=False
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        SafeUUID, unique=True, index=True, nullable=False
+    
+    # Map Python `profile_id` to database column `id`
+    profile_id: Mapped[uuid.UUID] = mapped_column(
+        "id", SafeUUID, unique=True, default=uuid.uuid4
     )
+
+    @property
+    def user_id(self) -> uuid.UUID:
+        return self.id
+
+    @user_id.setter
+    def user_id(self, value: uuid.UUID) -> None:
+        self.id = value
+
     email: Mapped[str] = mapped_column(
         String(320), unique=True, index=True, nullable=False
     )

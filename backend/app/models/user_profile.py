@@ -18,7 +18,7 @@ class UserProfile(Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         SafeUUID,
-        ForeignKey("profiles.id", ondelete="CASCADE"),
+        ForeignKey("profiles.user_id", ondelete="CASCADE"),
         primary_key=True,
         nullable=False,
         index=True,

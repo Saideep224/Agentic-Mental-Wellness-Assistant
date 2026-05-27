@@ -7,10 +7,39 @@ from datetime import datetime, timezone, timedelta
 
 
 def safe_json_parse(text: str, fallback: dict | None = None) -> dict:
-    """Parse JSON string safely, returning fallback on failure."""
+    """Parse JSON string safely, cleaning up markdown codeblocks and other garbage."""
+    if not text:
+        return fallback or {}
+    text_clean = text.strip()
+    
+    # Remove markdown code block wraps
+    if text_clean.startswith("```"):
+        lines = text_clean.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text_clean = "\n".join(lines).strip()
+        
     try:
-        return json.loads(text)
+        return json.loads(text_clean)
     except (json.JSONDecodeError, TypeError):
+        import re
+        try:
+            match = re.search(r"(\{.*\})", text_clean, re.DOTALL)
+            if match:
+                brace_content = match.group(1)
+                try:
+                    return json.loads(brace_content)
+                except json.JSONDecodeError:
+                    # Clean trailing commas
+                    cleaned_block = re.sub(r',\s*([\]}])', r'\1', brace_content)
+                    try:
+                        return json.loads(cleaned_block)
+                    except json.JSONDecodeError:
+                        pass
+        except Exception:
+            pass
         return fallback or {}
 
 
@@ -49,38 +78,38 @@ def get_speculative_transition(message: str) -> str:
     """Returns a fast, speculative emotional acknowledgment or transitional phrase to reduce perceived latency."""
     msg = (message or "").lower().strip()
     if not msg:
-        return "Hmm... ||| "
+        return "Hmm..."
         
     # Greetings
     if msg in ("hi", "hello", "hey", "yo", "sup", "greetings"):
-        return "Hey! 👋 ||| "
+        return "Hey! 👋"
         
     # Sad/stressed keywords
     sad_words = ("sad", "bad", "depress", "exhaust", "tired", "burnout", "stressed", "anx", "panic", "cry", "hurt", "lonely", "alone")
     if any(w in msg for w in sad_words):
         return random.choice([
-            "Oh, I hear you... ||| ",
-            "I'm right here. ||| ",
-            "That sounds really heavy... ||| ",
-            "Hmm, hold on... ||| "
+            "Oh, I hear you...",
+            "I'm right here.",
+            "That sounds really heavy...",
+            "Hmm, hold on..."
         ])
         
     # Success/Happy keywords
     happy_words = ("happy", "good", "great", "excit", "awesome", "won", "passed", "love", "smile", "glad")
     if any(w in msg for w in happy_words):
         return random.choice([
-            "Oh, wow! ||| ",
-            "Aww! ||| ",
-            "Love that! ||| ",
-            "Hmm, let's see... ||| "
+            "Oh, wow!",
+            "Aww!",
+            "Love that!",
+            "Hmm, let's see..."
         ])
         
     # Default transitions
     return random.choice([
-        "Hmm... ||| ",
-        "Hold on... ||| ",
-        "Let's see... ||| ",
-        "Yeah... ||| "
+        "Hmm...",
+        "Hold on...",
+        "Let's see...",
+        "Yeah..."
     ])
 
 

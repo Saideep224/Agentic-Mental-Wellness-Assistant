@@ -103,9 +103,12 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             max_tokens=1000,
             response_format={"type": "json_object"},
         )
-        analysis = json.loads(raw)
+        from app.utils.helpers import safe_json_parse
+        analysis = safe_json_parse(raw)
+        if not analysis:
+            raise ValueError("Parsed JSON is empty or invalid")
     except Exception as e:
-        logger.warning(f"Multi-agent cognitive analyzer failed, using fallback: {e}", exc_info=True)
+        logger.warning(f"Multi-agent cognitive analyzer failed, using fallback: {e}. Raw was: {repr(raw) if 'raw' in locals() else 'None'}", exc_info=True)
         analysis = {
             "message_type": "emotional",
             "personality_agent": {
@@ -320,10 +323,13 @@ async def response_agent_node(state: AgentState) -> dict:
 
     # Call Response Agent to generate response with quality checks
     try:
-        text = await response_agent.generate(messages=messages, temperature=0.7, max_tokens=800)
+        gen_res = await response_agent.generate(messages=messages, temperature=0.7, max_tokens=800)
+        text = gen_res.get("text", "")
+        reasoning = gen_res.get("reasoning", "")
     except Exception as e:
         logger.error(f"Response agent generation failed: {e}", exc_info=True)
         text = "I'm here for you. ||| Things sound a bit heavy right now... ||| What's on your mind?"
+        reasoning = "Response generation failed, fallback triggered."
 
     # Assemble structured developer debug payload
     agent_analysis = {
@@ -339,6 +345,7 @@ async def response_agent_node(state: AgentState) -> dict:
             "strategy": strategy
         },
         "orchestrated_prompt_summary": prompt_summary,
+        "hidden_reasoning": reasoning,
         # Keep backward compatible fields in agent_analysis
         "emotion_analysis": state.get("emotion_analysis", {}),
         "personality_analysis": state.get("personality_analysis", {}),

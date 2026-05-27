@@ -27,7 +27,7 @@ alter table public.profiles add column if not exists last_login timestamptz;
 
 create table if not exists public.user_question_answers (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles(id) on delete cascade,
+  user_id uuid not null references public.profiles(user_id) on delete cascade,
   question_id integer not null check (question_id between 1 and 20),
   question_text text not null default '',
   selected_answer jsonb not null default '[]'::jsonb,
@@ -45,7 +45,7 @@ alter table public.conversations add column if not exists updated_at timestamptz
 create table if not exists public.chat_messages (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid not null references public.conversations(id) on delete cascade,
-  user_id uuid not null references public.profiles(id) on delete cascade,
+  user_id uuid not null references public.profiles(user_id) on delete cascade,
   role text not null check (role in ('user', 'assistant')),
   message text not null,
   emotion_detected text,
@@ -55,7 +55,7 @@ create table if not exists public.chat_messages (
   created_at timestamptz not null default now()
 );
 
-alter table public.user_personality add column if not exists user_id uuid references public.profiles(id) on delete cascade;
+alter table public.user_personality add column if not exists user_id uuid references public.profiles(user_id) on delete cascade;
 update public.user_personality up
 set user_id = p.id
 from public.profiles p
@@ -150,19 +150,19 @@ drop policy if exists "answers_delete_own" on public.user_question_answers;
 create policy "answers_delete_own" on public.user_question_answers for delete to authenticated using (auth.uid() = user_id);
 
 drop policy if exists "conversations_select_own" on public.conversations;
-create policy "conversations_select_own" on public.conversations for select to authenticated using (exists (select 1 from public.profiles p where p.id = conversations.user_id and p.user_id = auth.uid()));
+create policy "conversations_select_own" on public.conversations for select to authenticated using (auth.uid() = user_id);
 drop policy if exists "conversations_insert_own" on public.conversations;
-create policy "conversations_insert_own" on public.conversations for insert to authenticated with check (exists (select 1 from public.profiles p where p.id = conversations.user_id and p.user_id = auth.uid()));
+create policy "conversations_insert_own" on public.conversations for insert to authenticated with check (auth.uid() = user_id);
 drop policy if exists "conversations_update_own" on public.conversations;
-create policy "conversations_update_own" on public.conversations for update to authenticated using (exists (select 1 from public.profiles p where p.id = conversations.user_id and p.user_id = auth.uid())) with check (exists (select 1 from public.profiles p where p.id = conversations.user_id and p.user_id = auth.uid()));
+create policy "conversations_update_own" on public.conversations for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 drop policy if exists "conversations_delete_own" on public.conversations;
-create policy "conversations_delete_own" on public.conversations for delete to authenticated using (exists (select 1 from public.profiles p where p.id = conversations.user_id and p.user_id = auth.uid()));
+create policy "conversations_delete_own" on public.conversations for delete to authenticated using (auth.uid() = user_id);
 
 drop policy if exists "chat_messages_select_own" on public.chat_messages;
-create policy "chat_messages_select_own" on public.chat_messages for select to authenticated using (exists (select 1 from public.profiles p where p.id = chat_messages.user_id and p.user_id = auth.uid()));
+create policy "chat_messages_select_own" on public.chat_messages for select to authenticated using (auth.uid() = user_id);
 drop policy if exists "chat_messages_insert_own" on public.chat_messages;
-create policy "chat_messages_insert_own" on public.chat_messages for insert to authenticated with check (exists (select 1 from public.profiles p where p.id = chat_messages.user_id and p.user_id = auth.uid()));
+create policy "chat_messages_insert_own" on public.chat_messages for insert to authenticated with check (auth.uid() = user_id);
 drop policy if exists "chat_messages_update_own" on public.chat_messages;
-create policy "chat_messages_update_own" on public.chat_messages for update to authenticated using (exists (select 1 from public.profiles p where p.id = chat_messages.user_id and p.user_id = auth.uid())) with check (exists (select 1 from public.profiles p where p.id = chat_messages.user_id and p.user_id = auth.uid()));
+create policy "chat_messages_update_own" on public.chat_messages for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 drop policy if exists "chat_messages_delete_own" on public.chat_messages;
-create policy "chat_messages_delete_own" on public.chat_messages for delete to authenticated using (exists (select 1 from public.profiles p where p.id = chat_messages.user_id and p.user_id = auth.uid()));
+create policy "chat_messages_delete_own" on public.chat_messages for delete to authenticated using (auth.uid() = user_id);

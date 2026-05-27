@@ -20,7 +20,7 @@ class MoodLog(Base):
         SafeUUID, primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        SafeUUID, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True
+        SafeUUID, ForeignKey("profiles.user_id", ondelete="CASCADE"), nullable=False, index=True
     )
     mood_score: Mapped[float] = mapped_column(Float, nullable=False)
     mood_label: Mapped[str] = mapped_column(String(100), nullable=False)

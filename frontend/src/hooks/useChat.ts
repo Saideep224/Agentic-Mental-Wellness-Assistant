@@ -14,6 +14,7 @@ export function useChat({ conversationId }: UseChatOptions) {
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [streamPlaceholder, setStreamPlaceholder] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   // Load messages for current conversation
@@ -156,7 +157,8 @@ export function useChat({ conversationId }: UseChatOptions) {
       const maxRetries = 2;
       let connectionTimeout: NodeJS.Timeout | null = null;
       let isMessageCreated = false;
-      let messageId = '';
+      let activeBubbleId = '';
+      let bubbleCount = 0;
       let accumulatedContent = '';
       let burstQueue = '';
       let isProcessingBurst = false;
@@ -172,7 +174,7 @@ export function useChat({ conversationId }: UseChatOptions) {
         }
       };
 
-      const processBurst = async (currentMessageId: string) => {
+      const processBurst = async (messageId: string) => {
         if (isProcessingBurst) return;
         isProcessingBurst = true;
         
@@ -190,11 +192,36 @@ export function useChat({ conversationId }: UseChatOptions) {
           const chunk = burstQueue.slice(0, chunkLength);
           burstQueue = burstQueue.slice(chunkLength);
           accumulatedContent += chunk;
-          
-          // Render accumulated content update
-          setMessages((prev) =>
-            prev.map((msg) => (msg.id === currentMessageId ? { ...msg, content: accumulatedContent } : msg))
-          );
+
+          // Check if we hit the delimiter "|||"
+          if (accumulatedContent.includes('|||')) {
+            const parts = accumulatedContent.split('|||');
+            
+            // The text before the delimiter is the finished content for the current bubble
+            const cleanContent = parts[0].trim();
+            setMessages((prev) =>
+              prev.map((msg) => (msg.id === activeBubbleId ? { ...msg, content: cleanContent } : msg))
+            );
+
+            // Spawn a new bubble
+            bubbleCount++;
+            activeBubbleId = `${messageId}-${bubbleCount}`;
+            accumulatedContent = parts.slice(1).join('|||'); // Carry over the remaining content
+
+            const nextBubble: Message = {
+              id: activeBubbleId,
+              role: 'assistant',
+              content: '',
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, nextBubble]);
+          } else {
+            // Clean display: remove any leading delimiters and strip trailing pipe characters
+            const displayContent = accumulatedContent.replace(/^\|+/, '').replace(/\|+$/, '').trim();
+            setMessages((prev) =>
+              prev.map((msg) => (msg.id === activeBubbleId ? { ...msg, content: displayContent } : msg))
+            );
+          }
           
           // Dynamic typing delay
           let delay = Math.floor(Math.random() * 8) + 4; // 4-12ms base
@@ -206,9 +233,9 @@ export function useChat({ conversationId }: UseChatOptions) {
 
           // Apply natural typing pauses for punctuation, only if queue isn't overflowed
           const lastChar = chunk[chunk.length - 1];
-          if (['.', '!', '?'].includes(lastChar) && burstQueue.length <= 5) {
+          if (['.', '!', '?'].includes(lastChar) && burstQueue.length <= 5 && !accumulatedContent.includes('|')) {
             delay = 180;
-          } else if ([',', ';', ':'].includes(lastChar) && burstQueue.length <= 5) {
+          } else if ([',', ';', ':'].includes(lastChar) && burstQueue.length <= 5 && !accumulatedContent.includes('|')) {
             delay = 70;
           }
           
@@ -225,26 +252,30 @@ export function useChat({ conversationId }: UseChatOptions) {
           const eventSource = new EventSource(url);
           eventSourceRef.current = eventSource;
 
-          // Timeout if first chunk doesn't arrive within 4 seconds (attempt 1) or 8 seconds (attempt 2)
+          // Timeout if first chunk/placeholder doesn't arrive within 4 seconds (attempt 1) or 8 seconds (attempt 2)
           const timeoutMs = attempt === 0 ? 4000 : 8000;
           connectionTimeout = setTimeout(() => {
             console.warn(`[useChat] Stream connection attempt ${attempt + 1} timed out.`);
             cleanUpConnection();
 
-            if (!isMessageCreated) {
+             if (!isMessageCreated) {
               if (attempt < maxRetries) {
                 console.info(`[useChat] Retrying stream connection (attempt ${attempt + 2}/${maxRetries + 1})...`);
+                setStreamPlaceholder(null);
                 connectStream(attempt + 1);
               } else {
                 setIsLoading(false);
                 setIsStreaming(false);
-                const fallbackMsg: Message = {
-                  id: generateId(),
-                  role: 'assistant',
-                  content: "my imaginary wifi betrayed me for a second... 😭 wait, what were we saying?",
-                  timestamp: new Date(),
-                };
-                setMessages((prev) => [...prev, fallbackMsg]);
+                setStreamPlaceholder(null);
+                setMessages((prev) => {
+                  const fallbackMsg: Message = {
+                    id: generateId(),
+                    role: 'assistant',
+                    content: "my imaginary wifi betrayed me for a second... 😭 wait, what were we saying?",
+                    timestamp: new Date(),
+                  };
+                  return [...prev, fallbackMsg];
+                });
                 setError('Request timed out');
               }
             } else {
@@ -253,7 +284,7 @@ export function useChat({ conversationId }: UseChatOptions) {
               setIsLoading(false);
               setMessages((prev) =>
                 prev.map((msg) =>
-                  msg.id === messageId
+                  msg.id === activeBubbleId
                     ? { ...msg, content: msg.content + "\n\n(wait, my brain froze for a second... 😭 let's try that again.)" }
                     : msg
                 )
@@ -270,24 +301,35 @@ export function useChat({ conversationId }: UseChatOptions) {
 
             try {
               const data = JSON.parse(e.data);
-              
-              if (data.type === 'chunk') {
+              if (data.type === 'placeholder') {
+                // Show temporary placeholder bubble via separate state
+                setIsLoading(false);
+                setStreamPlaceholder(data.content);
+              } else if (data.type === 'chunk') {
                 if (!isMessageCreated) {
                   isMessageCreated = true;
-                  messageId = generateId();
-                  const partMessage: Message = {
-                    id: messageId,
-                    role: 'assistant',
-                    content: '',
-                    timestamp: new Date(),
-                  };
+                  const messageId = generateId();
+                  activeBubbleId = `${messageId}-0`;
+                  bubbleCount = 0;
+                  accumulatedContent = '';
+                  
                   setIsLoading(false);
                   setIsStreaming(true);
-                  setMessages((prev) => [...prev, partMessage]);
+                  setStreamPlaceholder(null);
+                  
+                  setMessages((prev) => {
+                    const firstBubble: Message = {
+                      id: activeBubbleId,
+                      role: 'assistant',
+                      content: '',
+                      timestamp: new Date(),
+                    };
+                    return [...prev, firstBubble];
+                  });
                 }
                 
-                let chunkText = data.content.replace(/\|\|\|/g, '\n\n');
-                burstQueue += chunkText;
+                burstQueue += data.content;
+                const messageId = activeBubbleId.split('-')[0];
                 processBurst(messageId);
               } else if (data.type === 'done') {
                 // Wait for burst queue to empty before finalizing
@@ -295,19 +337,23 @@ export function useChat({ conversationId }: UseChatOptions) {
                   if (burstQueue.length === 0 && !isProcessingBurst) {
                     clearInterval(finalize);
                     setIsStreaming(false);
-                    setMessages((prev) =>
-                      prev.map((msg) =>
-                        msg.id === messageId
+                    
+                    setStreamPlaceholder(null);
+                    const finalMessageId = data.message_id || activeBubbleId;
+                    
+                    setMessages((prev) => {
+                      return prev.map((msg) =>
+                        msg.id === activeBubbleId
                           ? {
                               ...msg,
-                              id: data.message_id || messageId,
+                              id: finalMessageId,
                               emotionDetected: data.emotion_detected,
                               moodScore: data.mood_score,
                               agentAnalysis: data.agent_analysis,
                             }
                           : msg
-                      )
-                    );
+                      );
+                    });
                     cleanUpConnection();
                   }
                 }, 50);
@@ -316,21 +362,24 @@ export function useChat({ conversationId }: UseChatOptions) {
                 cleanUpConnection();
                 setIsLoading(false);
                 setIsStreaming(false);
+                setStreamPlaceholder(null);
                 setError(data.content || 'Stream error');
                 
                 if (!isMessageCreated) {
-                  const errorMsg: Message = {
-                    id: generateId(),
-                    role: 'assistant',
-                    content: "wait, I lost my train of thought for a moment... 😭 let's try that again.",
-                    timestamp: new Date(),
-                  };
-                  setMessages((prev) => [...prev, errorMsg]);
+                  setMessages((prev) => {
+                    const errorMsg: Message = {
+                      id: generateId(),
+                      role: 'assistant',
+                      content: "wait, I lost my train of thought for a moment... 😭 let's try that again.",
+                      timestamp: new Date(),
+                    };
+                    return [...prev, errorMsg];
+                  });
                 } else {
                   setMessages((prev) =>
                     prev.map((msg) =>
-                      msg.id === messageId
-                        ? { ...msg, content: msg.content + "\n\n(hold on, my train of thought got completely lost there 😭)" }
+                      msg.id === activeBubbleId
+                        ? { ...msg, content: msg.content + "\n\n(sorry, my brain lagged for a moment... 😭 what were we saying?)" }
                         : msg
                     )
                   );
@@ -352,19 +401,23 @@ export function useChat({ conversationId }: UseChatOptions) {
             if (!isMessageCreated) {
               if (attempt < maxRetries) {
                 console.info(`[useChat] Retrying stream connection after error (attempt ${attempt + 2}/${maxRetries + 1})...`);
+                setStreamPlaceholder(null);
                 setTimeout(() => {
                   connectStream(attempt + 1);
                 }, 1000);
               } else {
                 setIsLoading(false);
                 setIsStreaming(false);
-                const fallbackMsg: Message = {
-                  id: generateId(),
-                  role: 'assistant',
-                  content: "my thoughts buffered for a moment 😭 let's try again! what's on your mind?",
-                  timestamp: new Date(),
-                };
-                setMessages((prev) => [...prev, fallbackMsg]);
+                setStreamPlaceholder(null);
+                setMessages((prev) => {
+                  const fallbackMsg: Message = {
+                    id: generateId(),
+                    role: 'assistant',
+                    content: "my thoughts buffered for a moment 😭 let's try again! what's on your mind?",
+                    timestamp: new Date(),
+                  };
+                  return [...prev, fallbackMsg];
+                });
                 setError('Connection failed');
               }
             } else {
@@ -372,7 +425,7 @@ export function useChat({ conversationId }: UseChatOptions) {
               setIsLoading(false);
               setMessages((prev) =>
                 prev.map((msg) =>
-                  msg.id === messageId
+                  msg.id === activeBubbleId
                     ? { ...msg, content: msg.content + "\n\n(sorry, my brain lagged for a moment... 😭 what were we saying?)" }
                     : msg
                 )
@@ -383,16 +436,19 @@ export function useChat({ conversationId }: UseChatOptions) {
           console.error('Failed to initialize EventSource:', streamErr);
           setIsLoading(false);
           setIsStreaming(false);
+          setStreamPlaceholder(null);
           setError('Failed to initialize stream');
           
           if (!isMessageCreated) {
-            const fallbackMsg: Message = {
-              id: generateId(),
-              role: 'assistant',
-              content: "wait, I lost my train of thought for a second... 😭 what was that?",
-              timestamp: new Date(),
-            };
-            setMessages((prev) => [...prev, fallbackMsg]);
+            setMessages((prev) => {
+              const fallbackMsg: Message = {
+                id: generateId(),
+                role: 'assistant',
+                content: "wait, I lost my train of thought for a second... 😭 what was that?",
+                timestamp: new Date(),
+              };
+              return [...prev, fallbackMsg];
+            });
           }
         }
       };
@@ -408,6 +464,7 @@ export function useChat({ conversationId }: UseChatOptions) {
     setMessages,
     isLoading,
     isStreaming,
+    streamPlaceholder,
     error,
     sendMessage,
     loadMessages,

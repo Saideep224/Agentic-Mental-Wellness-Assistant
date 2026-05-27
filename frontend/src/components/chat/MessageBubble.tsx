@@ -58,7 +58,15 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
             WebkitBackdropFilter: 'blur(12px)',
           }}
         >
-          <div className="markdown-content whitespace-pre-wrap">{message.content}</div>
+          <div className="markdown-content whitespace-pre-wrap">
+            {message.isPlaceholder ? (
+              <span className="italic opacity-70 animate-pulse inline-flex items-center gap-1">
+                {message.content}
+              </span>
+            ) : (
+              message.content
+            )}
+          </div>
         </div>
 
         {/* Timestamp & emotion */}

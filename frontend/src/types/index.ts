@@ -48,6 +48,7 @@ export interface Message {
   emotionDetected?: string;
   moodScore?: number;
   agentAnalysis?: Record<string, any>;
+  isPlaceholder?: boolean;
 }
 
 export interface Conversation {

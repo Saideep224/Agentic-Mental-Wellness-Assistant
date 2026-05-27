@@ -48,6 +48,7 @@ export default function ChatPage() {
 
   // Track accordion state for the Live Agent Debug Panel
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    reasoning: true,
     personality: true,
     emotion: true,
     behavior: true,
@@ -113,7 +114,7 @@ export default function ChatPage() {
 
   const user = mounted ? getStoredUser() : null;
 
-  const { messages, isLoading, isStreaming, sendMessage } = useChat({
+  const { messages, isLoading, isStreaming, streamPlaceholder, sendMessage } = useChat({
     conversationId: activeConversationId,
   });
 
@@ -460,8 +461,19 @@ export default function ChatPage() {
                   {messages.map((message) => (
                     <MessageBubble key={message.id} message={message} />
                   ))}
+                  {streamPlaceholder && (
+                    <MessageBubble
+                      message={{
+                        id: 'stream-placeholder',
+                        role: 'assistant',
+                        content: streamPlaceholder,
+                        timestamp: new Date(),
+                        isPlaceholder: true,
+                      }}
+                    />
+                  )}
                   <AnimatePresence>
-                    {isLoading && !isStreaming && messages[messages.length - 1]?.role === 'user' && (
+                    {isLoading && !isStreaming && !streamPlaceholder && messages[messages.length - 1]?.role === 'user' && (
                       <TypingIndicator />
                     )}
                   </AnimatePresence>
@@ -508,6 +520,36 @@ export default function ChatPage() {
                   </div>
                 ) : (
                   <div className="space-y-3 pb-8">
+                    {/* 0. Hidden Reasoning */}
+                    {debugInfo.hidden_reasoning && (
+                      <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+                        <button
+                          onClick={() => toggleSection('reasoning')}
+                          className="w-full flex items-center justify-between p-3 text-xs font-semibold text-white/90 hover:bg-white/5 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Terminal size={14} className="text-amber-400" />
+                            <span>0. Humanizer - Hidden Reasoning</span>
+                          </div>
+                          {expandedSections.reasoning ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                        <AnimatePresence>
+                          {expandedSections.reasoning && (
+                            <motion.div
+                              initial={{ height: 0 }}
+                              animate={{ height: 'auto' }}
+                              exit={{ height: 0 }}
+                              className="overflow-hidden bg-black/25 text-[11px] p-3 border-t border-white/5 text-slate-300"
+                            >
+                              <pre className="font-mono text-amber-300 bg-black/45 p-2 rounded border border-white/5 whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto">
+                                {debugInfo.hidden_reasoning}
+                              </pre>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    )}
+
                     {/* 1. Personality Agent */}
                     <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
                       <button

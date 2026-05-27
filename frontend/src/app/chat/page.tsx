@@ -29,9 +29,9 @@ import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import { useChat } from '@/hooks/useChat';
 import { Conversation } from '@/types';
-import { getToken, getStoredUser } from '@/lib/api';
-import * as api from '@/lib/api';
-import { formatDate, truncateText } from '@/lib/utils';
+import { getToken, getStoredUser } from '@/api';
+import * as api from '@/api';
+import { formatDate, truncateText } from '@/utils';
 
 export default function ChatPage() {
   const router = useRouter();

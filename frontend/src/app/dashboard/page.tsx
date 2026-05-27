@@ -11,7 +11,7 @@ import StressPatternChart from '@/components/dashboard/StressPatternChart';
 import EmotionalProfileCard from '@/components/dashboard/EmotionalProfileCard';
 import PersonalityInsights from '@/components/dashboard/PersonalityInsights';
 import { useMoodData } from '@/hooks/useMoodData';
-import { getToken, getStoredUser, submitOnboarding } from '@/lib/api';
+import { getToken, getStoredUser, submitOnboarding } from '@/api';
 import { questions } from '@/data/questions';
 
 // Sub-components for dynamic user-specific sections

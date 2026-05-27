@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.database import create_tables
-from app.routes import auth_router, chat_router, onboarding_router, dashboard_router
+from app.routes import auth_router, chat_router, conversations_router, onboarding_router, dashboard_router
 
 # ── Logging ───────────────────────────────────────────────────
 logging.basicConfig(
@@ -84,6 +84,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ── Include Routes ───────────────────────────────────────────
 app.include_router(auth_router)
 app.include_router(chat_router)
+app.include_router(conversations_router)
 app.include_router(onboarding_router)
 app.include_router(dashboard_router)
 

@@ -3,8 +3,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { User } from '@/types';
-import { getToken, getStoredUser, clearAuth, getMe } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
+import { getToken, getStoredUser, clearAuth, getMe } from '@/api';
+import { supabase } from '@/database/supabase';
 
 interface AuthContextType {
   user: User | null;

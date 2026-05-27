@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import { questions } from '@/data/questions';
-import { getToken, submitOnboarding, getOnboardingAnswers, upsertQuestionAnswersToSupabase } from '@/lib/api';
+import { getToken, submitOnboarding, getOnboardingAnswers, upsertQuestionAnswersToSupabase } from '@/api';
 import { useAuth } from '@/providers/AuthProvider';
 
 const CATEGORIES = [

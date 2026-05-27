@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, Outfit } from 'next/font/google';
 import Script from 'next/script';
-import './globals.css';
+import '@/styles/globals.css';
 import AuthProvider from '@/providers/AuthProvider';
 import ThemeProvider from '@/providers/ThemeProvider';
 import FloatingParticles from '@/components/ambient/FloatingParticles';

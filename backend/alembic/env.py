@@ -16,7 +16,7 @@ from app.config import settings
 from app.database import Base
 
 # Import all models so metadata is populated
-from app.models import user, conversation, emotional_profile, onboarding  # noqa: F401
+from app.models import user, conversation, user_profile, onboarding  # noqa: F401
 
 # ── Alembic Config object ────────────────────────────────────
 config = context.config

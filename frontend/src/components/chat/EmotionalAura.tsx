@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { getEmotionColor, getEmotionGlow } from '@/lib/utils';
+import { getEmotionColor, getEmotionGlow } from '@/utils';
 
 interface EmotionalAuraProps {
   emotion: string;

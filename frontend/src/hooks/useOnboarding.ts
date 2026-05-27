@@ -3,9 +3,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import { OnboardingResponse } from '@/types';
 import { questions, getCategoryForQuestion } from '@/data/questions';
-import * as api from '@/lib/api';
+import * as api from '@/api';
 import { useAuth } from '@/providers/AuthProvider';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/database/supabase';
 
 export function useOnboarding() {
   const { refreshUser } = useAuth();

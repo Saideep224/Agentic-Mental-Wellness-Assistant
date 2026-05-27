@@ -1,11 +1,9 @@
 """
-ChromaDB memory system for emotional context.
+Memory system — vector storage, semantic search, and emotional pattern analysis.
 """
 
-from app.memory.chroma_client import get_chroma_collection
 from app.memory.memory_manager import MemoryManager
 
 __all__ = [
-    "get_chroma_collection",
     "MemoryManager",
 ]

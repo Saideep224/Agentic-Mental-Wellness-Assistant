@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { MoodDataPoint, EmotionalProfile, StressPattern, PersonalityInsight, CommunicationPreference } from '@/types';
-import * as api from '@/lib/api';
+import * as api from '@/api';
 
 export function useMoodData() {
   const [moodTrends, setMoodTrends] = useState<MoodDataPoint[]>([]);

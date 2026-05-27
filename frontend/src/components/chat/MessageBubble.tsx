@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { Message } from '@/types';
-import { formatMessageTime } from '@/lib/utils';
+import { formatMessageTime } from '@/utils';
 import EmotionalAura from './EmotionalAura';
 
 interface MessageBubbleProps {

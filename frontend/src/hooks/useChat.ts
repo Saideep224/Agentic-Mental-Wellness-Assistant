@@ -2,8 +2,8 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Message } from '@/types';
-import { generateId } from '@/lib/utils';
-import * as api from '@/lib/api';
+import { generateId } from '@/utils';
+import * as api from '@/api';
 
 interface UseChatOptions {
   conversationId: string | null;

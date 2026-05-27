@@ -6,7 +6,7 @@ import Navbar from '@/components/layout/Navbar';
 import HeroSection from '@/components/landing/HeroSection';
 import FeatureCards from '@/components/landing/FeatureCards';
 import CTASection from '@/components/landing/CTASection';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/database/supabase';
 
 export default function LandingPage() {
   const router = useRouter();

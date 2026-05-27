@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, User as UserIcon, Calendar, Shield, Mail, Key, Sparkles, LogOut, Edit } from 'lucide-react';
-import { getToken, getStoredUser, clearAuth, getEmotionalProfile } from '@/lib/api';
+import { getToken, getStoredUser, clearAuth, getEmotionalProfile } from '@/api';
 import { useAuth } from '@/providers/AuthProvider';
 import UserAvatar from '@/components/layout/UserAvatar';
 

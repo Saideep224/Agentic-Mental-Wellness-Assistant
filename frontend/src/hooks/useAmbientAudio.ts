@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { getFromStorage, setToStorage } from '@/lib/utils';
+import { getFromStorage, setToStorage } from '@/utils';
 
 export function useAmbientAudio() {
   const [isPlaying, setIsPlaying] = useState(false);

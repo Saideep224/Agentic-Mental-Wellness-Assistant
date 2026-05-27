@@ -12,7 +12,7 @@ import OtherInput from '@/components/onboarding/OtherInput';
 import CategoryTransition from '@/components/onboarding/CategoryTransition';
 import BreathingOrb from '@/components/ambient/BreathingOrb';
 import EsonaLogo from '@/components/layout/EsonaLogo';
-import { getToken, getStoredUser, setStoredUser, getOnboardingStatus } from '@/lib/api';
+import { getToken, getStoredUser, setStoredUser, getOnboardingStatus } from '@/api';
 
 export default function OnboardingPage() {
   const router = useRouter();

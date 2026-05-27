@@ -1,3 +1,7 @@
+/**
+ * Utility functions — class merging, date formatting, emotion colors, localStorage helpers.
+ */
+
 import clsx, { ClassValue } from 'clsx';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 

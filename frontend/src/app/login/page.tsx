@@ -6,8 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, User, ArrowRight, Eye, EyeOff, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import EsonaLogo from '@/components/layout/EsonaLogo';
-import * as api from '@/lib/api';
-import { supabase } from '@/lib/supabase';
+import * as api from '@/api';
+import { supabase } from '@/database/supabase';
 import { useAuth } from '@/providers/AuthProvider';
 
 type AuthMode = 'login' | 'register';

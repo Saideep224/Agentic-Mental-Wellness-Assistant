@@ -5,10 +5,10 @@ Onboarding response model – stores answers to the onboarding questionnaire ins
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, UUID, JSON, UniqueConstraint
+from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base
+from app.database import Base, SafeUUID
 
 
 class UserAnswer(Base):
@@ -20,10 +20,10 @@ class UserAnswer(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID, primary_key=True, default=uuid.uuid4
+        SafeUUID, primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID,
+        SafeUUID,
         ForeignKey("profiles.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

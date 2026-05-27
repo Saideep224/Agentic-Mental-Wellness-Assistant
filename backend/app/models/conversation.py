@@ -14,12 +14,11 @@ from sqlalchemy import (
     ForeignKey,
     Enum as SAEnum,
     Integer,
-    UUID,
     JSON,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base
+from app.database import Base, SafeUUID
 
 
 class MessageRole(str, enum.Enum):
@@ -34,10 +33,10 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID, primary_key=True, default=uuid.uuid4
+        SafeUUID, primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True
+        SafeUUID, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(512), default="New Conversation")
     emotional_tag: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -70,16 +69,16 @@ class Message(Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID, primary_key=True, default=uuid.uuid4
+        SafeUUID, primary_key=True, default=uuid.uuid4
     )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID,
+        SafeUUID,
         ForeignKey("conversations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID,
+        SafeUUID,
         ForeignKey("profiles.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

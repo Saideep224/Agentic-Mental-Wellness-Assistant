@@ -5,10 +5,10 @@ UserProfile model – storing personality metrics and maps to the 'user_personal
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, UUID, JSON, Boolean
+from sqlalchemy import DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base
+from app.database import Base, SafeUUID
 
 
 class UserProfile(Base):
@@ -17,7 +17,7 @@ class UserProfile(Base):
     __tablename__ = "user_personality"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID,
+        SafeUUID,
         ForeignKey("profiles.id", ondelete="CASCADE"),
         primary_key=True,
         nullable=False,

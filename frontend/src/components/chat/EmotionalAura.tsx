@@ -14,22 +14,21 @@ export default function EmotionalAura({ emotion, children }: EmotionalAuraProps)
 
   return (
     <div className="relative">
-      {/* Outer aura glow */}
+      {/* Subtle soft backdrop reflection (no heavy glow or animation) */}
       <div
-        className="absolute inset-0 rounded-full animate-pulse-glow"
+        className="absolute inset-0 rounded-full pointer-events-none"
         style={{
-          boxShadow: glow,
-          transform: 'scale(1.3)',
-          background: `radial-gradient(circle, ${color}20 0%, transparent 70%)`,
+          transform: 'scale(1.05)',
+          background: `radial-gradient(circle, ${color}15 0%, transparent 80%)`,
         }}
       />
 
-      {/* Inner ring */}
+      {/* Clean border and extremely soft shadow */}
       <div
         className="relative rounded-full"
         style={{
-          boxShadow: `0 0 12px ${color}40`,
-          border: `2px solid ${color}30`,
+          boxShadow: `0 2px 8px ${color}15`,
+          border: `1px solid ${color}25`,
         }}
       >
         {children}

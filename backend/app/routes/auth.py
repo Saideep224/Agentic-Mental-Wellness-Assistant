@@ -5,15 +5,18 @@ Authentication route – verifies Supabase JWT token and extracts user profile i
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -21,12 +24,51 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 bearer_scheme = HTTPBearer()
 
 
+def decode_and_verify_token(token: str) -> dict:
+    """Decodes and verifies a JWT token (supporting both Supabase JWT and local fallback)."""
+    # Mask token for logs
+    masked_token = f"{token[:8]}...{token[-8:]}" if len(token) > 16 else "***"
+    
+    try:
+        # Decode Supabase JWT
+        if getattr(settings, "SUPABASE_JWT_SECRET", None):
+            logger.info(f"[AUTH] Attempting to decode token {masked_token} with SUPABASE_JWT_SECRET...")
+            payload = jwt.decode(
+                token, settings.SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False}
+            )
+            logger.info("[AUTH] Token successfully decoded with Supabase JWT Secret.")
+            return payload
+        else:
+            logger.warning("[AUTH] SUPABASE_JWT_SECRET not set. Reading unverified claims.")
+            payload = jwt.get_unverified_claims(token)
+            return payload
+    except Exception as supabase_err:
+        logger.warning(f"[AUTH] Supabase verification failed: {supabase_err}. Trying local JWT fallback...")
+        try:
+            # Fallback to local JWT signature
+            payload = jwt.decode(
+                token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]
+            )
+            logger.info("[AUTH] Token successfully decoded with local JWT secret.")
+            return payload
+        except (JWTError, ValueError) as local_err:
+            logger.error(f"[AUTH] Local verification fallback failed: {local_err}")
+            raise ValueError(f"Token validation failed (Supabase: {supabase_err}, Local: {local_err})") from supabase_err
+
+
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """FastAPI dependency – extracts and verifies the Supabase JWT, returns the User (profiles) row."""
     token = credentials.credentials
+    
+    # Log incoming auth header info
+    auth_header = request.headers.get("Authorization", "")
+    masked_header = f"Bearer {auth_header[7:15]}...{auth_header[-8:]}" if len(auth_header) > 20 else auth_header
+    logger.info(f"[AUTH] Incoming request to {request.url.path} with header: '{masked_header}'")
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token",
@@ -34,30 +76,16 @@ async def get_current_user(
     )
     
     try:
-        # Decode Supabase JWT
-        if getattr(settings, "SUPABASE_JWT_SECRET", None):
-            payload = jwt.decode(
-                token, settings.SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False}
-            )
-        else:
-            payload = jwt.get_unverified_claims(token)
-            
+        payload = decode_and_verify_token(token)
         user_id_str: str | None = payload.get("sub")
         if user_id_str is None:
+            logger.error("[AUTH] Sub claim is missing from JWT payload.")
             raise credentials_exception
         user_id = uuid.UUID(user_id_str)
-    except Exception:
-        # Fallback to local JWT signature for backward compatibility/credentials token
-        try:
-            payload = jwt.decode(
-                token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]
-            )
-            user_id_str: str | None = payload.get("sub")
-            if user_id_str is None:
-                raise credentials_exception
-            user_id = uuid.UUID(user_id_str)
-        except (JWTError, ValueError):
-            raise credentials_exception
+        logger.info(f"[AUTH] Token verified. Decoded user_id: {user_id}")
+    except Exception as e:
+        logger.error(f"[AUTH] Authentication failed for token: {e}")
+        raise credentials_exception
 
     # Query profiles table using User model
     result = await db.execute(select(User).where(User.id == user_id))

@@ -19,3 +19,9 @@ def get_ist_time() -> str:
     ist = timezone(timedelta(hours=5, minutes=30))
     now = datetime.now(ist)
     return now.strftime("%I:%M %p IST, %B %d %Y")
+
+
+def normalize_uuid(value) -> str | None:
+    """Safely normalizes any uuid-like object or string to a string UUID or None."""
+    return str(value) if value else None
+

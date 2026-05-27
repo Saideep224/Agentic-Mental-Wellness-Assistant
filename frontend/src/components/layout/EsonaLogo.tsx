@@ -68,12 +68,12 @@ export default function EsonaLogo({
     y.set(0);
   };
 
-  // Determine glow intensity styles
+  // Determine glow intensity styles (toned down for clean professional look)
   const glowStyles = {
     none: '',
-    low: 'bg-sky-400/10 blur-md opacity-40',
-    medium: 'bg-gradient-to-tr from-sky-400/20 via-cyan-400/25 to-blue-500/15 blur-xl opacity-75',
-    high: 'bg-gradient-to-tr from-sky-400/35 via-cyan-400/40 to-indigo-500/25 blur-2xl opacity-100',
+    low: 'bg-sky-400/5 blur-sm opacity-20',
+    medium: 'bg-gradient-to-tr from-sky-400/10 via-cyan-400/12 to-blue-500/8 blur-md opacity-40',
+    high: 'bg-gradient-to-tr from-sky-400/15 via-cyan-400/20 to-indigo-500/10 blur-lg opacity-60',
   }[glowIntensity];
 
   // Aspect ratio of the cropped logo is roughly 1:1.32 (1516w x 2000h)
@@ -82,21 +82,21 @@ export default function EsonaLogo({
   // Twinkle/Sparkle animation for the top diamond star
   const sparkleVariants = {
     animate: {
-      scale: [1, 1.4, 0.8, 1.4, 1],
-      opacity: [0.8, 1, 0.6, 1, 0.8],
+      scale: [1, 1.2, 0.9, 1.2, 1],
+      opacity: [0.7, 0.9, 0.6, 0.9, 0.7],
       rotate: [0, 45, 90, 135, 180],
       transition: {
-        duration: 5,
+        duration: 6,
         ease: 'easeInOut' as const,
         repeat: Infinity,
       },
     },
     hover: {
-      scale: [1, 1.7, 0.9, 1.7, 1],
-      opacity: [0.9, 1, 0.7, 1, 0.9],
+      scale: [1, 1.4, 0.9, 1.4, 1],
+      opacity: [0.8, 1, 0.7, 1, 0.8],
       rotate: [0, 90, 180, 270, 360],
       transition: {
-        duration: 3,
+        duration: 4,
         ease: 'easeInOut' as const,
         repeat: Infinity,
       },
@@ -116,25 +116,23 @@ export default function EsonaLogo({
         perspective: 800,
       }}
     >
-      {/* 1. Ambient Background Aura (Anime Energy) */}
+      {/* 1. Ambient Background Aura (Toned down) */}
       {glowIntensity !== 'none' && (
         <motion.div
           className={cn('absolute rounded-full pointer-events-none', glowStyles)}
           style={{
-            width: `${size * 1.6}px`,
-            height: `${size * 1.6}px`,
-            left: `-${size * 0.3}px`,
-            top: `-${size * 0.15}px`,
+            width: `${size * 1.4}px`,
+            height: `${size * 1.4}px`,
+            left: `-${size * 0.2}px`,
+            top: `-${size * 0.05}px`,
           }}
           animate={{
-            scale: aiState === 'speaking' ? [1, 1.15, 1] : isHovered ? 1.25 : [1, 1.08, 0.98, 1.05, 1],
-            opacity: aiState === 'speaking' ? [0.6, 1, 0.6] : isHovered ? 0.95 : [0.7, 0.85, 0.65, 0.8, 0.7],
-            boxShadow: aiState === 'speaking' ? ['0 0 10px rgba(56,189,248,0.3)', '0 0 35px rgba(56,189,248,0.8)', '0 0 10px rgba(56,189,248,0.3)'] : 'none',
+            scale: aiState === 'speaking' ? [1, 1.08, 1] : isHovered ? 1.12 : [1, 1.03, 0.97, 1.02, 1],
+            opacity: aiState === 'speaking' ? [0.4, 0.7, 0.4] : isHovered ? 0.75 : [0.5, 0.6, 0.45, 0.55, 0.5],
           }}
           transition={{
-            scale: aiState === 'speaking' ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : isHovered ? { duration: 0.3 } : { duration: 6, repeat: Infinity, ease: 'easeInOut' },
-            opacity: aiState === 'speaking' ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : isHovered ? { duration: 0.3 } : { duration: 6, repeat: Infinity, ease: 'easeInOut' },
-            boxShadow: aiState === 'speaking' ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 },
+            scale: aiState === 'speaking' ? { duration: 2.5, repeat: Infinity, ease: 'easeInOut' } : isHovered ? { duration: 0.3 } : { duration: 7, repeat: Infinity, ease: 'easeInOut' },
+            opacity: aiState === 'speaking' ? { duration: 2.5, repeat: Infinity, ease: 'easeInOut' } : isHovered ? { duration: 0.3 } : { duration: 7, repeat: Infinity, ease: 'easeInOut' },
           }}
         />
       )}

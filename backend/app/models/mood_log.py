@@ -5,10 +5,10 @@ MoodLog model – stores emotional metrics for real-time dashboard analytics.
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, DateTime, ForeignKey, UUID, Float
+from sqlalchemy import String, DateTime, ForeignKey, Float
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, SafeUUID
 
 
 class MoodLog(Base):
@@ -17,10 +17,10 @@ class MoodLog(Base):
     __tablename__ = "mood_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID, primary_key=True, default=uuid.uuid4
+        SafeUUID, primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True
+        SafeUUID, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True
     )
     mood_score: Mapped[float] = mapped_column(Float, nullable=False)
     mood_label: Mapped[str] = mapped_column(String(100), nullable=False)

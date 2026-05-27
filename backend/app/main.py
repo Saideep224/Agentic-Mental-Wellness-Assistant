@@ -57,14 +57,18 @@ app = FastAPI(
 # ── CORS Middleware (Vercel Production & Local Support) ───────
 # Allow connections from Next.js local dev environment and Vercel production/preview deploys
 frontend_origins = [
-    settings.FRONTEND_URL.rstrip("/"),
+    "https://agentic-mental-wellness-assistant.vercel.app",
+    "https://esona.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://esona.vercel.app",
-    "https://agentic-mental-wellness-assistant.vercel.app",
 ]
+
+if settings.FRONTEND_URL:
+    url = settings.FRONTEND_URL.rstrip("/")
+    if url not in frontend_origins:
+        frontend_origins.append(url)
 
 # Eliminate duplicates in case settings.FRONTEND_URL matches one of the hardcoded URLs
 allowed_origins = list(set(frontend_origins))
@@ -74,7 +78,7 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_origin_regex=r"https://agentic-mental-wellness-assistant(-[a-z0-9-]+)?\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

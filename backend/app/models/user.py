@@ -5,10 +5,10 @@ User model – representing the 'profiles' table.
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, DateTime, UUID, JSON, Text
+from sqlalchemy import String, Boolean, DateTime, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base
+from app.database import Base, SafeUUID
 
 
 class User(Base):
@@ -17,10 +17,10 @@ class User(Base):
     __tablename__ = "profiles"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID, primary_key=True, default=uuid.uuid4
+        SafeUUID, primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID, unique=True, index=True, nullable=False
+        SafeUUID, unique=True, index=True, nullable=False
     )
     email: Mapped[str] = mapped_column(
         String(320), unique=True, index=True, nullable=False

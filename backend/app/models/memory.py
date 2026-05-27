@@ -7,10 +7,10 @@ that works with both SQLite (local) and PostgreSQL (Supabase production).
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, Float, DateTime, ForeignKey, UUID, JSON
+from sqlalchemy import String, Text, Float, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, SafeUUID
 
 
 class Memory(Base):
@@ -19,10 +19,10 @@ class Memory(Base):
     __tablename__ = "memories"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID, primary_key=True, default=uuid.uuid4
+        SafeUUID, primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID,
+        SafeUUID,
         ForeignKey("profiles.id", ondelete="CASCADE"),
         nullable=False,
         index=True

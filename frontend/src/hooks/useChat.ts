@@ -46,7 +46,64 @@ export function useChat({ conversationId }: UseChatOptions) {
         }
       }
       
-      setMessages(splitMsgs);
+      if (splitMsgs.length === 0) {
+        setIsLoading(true);
+        // Call backend to generate first message
+        const response = await api.getFirstMessage(conversationId, token);
+        const responseText = response.response;
+        const detectedEmotion = response.emotionDetected;
+        const moodScore = response.moodScore;
+
+        const parts = responseText.split('|||').map(p => p.trim()).filter(Boolean);
+        
+        // Display parts sequentially with typing/streaming delay
+        const loadedMsgs: Message[] = [];
+        for (let i = 0; i < parts.length; i++) {
+          setIsLoading(true);
+          
+          // Typing delay for the stream
+          const typingDelay = Math.max(700, Math.min(2000, parts[i].length * 15));
+          await new Promise((resolve) => setTimeout(resolve, typingDelay));
+
+          const messageId = `${generateId()}-${i}`;
+          const partMessage: Message = {
+            id: messageId,
+            role: 'assistant',
+            content: '',
+            timestamp: new Date(),
+            emotionDetected: i === parts.length - 1 ? detectedEmotion : undefined,
+            moodScore: i === parts.length - 1 ? moodScore : undefined,
+          };
+          
+          // Pre-add message so stream is visible in UI
+          loadedMsgs.push(partMessage);
+          setMessages([...loadedMsgs]);
+          setIsLoading(false);
+
+          // Stream typing
+          const fullText = parts[i];
+          let currentText = '';
+          const chars = Array.from(fullText);
+          for (let charIdx = 0; charIdx < chars.length; charIdx++) {
+            currentText += chars[charIdx];
+            // Update messages state
+            setMessages((prev) =>
+              prev.map((msg) => (msg.id === messageId ? { ...msg, content: currentText } : msg))
+            );
+            await new Promise((resolve) => setTimeout(resolve, 15));
+          }
+          
+          // Update local accumulator message content
+          partMessage.content = fullText;
+
+          if (i < parts.length - 1) {
+            setIsLoading(true);
+            await new Promise((resolve) => setTimeout(resolve, 400));
+          }
+        }
+      } else {
+        setMessages(splitMsgs);
+      }
     } catch (err) {
       console.error('Failed to load messages:', err);
       setError('Failed to load messages');
@@ -108,14 +165,15 @@ export function useChat({ conversationId }: UseChatOptions) {
         for (let i = 0; i < parts.length; i++) {
           setIsLoading(true); // Keep typing indicator active
 
-          // Typing delay: e.g. 50ms per character, minimum 700ms, maximum 2000ms
-          const typingDelay = Math.max(700, Math.min(2000, parts[i].length * 25));
+          // Typing delay: e.g. minimum 700ms, maximum 2000ms
+          const typingDelay = Math.max(700, Math.min(2000, parts[i].length * 15));
           await new Promise((resolve) => setTimeout(resolve, typingDelay));
 
+          const messageId = `${generateId()}-${i}`;
           const partMessage: Message = {
-            id: `${generateId()}-${i}`,
+            id: messageId,
             role: 'assistant',
-            content: parts[i],
+            content: '', // Start empty
             timestamp: new Date(),
             emotionDetected: i === parts.length - 1 ? detectedEmotion : undefined,
             moodScore: i === parts.length - 1 ? moodScore : undefined,
@@ -123,10 +181,23 @@ export function useChat({ conversationId }: UseChatOptions) {
           };
 
           setMessages((prev) => [...prev, partMessage]);
+          setIsLoading(false); // Hide the typing indicator while typing this bubble
+
+          // Stream the characters
+          const fullText = parts[i];
+          let currentText = '';
+          const chars = Array.from(fullText);
+          for (let charIdx = 0; charIdx < chars.length; charIdx++) {
+            currentText += chars[charIdx];
+            setMessages((prev) =>
+              prev.map((msg) => (msg.id === messageId ? { ...msg, content: currentText } : msg))
+            );
+            await new Promise((resolve) => setTimeout(resolve, 15));
+          }
 
           // Small gap between typing bubbles
           if (i < parts.length - 1) {
-            setIsLoading(false);
+            setIsLoading(true);
             await new Promise((resolve) => setTimeout(resolve, 400));
           }
         }

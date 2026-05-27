@@ -132,11 +132,21 @@ export default function ChatPage() {
     try {
       const convos = await api.getConversations(token);
       setConversations(convos);
-      if (convos.length > 0 && !activeConversationId) {
-        setActiveConversationId(convos[0].id);
+      if (convos.length > 0) {
+        if (!activeConversationId) {
+          setActiveConversationId(convos[0].id);
+        }
+      } else {
+        // Auto-create first conversation
+        setIsCreating(true);
+        const convo = await api.createConversation(token);
+        setConversations([convo]);
+        setActiveConversationId(convo.id);
+        setIsCreating(false);
       }
     } catch (err) {
       console.error('Failed to load conversations:', err);
+      setIsCreating(false);
     }
   }, [activeConversationId]);
 

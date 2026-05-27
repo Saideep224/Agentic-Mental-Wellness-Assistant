@@ -26,6 +26,14 @@ export async function sendMessage(
   return apiPost('/api/chat/message', { message, conversation_id: conversationId }, token);
 }
 
+export async function getFirstMessage(
+  conversationId: string,
+  token: string
+): Promise<{ response: string; emotionDetected?: string; moodScore?: number }> {
+  return apiPost(`/api/chat/conversations/${conversationId}/first-message`, {}, token);
+}
+
+
 // ============================================
 // CONVERSATIONS CRUD
 // ============================================

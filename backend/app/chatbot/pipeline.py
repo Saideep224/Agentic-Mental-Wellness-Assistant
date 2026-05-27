@@ -1,11 +1,16 @@
 """
 LangGraph chatbot pipeline — orchestrates the multi-agent workflow.
 
-This is the refactored version of the original agents/graph.py.
-Uses a single Cognitive Analyzer LLM call to prevent 429 rate limits,
-then a memory retrieval step, then a response generation step.
-
-Pipeline: cognitive_analyzer_agent → memory_agent → response_agent → END
+Workflow:
+User Input
+↓
+Emotion Agent + Intent Agent + Safety Agent (via Cognitive Analyzer LLM call)
+↓
+Memory Agent (retrieves memories & patterns, reads conversation summaries)
+↓
+Response Agent (orchestrates tone/strategy, checks quality, runs LLM with fallback)
+↓
+Final Response
 """
 
 import json
@@ -14,29 +19,52 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from langgraph.graph import StateGraph, END
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session_maker
-from app.memory.memory_manager import MemoryManager
-from app.utils.llm import get_chat_client
+from app.utils.llm import generate_chat_completion_with_fallback
 from app.chatbot.state import AgentState
 from app.chatbot.prompts import MULTI_AGENT_ANALYZER_SYSTEM_PROMPT
 
 # Import logical agents and orchestrator
-from app.agents.personality_agent import personality_agent
-from app.agents.emotion_agent import emotion_agent
-from app.agents.behavior_agent import behavior_agent
-from app.agents.growth_agent import growth_agent
+from app.agents import (
+    personality_agent,
+    emotion_agent,
+    behavior_agent,
+    growth_agent,
+    intent_agent,
+    safety_agent,
+    memory_agent,
+    response_agent,
+)
 from app.orchestrator.response_orchestrator import response_orchestrator
 
 logger = logging.getLogger(__name__)
 
 
-# ── 1. Cognitive Analyzer Agent ───────────────────────────────
+# ── Helper: Retrieve Conversation Summary ─────────────────────
+async def _get_conversation_summary(db: AsyncSession, user_id: str, conversation_id: str) -> str | None:
+    """Query the memories table for a conversation summary memory."""
+    try:
+        from app.models.memory import Memory
+        result = await db.execute(
+            select(Memory).where(Memory.user_id == user_id)
+        )
+        memories = result.scalars().all()
+        for m in memories:
+            meta = m.metadata_json or {}
+            if meta.get("source") == "conversation_summary" and meta.get("conversation_id") == str(conversation_id):
+                return m.memory_summary
+    except Exception as e:
+        logger.warning(f"Failed to fetch conversation summary: {e}")
+    return None
+
+
+# ── 1. Cognitive Analyzer Agent (Coordinating Node) ───────────
 async def cognitive_analyzer_agent(state: AgentState) -> dict:
-    """Run the single structured Gemini analysis call to populate logical agents and context."""
-    client = get_chat_client()
+    """Run structured analyzer Gemini call and parse with logical agents."""
     user_message = state.get("user_message", "")
     history = state.get("conversation_history", [])
     profile = state.get("emotional_profile", {})
@@ -53,8 +81,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
         profile_snippet = f"\nUser Profile:\n{json.dumps(profile, indent=2)}"
 
     try:
-        response = await client.chat.completions.create(
-            model=settings.llm_model,
+        raw = await generate_chat_completion_with_fallback(
             messages=[
                 {"role": "system", "content": MULTI_AGENT_ANALYZER_SYSTEM_PROMPT},
                 {
@@ -70,7 +97,6 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             max_tokens=1000,
             response_format={"type": "json_object"},
         )
-        raw = response.choices[0].message.content.strip()
         analysis = json.loads(raw)
     except Exception as e:
         logger.warning(f"Multi-agent cognitive analyzer failed, using fallback: {e}", exc_info=True)
@@ -111,6 +137,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             "recommendations": [],
             "memory_extraction": {
                 "is_meaningful": False,
+                "importance_level": 1,
                 "memory_summary": None,
                 "behavior_patterns": None
             }
@@ -121,6 +148,10 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     e_data = emotion_agent.analyze(analysis)
     b_data = behavior_agent.analyze(analysis)
     g_data = growth_agent.analyze(analysis)
+    
+    # Run new Intent and Safety Agents
+    i_data = intent_agent.analyze(analysis)
+    s_data = safety_agent.check_safety(analysis, user_message)
 
     detected_emotion = e_data.get("primary_emotion", "neutral")
     
@@ -151,7 +182,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
         "emotional_needs": [p_data.get("emotional_openness", "neutral")]
     }
 
-    logger.info(f"[ANALYSIS] Single Gemini analysis completed: type={analysis.get('message_type')}, primary_emotion={detected_emotion}, mood={mood_score}")
+    logger.info(f"[ANALYSIS] Coordinated agents analysis: message_type={i_data.get('message_type')}, primary_emotion={detected_emotion}, mood={mood_score}, is_safe={s_data.get('is_safe')}")
 
     return {
         "router_decision": {"message_type": analysis.get("message_type", "emotional")},
@@ -159,6 +190,8 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
         "emotion_agent": e_data,
         "behavior_agent": b_data,
         "growth_agent": g_data,
+        "intent_agent": i_data,
+        "safety_agent": s_data,
         "memory_extraction": analysis.get("memory_extraction", {}),
         "emotion_analysis": e_data,
         "emotion_dimensions": emotion_dimensions,
@@ -172,12 +205,9 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
 
 # ── 2. Memory Agent ───────────────────────────────────────────
 async def memory_agent_node(state: AgentState) -> dict:
-    """Query the database for relevant memories and user patterns."""
+    """Use Memory Agent to recall context and emotional patterns from DB."""
     user_message = state.get("user_message", "")
     user_id = state.get("user_id", "")
-
-    retrieved_memories: list[dict] = []
-    patterns: dict = {}
 
     db = state.get("db")
     close_db = False
@@ -186,26 +216,14 @@ async def memory_agent_node(state: AgentState) -> dict:
         close_db = True
 
     try:
-        from app.services.memory_service import memory_service
-        mm = MemoryManager()
-        mem_objs = await memory_service.retrieveRelevantMemories(
-            db=db,
-            user_id=user_id,
-            query=user_message,
-            limit=5,
-        )
-        retrieved_memories = [
-            {
-                "content": m.memory_summary,
-                "metadata": m.metadata_json,
-                "distance": 0.0
-            }
-            for m in mem_objs
-        ]
-        logger.info(f"[MEMORY] Retrieved {len(retrieved_memories)} memories for user {user_id}")
-        patterns = await mm.get_emotional_patterns(db, user_id)
+        # Retrieve memories and patterns using the memory agent (limit top 3 to optimize tokens)
+        result = await memory_agent.retrieve_context(db, user_id, user_message, limit=3)
+        retrieved_memories = result["memories"]
+        patterns = result["emotional_patterns"]
     except Exception as e:
-        logger.warning(f"[MEMORY] Memory agent error: {e}", exc_info=True)
+        logger.warning(f"[MEMORY] Memory agent node error: {e}", exc_info=True)
+        retrieved_memories = []
+        patterns = {}
     finally:
         if close_db:
             await db.close()
@@ -215,25 +233,32 @@ async def memory_agent_node(state: AgentState) -> dict:
 
 # ── 3. Response Agent ─────────────────────────────────────────
 async def response_agent_node(state: AgentState) -> dict:
-    """Use the Response Orchestrator to generate final orchestrated prompt and response."""
-    client = get_chat_client()
+    """Call Response Agent to compile system prompt and generate final output."""
     user_message = state.get("user_message", "")
     history = state.get("conversation_history", [])
     profile = state.get("emotional_profile", {})
     memories = state.get("memories", [])
+    conversation_id = state.get("conversation_id", "")
+    user_id = state.get("user_id", "")
 
     personality_profile = profile.get("personality_profile", {})
     user_name = profile.get("user_name", "friend")
 
-    # Call Orchestrator to decide Tone and Strategy
-    orchestrated = response_orchestrator.determine_tone_and_strategy(
-        personality=state.get("personality_agent", {}),
-        emotion=state.get("emotion_agent", {}),
-        behavior=state.get("behavior_agent", {}),
-        growth=state.get("growth_agent", {})
-    )
-    tone = orchestrated["tone"]
-    strategy = orchestrated["strategy"]
+    # If crisis is detected by the Safety Agent, override response strategy
+    safety_data = state.get("safety_agent", {})
+    if safety_data.get("crisis_detected"):
+        tone = "calming"
+        strategy = "Activate Esona Crisis Support Protocol. Focus on validating pain, sharing safety hotlines (e.g. Vandrevala Foundation or AASRA), staying grounded, and being direct. Strictly no humor."
+    else:
+        # Call Orchestrator to decide Tone and Strategy
+        orchestrated = response_orchestrator.determine_tone_and_strategy(
+            personality=state.get("personality_agent", {}),
+            emotion=state.get("emotion_agent", {}),
+            behavior=state.get("behavior_agent", {}),
+            growth=state.get("growth_agent", {})
+        )
+        tone = orchestrated["tone"]
+        strategy = orchestrated["strategy"]
 
     # Format Current Time
     ist_tz = ZoneInfo("Asia/Kolkata")
@@ -258,6 +283,18 @@ async def response_agent_node(state: AgentState) -> dict:
     prompt_summary = f"[Tone: {tone.upper()} | Strategy: {strategy}]\nSystem prompt length: {len(system_prompt)} chars."
 
     messages = [{"role": "system", "content": system_prompt}]
+    
+    # Fetch and prepend conversation summaries if they exist to keep context window optimized
+    db = state.get("db")
+    if db and conversation_id and user_id:
+        summary = await _get_conversation_summary(db, user_id, conversation_id)
+        if summary:
+            messages.append({
+                "role": "system",
+                "content": f"System Note: Here is a summary of the earlier part of this conversation:\n\"{summary}\"\nUse it for context, but do not repeat it verbatim."
+            })
+
+    # Limit history to the last 8 messages to optimize token usage
     if history:
         for msg in history[-8:]:
             role = msg.get("role", "user")
@@ -265,18 +302,11 @@ async def response_agent_node(state: AgentState) -> dict:
                 messages.append({"role": role, "content": msg["content"]})
     messages.append({"role": "user", "content": user_message})
 
+    # Call Response Agent to generate response with quality checks
     try:
-        kwargs = {
-            "model": settings.llm_model,
-            "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 800,
-        }
-        response = await client.chat.completions.create(**kwargs)
-        text = response.choices[0].message.content.strip()
+        text = await response_agent.generate(messages=messages, temperature=0.7, max_tokens=800)
     except Exception as e:
         logger.error(f"Response agent generation failed: {e}", exc_info=True)
-        # Fallback text
         text = "I'm here for you. ||| Things sound a bit heavy right now... ||| What's on your mind?"
 
     # Assemble structured developer debug payload
@@ -285,6 +315,8 @@ async def response_agent_node(state: AgentState) -> dict:
         "emotion_agent": state.get("emotion_agent", {}),
         "behavior_agent": state.get("behavior_agent", {}),
         "growth_agent": state.get("growth_agent", {}),
+        "intent_agent": state.get("intent_agent", {}),
+        "safety_agent": state.get("safety_agent", {}),
         "retrieved_memories": memories,
         "response_strategy": {
             "tone": tone,
@@ -301,7 +333,10 @@ async def response_agent_node(state: AgentState) -> dict:
     return {
         "response": text,
         "agent_analysis": agent_analysis,
-        "response_strategy": orchestrated
+        "response_strategy": {
+            "tone": tone,
+            "strategy": strategy
+        }
     }
 
 
@@ -335,12 +370,14 @@ async def run_agent_graph(
     user_id: str,
     conversation_history: list[dict],
     emotional_profile: dict,
+    conversation_id: str | None = None,
     db: AsyncSession | None = None,
 ) -> dict:
     """Execute the full agent pipeline and return the final state."""
     initial_state: AgentState = {
         "user_message": user_message,
         "user_id": user_id,
+        "conversation_id": str(conversation_id) if conversation_id else "",
         "conversation_history": conversation_history,
         "emotional_profile": emotional_profile,
         "db": db,
@@ -357,6 +394,8 @@ async def run_agent_graph(
         "emotion_agent": {},
         "behavior_agent": {},
         "growth_agent": {},
+        "intent_agent": {},
+        "safety_agent": {},
         "memory_extraction": {},
         "response_strategy": {},
         "orchestrated_prompt_summary": "",

@@ -11,10 +11,11 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.models.memory import Memory
-from app.agents.graph import client
+from app.utils.llm import get_chat_client
 from app.memory.memory_manager import MemoryManager
 
 logger = logging.getLogger(__name__)
+
 
 MEMORY_ANALYZER_SYSTEM_PROMPT = """You are the Memory Extraction Agent for Esona, a mental wellness companion.
 Your task is to analyze the user's latest message and extract meaningful emotional or behavioral insights.
@@ -72,6 +73,7 @@ class MemoryService:
             if history_context:
                 prompt_content = f"Context:\n{history_context}\n\nUser message: {user_message}"
 
+            client = get_chat_client()
             response = await client.chat.completions.create(
                 model=settings.llm_model,
                 messages=[
@@ -98,7 +100,7 @@ class MemoryService:
             patterns = dict(behavior_patterns or {})
 
             # Generate and embed vector representation of the memory_summary
-            embedding = self.memory_manager._get_embedding(memory_summary)
+            embedding = await self.memory_manager._get_embedding(memory_summary)
             if embedding:
                 patterns["embedding"] = embedding
 
@@ -132,7 +134,7 @@ class MemoryService:
                 return []
 
             # Generate query embedding
-            query_vector = self.memory_manager._get_embedding(query)
+            query_vector = await self.memory_manager._get_embedding(query)
             if not query_vector:
                 # Fallback lexical matching
                 logger.debug("Falling back to lexical keyword matching for memories")

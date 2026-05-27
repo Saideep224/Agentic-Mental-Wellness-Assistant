@@ -14,6 +14,7 @@ class AgentState(TypedDict, total=False):
     Full state schema for the Esona multi-agent graph.
     """
     db: AsyncSession
+    conversation_id: str
     user_message: str
     user_id: str
     conversation_history: list[dict]
@@ -35,6 +36,8 @@ class AgentState(TypedDict, total=False):
     emotion_agent: dict
     behavior_agent: dict
     growth_agent: dict
+    intent_agent: dict
+    safety_agent: dict
     memory_extraction: dict
     response_strategy: dict
     orchestrated_prompt_summary: str

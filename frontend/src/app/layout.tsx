@@ -51,9 +51,6 @@ export default function RootLayout({
 
             {/* Main content */}
             <div className="relative z-10 min-h-screen">{children}</div>
-
-            {/* UncloseAI Floating Assistant */}
-            <Script src="https://uncloseai.com/uncloseai.js" type="module" strategy="lazyOnload" />
           </ThemeProvider>
         </AuthProvider>
       </body>

@@ -51,6 +51,7 @@ Analyze for the following categories using the four logical agents:
      - Burnout indicators or routine patterns.
    - Set "is_meaningful" to false and summary/patterns to null for casual greetings, small talk, filler messages.
    - Set "is_meaningful" to true, provide a concise summary, and behavior patterns for meaningful insights.
+   - For meaningful insights, assign an "importance_level" between 1 and 5 (1 = lowest, 5 = highest). Core emotional trends, major stressors, triggers, and preferences get 4-5. Minor updates get 1-2.
 
 Respond with ONLY a valid JSON object matching this schema:
 {
@@ -90,6 +91,7 @@ Respond with ONLY a valid JSON object matching this schema:
   "recommendations": ["string"],
   "memory_extraction": {
     "is_meaningful": true | false,
+    "importance_level": 1-5,
     "memory_summary": "string" | null,
     "behavior_patterns": {
       "trigger": "string" | null,

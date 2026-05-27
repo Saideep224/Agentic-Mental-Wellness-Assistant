@@ -10,12 +10,12 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from collections import Counter
 
-from openai import OpenAI
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.memory import Memory
+from app.utils.llm import get_embedding_client
 
 logger = logging.getLogger(__name__)
 
@@ -27,19 +27,15 @@ class MemoryManager:
     """
 
     def __init__(self) -> None:
-        self.openai_client = None
-        if settings.llm_api_key:
-            try:
-                self.openai_client = OpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-            except Exception as e:
-                logger.warning(f"Failed to initialize OpenAI client for MemoryManager: {e}")
+        pass
 
-    def _get_embedding(self, text: str) -> list[float] | None:
-        """Fetch OpenAI vector embedding for text."""
-        if not self.openai_client or settings.USE_UNCLOSEAI:
+    async def _get_embedding(self, text: str) -> list[float] | None:
+        """Fetch OpenAI vector embedding for text asynchronously."""
+        if settings.USE_UNCLOSEAI:
             return None
         try:
-            response = self.openai_client.embeddings.create(
+            client = get_embedding_client()
+            response = await client.embeddings.create(
                 input=[text],
                 model=settings.embedding_model
             )
@@ -71,7 +67,7 @@ class MemoryManager:
                 sanitized_meta[k] = str(v)
 
         # Generate embedding
-        embedding_list = self._get_embedding(content)
+        embedding_list = await self._get_embedding(content)
         embedding_data = embedding_list if embedding_list else None
 
         memory = Memory(
@@ -103,7 +99,7 @@ class MemoryManager:
             return []
 
         # If we have an OpenAI client, try vector similarity
-        query_vector = self._get_embedding(query)
+        query_vector = await self._get_embedding(query)
 
         memories = []
         for mem in rows:

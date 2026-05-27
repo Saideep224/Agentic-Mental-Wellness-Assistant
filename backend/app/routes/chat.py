@@ -21,7 +21,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.conversation import Conversation, Message, MessageRole
 from app.models.user_profile import UserProfile
-# ChatHistory removed — using only Message (chat_messages table)
+from app.models.chat_history import ChatHistory
 from app.models.mood_log import MoodLog
 from app.routes.auth import get_current_user
 from app.schemas.chat import (
@@ -101,7 +101,8 @@ Conversation:
 Title:"""
     
     try:
-        from app.agents.graph import client
+        from app.utils.llm import get_chat_client
+        client = get_chat_client()
         from app.config import settings
         response = await client.chat.completions.create(
             model=settings.llm_model,
@@ -217,6 +218,81 @@ async def _get_emotional_profile_dict(
     return profile_dict
 
 
+async def summarize_and_store_conversation(db: AsyncSession, user_id: uuid.UUID, conversation_id: uuid.UUID, history: list[dict]):
+    """Summarize older messages in a conversation and store it in the memories table."""
+    logger.info(f"Summarizing thread {conversation_id} for user {user_id}")
+    
+    # We summarize everything except the last 4 messages to preserve immediate context continuity
+    messages_to_summarize = history[:-4]
+    if not messages_to_summarize:
+        return
+        
+    history_text = "\n".join([f"{m['role']}: {m['content']}" for m in messages_to_summarize])
+    
+    prompt = f"""You are the Summarization Agent for Esona, a mental wellness companion.
+Summarize the emotional context, key topics discussed, and state of mind of the user in this conversation history snippet.
+Keep it extremely concise (under 2-3 sentences). Focus on what triggers, stressors, or breakthrough moments occurred.
+
+Conversation history:
+{history_text}
+
+Summary:"""
+
+    try:
+        from app.utils.llm import get_chat_client
+        client = get_chat_client()
+        response = await client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[{"role": "system", "content": prompt}],
+            temperature=0.3,
+            max_tokens=200,
+        )
+        summary = response.choices[0].message.content.strip()
+        
+        # Check if a summary already exists in Memory table
+        from app.models.memory import Memory
+        from app.services.memory_service import memory_service
+        
+        result = await db.execute(
+            select(Memory).where(Memory.user_id == str(user_id))
+        )
+        memories = result.scalars().all()
+        existing_memory = None
+        for m in memories:
+            meta = m.metadata_json or {}
+            if meta.get("source") == "conversation_summary" and meta.get("conversation_id") == str(conversation_id):
+                existing_memory = m
+                break
+                
+        if existing_memory:
+            # Update summary
+            existing_memory.memory_summary = summary
+            existing_memory.created_at = datetime.now(timezone.utc)
+            # Shallow copy to trigger SA change tracking
+            existing_memory.behavior_patterns = {
+                **(existing_memory.behavior_patterns or {}),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            logger.info(f"Updated conversation summary memory for {conversation_id}")
+        else:
+            # Create a new memory entry
+            await memory_service.saveMemory(
+                db=db,
+                user_id=str(user_id),
+                memory_summary=summary,
+                behavior_patterns={
+                    "source": "conversation_summary",
+                    "conversation_id": str(conversation_id),
+                    "emotion": "neutral",
+                    "stress_level": 3
+                }
+            )
+            logger.info(f"Created conversation summary memory for {conversation_id}")
+            
+    except Exception as e:
+        logger.error(f"Failed to generate and store conversation summary: {e}", exc_info=True)
+
+
 @router.post("/message")
 async def send_message(
     body: ChatMessageRequest,
@@ -239,6 +315,15 @@ async def send_message(
         content=body.message,
     )
     db.add(user_msg)
+    
+    # Save to chat_history
+    chat_user = ChatHistory(
+        user_id=current_user.id,
+        role="user",
+        message=body.message,
+        emotion_score=None,
+    )
+    db.add(chat_user)
     conversation.updated_at = datetime.now(timezone.utc)
     
     await db.flush()
@@ -255,6 +340,7 @@ async def send_message(
             user_id=str(current_user.id),
             conversation_history=history,
             emotional_profile=emotional_profile,
+            conversation_id=conversation.id,
             db=db,
         )
 
@@ -312,8 +398,15 @@ async def send_message(
             emotional_context=agent_analysis.get("emotion_analysis", {}),
         )
         db.add(assistant_msg)
-        
-        # ChatHistory dual-write removed — only using Message table
+
+        # Save to chat_history
+        chat_assistant = ChatHistory(
+            user_id=current_user.id,
+            role="assistant",
+            message=full_response,
+            emotion_score=mood_score,
+        )
+        db.add(chat_assistant)
 
         # Save mood log
         dims = result.get("emotion_dimensions", {})
@@ -336,8 +429,15 @@ async def send_message(
             conversation.emotional_tag = detected_emotion
         conversation.updated_at = datetime.now(timezone.utc)
 
+        # Trigger conversation summarization if message count >= 12
+        if len(history) >= 12 and len(history) % 6 == 0:
+            try:
+                await summarize_and_store_conversation(db, current_user.id, conversation.id, history)
+            except Exception as sum_err:
+                logger.error(f"Summarization trigger failed: {sum_err}", exc_info=True)
+
         await db.commit()
-        logger.info(f"[CHAT] Assistant response + mood log saved to chat_history (user={current_user.id}, conv={conversation.id})")
+        logger.info(f"[CHAT] Assistant response + mood log saved (user={current_user.id}, conv={conversation.id})")
 
         return {
             "response": full_response,
@@ -397,6 +497,15 @@ async def stream_message_sse(
         content=message,
     )
     db.add(user_msg)
+    
+    # Save to chat_history
+    chat_user = ChatHistory(
+        user_id=current_user.id,
+        role="user",
+        message=message,
+        emotion_score=None,
+    )
+    db.add(chat_user)
     conversation.updated_at = datetime.now(timezone.utc)
     
     await db.flush()
@@ -416,6 +525,8 @@ async def stream_message_sse(
                 user_id=str(current_user.id),
                 conversation_history=history,
                 emotional_profile=emotional_profile,
+                conversation_id=conversation.id,
+                db=db,
             )
 
             full_response = result.get("response", "I'm here for you. Could you tell me more?")
@@ -461,8 +572,15 @@ async def stream_message_sse(
                     emotional_context=agent_analysis.get("emotion_analysis", {}),
                 )
                 save_db.add(assistant_msg)
-                
-                # ChatHistory dual-write removed — only using Message table
+
+                # Save to chat_history
+                chat_assistant = ChatHistory(
+                    user_id=current_user.id,
+                    role="assistant",
+                    message=full_response,
+                    emotion_score=mood_score,
+                )
+                save_db.add(chat_assistant)
 
                 # Save mood log
                 dims = result.get("emotion_dimensions", {})
@@ -497,6 +615,13 @@ async def stream_message_sse(
                             db_conv.title = await generate_chat_title_llm(title_msgs)
                         except Exception:
                             db_conv.title = generate_emotional_title(message, detected_emotion or "neutral")
+
+                # Trigger conversation summarization if message count >= 12
+                if len(history) >= 12 and len(history) % 6 == 0:
+                    try:
+                        await summarize_and_store_conversation(save_db, current_user.id, conversation.id, history)
+                    except Exception as sum_err:
+                        logger.error(f"Summarization trigger failed: {sum_err}", exc_info=True)
 
                 await save_db.commit()
                 await save_db.refresh(assistant_msg)
@@ -543,10 +668,156 @@ async def stream_message_sse(
     return EventSourceResponse(event_generator())
 
 
+@router.post("/conversations/{conversation_id}/first-message")
+async def generate_first_message(
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate and save a personalized first greeting message in an empty conversation,
+    based on the user's personality profile, mood patterns, and past memories.
+    """
+    # 1. Verify conversation exists and is empty
+    result = await db.execute(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+    )
+    conversation = result.scalar_one_or_none()
+    if conversation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+        
+    msg_count_res = await db.execute(
+        select(func.count(Message.id)).where(Message.conversation_id == conversation_id)
+    )
+    msg_count = msg_count_res.scalar() or 0
+    if msg_count > 0:
+        # Conversation is not empty, return the first message already in it
+        first_msg_res = await db.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.asc())
+            .limit(1)
+        )
+        first_msg = first_msg_res.scalar_one_or_none()
+        if first_msg:
+            return {
+                "response": first_msg.content,
+                "emotionDetected": first_msg.emotion_detected,
+                "moodScore": first_msg.mood_score,
+            }
+            
+    # 2. Gather context
+    # Profile
+    profile = await _get_emotional_profile_dict(db, current_user.id, current_user.name)
+    user_name = current_user.name or "friend"
+    personality_str = json.dumps(profile.get("personality_profile", {}))
+    interests_str = json.dumps(profile.get("interests", {}))
+    
+    # Recent Mood logs
+    mood_result = await db.execute(
+        select(MoodLog)
+        .where(MoodLog.user_id == current_user.id)
+        .order_by(MoodLog.created_at.desc())
+        .limit(5)
+    )
+    mood_logs = mood_result.scalars().all()
+    recent_moods = [f"Mood: {m.detected_emotion} (score: {m.mood_score}, stress: {m.stress})" for m in mood_logs]
+    recent_moods_str = "\n".join(recent_moods) if recent_moods else "No recent mood logs."
+    
+    # Recent Memories
+    from app.models.memory import Memory
+    memory_result = await db.execute(
+        select(Memory)
+        .where(Memory.user_id == str(current_user.id))
+        .order_by(Memory.created_at.desc())
+        .limit(5)
+    )
+    memories = memory_result.scalars().all()
+    memories_list = [f"- {m.memory_summary} (Patterns: {m.behavior_patterns})" for m in memories if m.metadata_json.get("source") != "conversation_summary"]
+    memories_str = "\n".join(memories_list) if memories_list else "No past memories recorded."
+
+    # Preferred texting style
+    reply_style = profile.get("personality_profile", {}).get("reply_style", {})
+    style_preference = (
+        f"Paragraph preference: {reply_style.get('paragraph_preference', 'short')}, "
+        f"Emoji usage: {reply_style.get('emoji_usage', 'medium')}, "
+        f"Tone: {reply_style.get('communication_style', 'gentle')}"
+    )
+
+    # 3. Create prompt
+    prompt = f"""You are Esona, a deeply supportive, emotionally intelligent AI wellness companion for students.
+Your job is to generate a personalized first greeting message (opening check-in) for the user.
+Avoid repeating the exact same message every time. Be creative, casual, warm, and mirror a human texting style.
+
+============================================
+USER PROFILE & CONTEXT:
+- Name: {user_name}
+- Personality: {personality_str}
+- Interests: {interests_str}
+- Style Preference: {style_preference}
+- Recent Mood Logs:
+{recent_moods_str}
+- Relevant Memories / Past Context:
+{memories_str}
+
+============================================
+BEHAVIOR & GREETING VARIATION RULES:
+1. Make your greeting feel natural, warm, and highly personalized.
+2. DO NOT sound like a therapy assistant. Ban robotic templates ("I understand...", "How can I help you today?").
+3. Choose one of the following variation themes depending on context:
+   - "Supportive Check-in": If recent mood logs show high stress/anxiety/sadness, check in on how they are feeling now.
+   - "Continuation Check-in": If memories exist, reference a topic they discussed recently (e.g. studies, exams, sleep, a friend) naturally.
+   - "Warm Opening": If there are no recent stress triggers or memories, greet them warmly, reference one of their interests, and ask how their day is going.
+4. You MUST split your response into 2 to 3 separate human-like thoughts using the delimiter " ||| " (with spaces around it).
+
+First Message:"""
+
+    # 4. Generate first message
+    try:
+        from app.utils.llm import generate_chat_completion_with_fallback
+        raw_response = await generate_chat_completion_with_fallback(
+            messages=[{"role": "system", "content": prompt}],
+            temperature=0.75,
+            max_tokens=300
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate personalized first message: {e}", exc_info=True)
+        raw_response = f"Hey {user_name}! 👋 ||| Just checking in to see how you're doing today. ||| What's on your mind?"
+
+    # 5. Save message to DB
+    assistant_msg = Message(
+        conversation_id=conversation.id,
+        user_id=current_user.id,
+        role=MessageRole.assistant,
+        content=raw_response,
+        emotion_detected="neutral",
+        mood_score=0.5,
+        agent_analysis={}
+    )
+    db.add(assistant_msg)
+    
+    # Update conversation's updated_at
+    conversation.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    
+    return {
+        "response": raw_response,
+        "emotionDetected": "neutral",
+        "moodScore": 0.5,
+    }
+
+
 def get_db_session():
     """Standalone session context for saving messages outside the request lifecycle."""
     from app.database import async_session_maker
     return async_session_maker()
+
 
 
 # Conversation CRUD endpoints moved to app.routes.conversations

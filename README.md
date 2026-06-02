@@ -1,23 +1,34 @@
-🌊 Esona – The Sound of Understanding
-About the Project
+# 🌊 Esona – The Sound of Understanding
 
-Esona is an AI-powered mental wellness chatbot developed as part of my research and learning in conversational AI systems. The goal of this project is to create a chatbot that provides supportive and personalized conversations by understanding a user's emotions, personality traits, communication style, and previous interactions.
+## About the Project
 
-Unlike traditional chatbots that generate responses directly from a single prompt, Esona uses a multi-agent architecture where different AI agents work together to analyze emotions, personality patterns, conversation context, and memory before generating a response.
+Esona is an AI-powered mental wellness chatbot developed as part of my research internship and personal learning in Conversational AI.
 
-The long-term vision of this project is to build a chatbot that feels more human, remembers important user preferences, and can provide meaningful emotional support to students and young adults.
+The idea behind Esona is simple: most chatbots answer questions, but very few try to understand the person behind them. This project explores how personality analysis, emotional understanding, conversation memory, and AI agents can work together to create more personalized and supportive interactions.
 
-Main Features
-Multi-agent AI response generation
-Emotion and mood analysis
-Personality-based conversation adaptation
-Memory of previous interactions
-Personalized recommendations and support
-User onboarding questionnaire
-Mood tracking dashboard
-Modern and calming user interface
+Instead of generating responses from a single prompt, Esona uses multiple AI agents that collaborate to understand the user's emotional state, conversation context, personality traits, and previous interactions before generating a response.
 
-Project Architecture
+The long-term goal of this project is to build a conversational AI system that feels more natural, remembers important user preferences, and provides meaningful support through personalized conversations.
+
+---
+
+## Key Features
+
+- Multi-agent AI architecture
+- Emotion and mood analysis
+- Personality-aware conversations
+- Context understanding
+- Conversation memory
+- Personalized recommendations
+- User onboarding and profiling
+- Mood tracking and insights
+- Clean and calming user interface
+
+---
+
+## System Workflow
+
+```text
 User Message
       ↓
 Router Agent
@@ -31,61 +42,82 @@ Recommendation Agent
       ↓
 Response Agent
       ↓
-Final Reply
-Technologies Used
-Frontend
-Next.js
-TypeScript
-Tailwind CSS
-Framer Motion
-ShadCN UI
-Backend
-FastAPI
-Python
-AI & Data
-OpenAI API
-LangGraph
-PostgreSQL
-ChromaDB
-Current Status
+Final Response
+```
+
+---
+
+## Technologies Used
+
+### Frontend
+- Next.js
+- TypeScript
+- Tailwind CSS
+- Framer Motion
+- ShadCN UI
+
+### Backend
+- FastAPI
+- Python
+
+### AI & Data
+- OpenAI API
+- LangGraph
+- PostgreSQL
+- ChromaDB
+
+---
+
+## Current Development Status
 
 This project is currently under active development.
 
-The present version focuses on:
+Current areas of focus include:
 
-Building the multi-agent workflow
-Improving conversational quality
-Implementing memory and personalization
-Making chatbot responses feel more natural and human-like
+- Improving conversational quality
+- Enhancing personalization
+- Building stronger memory systems
+- Making responses feel more natural and human-like
+- Improving emotional understanding and context awareness
 
-Future versions will explore:
+Planned future improvements:
 
-Better long-term memory systems
-More personalized emotional support
-Improved personality modelling
-Fine-tuned language models
-Advanced analytics and insights
-Learning Outcomes
+- Long-term memory capabilities
+- Advanced personality modelling
+- Better recommendation systems
+- Fine-tuned language models
+- Enhanced analytics and insights
+
+---
+
+## What I Learned
 
 Through this project, I gained practical experience in:
 
-AI chatbot development
-Multi-agent systems
-Prompt engineering
-Full-stack web development
-Database integration
-Memory-based conversational AI
-API integration and deployment
-Author
+- AI chatbot development
+- Multi-agent systems
+- Prompt engineering
+- Full-stack web development
+- API integration
+- Database management
+- Vector databases and memory systems
+- Conversational AI design
 
-Sai Deep
-B.Tech Student, SRM University AP
+---
 
-Research Interest Areas:
+## Motivation
 
-Artificial Intelligence
-Conversational AI
-Mental Wellness Technology
-Human-Centered AI Systems
+I started building Esona to explore how AI can move beyond answering questions and become better at understanding people. The project serves as both a research initiative and a learning platform where I can experiment with multi-agent systems, memory-driven conversations, and human-centered AI design.
 
-"Technology should not only answer questions; it should also understand people."
+---
+
+## developed by 
+
+**Sai Deep**
+
+B.Tech Student  
+SRM University-AP
+
+---
+
+*"Technology should not only answer questions; it should also understand people."*

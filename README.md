@@ -111,7 +111,7 @@ I started building Esona to explore how AI can move beyond answering questions a
 
 ---
 
-## developed by 
+## Developed by 
 
 **Sai Deep**
 

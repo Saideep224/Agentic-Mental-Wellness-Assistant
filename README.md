@@ -1,168 +1,91 @@
-# 🌊 Esona - Your Supporting Buddie
+🌊 Esona – The Sound of Understanding
+About the Project
 
-An AI-powered multi-agent mental wellness chatbot that understands your personality, emotions, and communication style to provide truly personalized, human-like emotional support.
+Esona is an AI-powered mental wellness chatbot developed as part of my research and learning in conversational AI systems. The goal of this project is to create a chatbot that provides supportive and personalized conversations by understanding a user's emotions, personality traits, communication style, and previous interactions.
 
-![Esona](https://img.shields.io/badge/Esona-Mental%20Wellness-0ea5e9?style=for-the-badge)
-![Next.js](https://img.shields.io/badge/Next.js-15-000000?style=for-the-badge&logo=next.js)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi)
-![LangGraph](https://img.shields.io/badge/LangGraph-Multi%20Agent-8b5cf6?style=for-the-badge)
+Unlike traditional chatbots that generate responses directly from a single prompt, Esona uses a multi-agent architecture where different AI agents work together to analyze emotions, personality patterns, conversation context, and memory before generating a response.
 
-## ✨ Features
+The long-term vision of this project is to build a chatbot that feels more human, remembers important user preferences, and can provide meaningful emotional support to students and young adults.
 
-- **Multi-Agent AI Architecture** — 7 specialized agents collaborating for every response
-- **Personality Profiling** — 20-question onboarding to understand who you are
-- **Emotional Memory** — Remembers your emotional patterns and history
-- **Adaptive Tone** — Adjusts communication style to match your preferences
-- **Mood Analytics** — Beautiful dashboard with emotional trend visualization
-- **Calming UI** — Japanese-inspired aesthetic with ambient animations
+Main Features
+Multi-agent AI response generation
+Emotion and mood analysis
+Personality-based conversation adaptation
+Memory of previous interactions
+Personalized recommendations and support
+User onboarding questionnaire
+Mood tracking dashboard
+Modern and calming user interface
 
-## 🏗️ Architecture
+Project Architecture
+User Message
+      ↓
+Router Agent
+      ↓
+Emotion Agent
+Personality Agent
+Context Agent
+Memory Agent
+      ↓
+Recommendation Agent
+      ↓
+Response Agent
+      ↓
+Final Reply
+Technologies Used
+Frontend
+Next.js
+TypeScript
+Tailwind CSS
+Framer Motion
+ShadCN UI
+Backend
+FastAPI
+Python
+AI & Data
+OpenAI API
+LangGraph
+PostgreSQL
+ChromaDB
+Current Status
 
-```
-User Message → Router Agent → [Emotion, Personality, Context, Memory Agents]
-                                              ↓
-                              Recommendation Agent → Response Agent → Reply
-```
+This project is currently under active development.
 
-## 🛠️ Tech Stack
+The present version focuses on:
 
-| Layer | Technology |
-|-------|------------|
-| Frontend | Next.js 15, TypeScript, TailwindCSS v4, Framer Motion, ShadCN UI |
-| Backend | FastAPI (Python 3.11+) |
-| AI | OpenAI GPT-4o, LangGraph |
-| Database | PostgreSQL 16 |
-| Memory | ChromaDB (vector embeddings) |
-| Auth | Auth.js (NextAuth v5) |
+Building the multi-agent workflow
+Improving conversational quality
+Implementing memory and personalization
+Making chatbot responses feel more natural and human-like
 
-## 📦 Prerequisites
+Future versions will explore:
 
-- Node.js 18+ and npm
-- Python 3.11+
-- PostgreSQL 16 (or Docker)
-- OpenAI API key
+Better long-term memory systems
+More personalized emotional support
+Improved personality modelling
+Fine-tuned language models
+Advanced analytics and insights
+Learning Outcomes
 
-## 🚀 Quick Start
+Through this project, I gained practical experience in:
 
-### 1. Clone and Setup
+AI chatbot development
+Multi-agent systems
+Prompt engineering
+Full-stack web development
+Database integration
+Memory-based conversational AI
+API integration and deployment
+Author
 
-```bash
-cd esona
-```
+Sai Deep
+B.Tech Student, SRM University AP
 
-### 2. Start PostgreSQL
+Research Interest Areas:
 
-```bash
-# Using Docker
-docker-compose up -d
+Artificial Intelligence
+Conversational AI
+Mental Wellness Technology
+Human-Centered AI Systems
 
-# Or use your local PostgreSQL instance
-```
-
-### 3. Backend Setup
-
-```bash
-cd backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or: venv\Scripts\activate  # Windows
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your OpenAI API key and database URL
-
-# Run migrations
-alembic upgrade head
-
-# Start server
-uvicorn app.main:app --reload --port 8000
-```
-
-### 4. Frontend Setup
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Configure environment
-cp .env.example .env.local
-# Edit .env.local with your settings
-
-# Start development server
-npm run dev
-```
-
-### 5. Open in Browser
-
-Navigate to `http://localhost:3000`
-
-## 🔐 Environment Variables
-
-### Backend (`backend/.env`)
-```env
-DATABASE_URL=postgresql+asyncpg://esona:esona_dev_2026@localhost:5432/esona
-OPENAI_API_KEY=sk-your-openai-api-key
-OPENAI_MODEL=gpt-4o
-CHROMA_PERSIST_DIR=./chroma_data
-JWT_SECRET=your-secure-jwt-secret-key
-FRONTEND_URL=http://localhost:3000
-```
-
-### Frontend (`frontend/.env.local`)
-```env
-NEXTAUTH_SECRET=your-nextauth-secret-key
-NEXTAUTH_URL=http://localhost:3000
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
-```
-
-## 📁 Project Structure
-
-```
-esona/
-├── frontend/          # Next.js 15 application
-│   ├── src/
-│   │   ├── app/       # Pages (landing, onboarding, chat, dashboard)
-│   │   ├── components/ # React components
-│   │   ├── hooks/     # Custom hooks
-│   │   ├── lib/       # Utilities and config
-│   │   └── providers/ # Context providers
-│   └── public/        # Static assets
-├── backend/           # FastAPI application
-│   ├── app/
-│   │   ├── agents/    # LangGraph multi-agent system
-│   │   ├── memory/    # ChromaDB vector memory
-│   │   ├── models/    # SQLAlchemy models
-│   │   ├── routers/   # API endpoints
-│   │   ├── schemas/   # Pydantic schemas
-│   │   └── services/  # Business logic
-│   └── alembic/       # Database migrations
-├── docker-compose.yml # PostgreSQL setup
-└── README.md
-```
-
-## 🤖 Agent System
-
-| Agent | Role |
-|-------|------|
-| **Router** | Decides which agents to activate per message |
-| **Emotion** | Stress analysis, mood classification, burnout detection |
-| **Personality** | Overthinking detection, communication style analysis |
-| **Context** | Emotional trigger identification, deeper meaning detection |
-| **Memory** | Emotional history retrieval, pattern recognition |
-| **Recommendation** | Calming suggestions, adaptive coping strategies |
-| **Response** | Synthesizes all agents into natural, human-like reply |
-
-## 📄 License
-
-MIT License — feel free to use, modify, and share.
-
----
-
-*Built with 💙 for emotional wellbeing*
+"Technology should not only answer questions; it should also understand people."

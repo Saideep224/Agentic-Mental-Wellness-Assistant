@@ -140,7 +140,7 @@ async def _get_or_create_conversation(
     user_id: uuid.UUID,
     conversation_id: uuid.UUID | None,
 ) -> Conversation:
-    """Return an existing conversation or create a new one, recovering gracefully on DB issues."""
+    """Return an existing conversation or create a new one, raising HTTP exceptions on failure."""
     logger.info(f"[CHAT FLOW] _get_or_create_conversation called: user_id={user_id}, conversation_id={conversation_id}")
     if conversation_id:
         try:
@@ -153,13 +153,21 @@ async def _get_or_create_conversation(
             )
             conv = result.scalar_one_or_none()
             if conv is None:
-                logger.warning(f"[DB SELECT] Conversation {conversation_id} not found for user {user_id}. Creating mock fallback.")
-                return MockConversation(conversation_id, user_id, "Temporary Conversation")
+                logger.error(f"[DB SELECT] Conversation {conversation_id} not found for user {user_id}.")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Conversation not found",
+                )
             logger.info(f"[DB SELECT] Found conversation: id={conv.id}, title='{conv.title}'")
             return conv
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"[DB SELECT ERROR] Failed to fetch conversation {conversation_id}: {e}. Returning mock fallback.", exc_info=True)
-            return MockConversation(conversation_id, user_id, "Temporary Conversation")
+            logger.error(f"[DB SELECT ERROR] Failed to fetch conversation {conversation_id}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database error fetching conversation",
+            )
 
     try:
         logger.info(f"[DB INSERT] Creating new Conversation entry for user_id={user_id}...")
@@ -170,10 +178,11 @@ async def _get_or_create_conversation(
         logger.info(f"[DB INSERT] Created conversation: id={conv.id}, title='{conv.title}'")
         return conv
     except Exception as e:
-        logger.error(f"[DB INSERT ERROR] Failed to create new conversation: {e}. Returning mock fallback.", exc_info=True)
-        # Recreate a random uuid for the new conversation to allow the chat session to proceed
-        temp_id = uuid.uuid4()
-        return MockConversation(temp_id, user_id, "New Conversation")
+        logger.error(f"[DB INSERT ERROR] Failed to create new conversation: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to initialize new conversation thread",
+        )
 
 
 async def _build_conversation_history(
@@ -323,7 +332,9 @@ Summary:"""
                     "conversation_id": str(conversation_id),
                     "emotion": "neutral",
                     "stress_level": 3
-                }
+                },
+                memory_type="event",
+                importance_score=5.0
             )
             logger.info(f"Created conversation summary memory for {conversation_id}")
             
@@ -447,6 +458,56 @@ async def send_message(
                 content=body.message
             )
 
+        # Conversational Onboarding Interception
+        if not current_user.onboarding_completed:
+            logger.info(f"[ONBOARDING FLOW] User {current_user.id} is in onboarding mode.")
+            profile_res = await db.execute(select(UserProfile).where(UserProfile.user_id == current_user.id))
+            profile = profile_res.scalar_one_or_none()
+            if not profile:
+                profile = UserProfile(
+                    user_id=current_user.id,
+                    onboarding_completed=False,
+                    personality_profile={"onboarding_stage": 1}
+                )
+                db.add(profile)
+                await db.flush()
+                
+            stage = profile.personality_profile.get("onboarding_stage", 1)
+            from app.services.onboarding_service import onboarding_service
+            
+            # Parse user answer for current stage
+            await onboarding_service.parse_and_save_answer(db, current_user, profile, stage, body.message)
+            
+            # Re-read profile stage after save
+            next_stage = stage + 1
+            if next_stage <= 8:
+                reply = onboarding_service.get_question(next_stage)
+            else:
+                reply = f"Thanks for sharing all that with me, {current_user.name}! 💙 ||| I've got a good feel for your vibe now. ||| Let's chat about whatever's on your mind today!"
+            
+            # Save assistant onboarding question
+            assistant_msg = Message(
+                conversation_id=conversation_id_resolved,
+                user_id=current_user.id,
+                role=MessageRole.assistant,
+                content=reply,
+                emotion="Neutral",
+                mood_score=0.5,
+                agent_analysis={"onboarding_mode": True}
+            )
+            db.add(assistant_msg)
+            conversation.updated_at = datetime.now(timezone.utc)
+            
+            # Commit onboarding updates
+            await db.commit()
+            
+            return {
+                "response": reply,
+                "emotionDetected": "Neutral",
+                "moodScore": 0.5,
+                "agentAnalysis": {"onboarding_mode": True}
+            }
+
         # 4. Build context for agents
         logger.info(f"[CONTEXT] Loading conversation history for id={conversation_id_resolved}...")
         history = await _build_conversation_history(db, conversation_id_resolved)
@@ -512,6 +573,8 @@ async def send_message(
                     user_id=str(current_user.id),
                     memory_summary=mem_extraction.get("memory_summary"),
                     behavior_patterns=mem_extraction.get("behavior_patterns") or {},
+                    memory_type=mem_extraction.get("memory_type"),
+                    importance_score=mem_extraction.get("importance_score"),
                 )
                 logger.info(f"[DB INSERT SUCCESS] Memory stored successfully.")
             else:
@@ -755,6 +818,8 @@ async def generate_and_persist_sse_response(
                     user_id=str(current_user_id),
                     memory_summary=mem_extraction.get("memory_summary"),
                     behavior_patterns=mem_extraction.get("behavior_patterns") or {},
+                    memory_type=mem_extraction.get("memory_type"),
+                    importance_score=mem_extraction.get("importance_score"),
                 )
                 await db.commit()
                 logger.info(f"[SSE MEMORY SUCCESS] Memory stored successfully.")
@@ -847,7 +912,85 @@ async def stream_message_sse(
             logger.error(f"[DB COMMIT SSE ERROR] Failed to save user message: {db_msg_err}", exc_info=True)
             await db.rollback()
             raise HTTPException(status_code=500, detail="Failed to save user message")
- 
+
+        # Conversational Onboarding Interception for SSE
+        if not current_user.onboarding_completed:
+            logger.info(f"[ONBOARDING SSE] User {current_user.id} is in onboarding mode.")
+            profile_res = await db.execute(select(UserProfile).where(UserProfile.user_id == current_user.id))
+            profile = profile_res.scalar_one_or_none()
+            if not profile:
+                profile = UserProfile(
+                    user_id=current_user.id,
+                    onboarding_completed=False,
+                    personality_profile={"onboarding_stage": 1}
+                )
+                db.add(profile)
+                await db.flush()
+                
+            stage = profile.personality_profile.get("onboarding_stage", 1)
+            from app.services.onboarding_service import onboarding_service
+            
+            # Parse and save answer
+            await onboarding_service.parse_and_save_answer(db, current_user, profile, stage, message)
+            
+            next_stage = stage + 1
+            if next_stage <= 8:
+                reply = onboarding_service.get_question(next_stage)
+            else:
+                reply = f"Thanks for sharing all that with me, {current_user.name}! 💙 ||| I've got a good feel for your vibe now. ||| Let's chat about whatever's on your mind today!"
+            
+            # Save assistant onboarding question
+            assistant_msg = Message(
+                conversation_id=conversation_id_resolved,
+                user_id=current_user.id,
+                role=MessageRole.assistant,
+                content=reply,
+                emotion="Neutral",
+                mood_score=0.5,
+                agent_analysis={"onboarding_mode": True}
+            )
+            db.add(assistant_msg)
+            conversation.updated_at = datetime.now(timezone.utc)
+            await db.commit()
+            
+            async def onboarding_event_generator() -> AsyncGenerator[dict, None]:
+                yield {
+                    "event": "message",
+                    "data": json.dumps({
+                        "type": "placeholder",
+                        "content": "...",
+                        "conversation_id": str(conversation_id_resolved),
+                    }),
+                }
+                await asyncio.sleep(0.05)
+                
+                chunk_size = 12
+                for i in range(0, len(reply), chunk_size):
+                    chunk = reply[i : i + chunk_size]
+                    yield {
+                        "event": "message",
+                        "data": json.dumps({
+                            "type": "chunk",
+                            "content": chunk,
+                            "conversation_id": str(conversation_id_resolved),
+                        }),
+                    }
+                    await asyncio.sleep(0.02)
+                    
+                yield {
+                    "event": "message",
+                    "data": json.dumps({
+                        "type": "done",
+                        "message_id": str(assistant_msg.id),
+                        "conversation_id": str(conversation_id_resolved),
+                        "emotion_detected": "Neutral",
+                        "mood_score": 0.5,
+                        "agent_analysis": {"onboarding_mode": True},
+                    }),
+                }
+                
+            return EventSourceResponse(onboarding_event_generator())
+
         # 4. Build context
         logger.info(f"[CONTEXT SSE] Loading history and emotional profile...")
         history = await _build_conversation_history(db, conversation_id_resolved)
@@ -1004,6 +1147,32 @@ async def generate_first_message(
                 "moodScore": first_msg.mood_score,
             }
             
+    # 2. Check onboarding status
+    if not current_user.onboarding_completed:
+        logger.info(f"[FIRST MESSAGE] User {current_user.id} has not completed onboarding. Sending Stage 1 question.")
+        from app.services.onboarding_service import onboarding_service
+        reply = onboarding_service.get_question(1)
+        
+        # Save onboarding question as assistant's message
+        assistant_msg = Message(
+            conversation_id=conversation.id,
+            user_id=current_user.id,
+            role=MessageRole.assistant,
+            content=reply,
+            emotion="Neutral",
+            mood_score=0.5,
+            agent_analysis={"onboarding_mode": True}
+        )
+        db.add(assistant_msg)
+        conversation.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        
+        return {
+            "response": reply,
+            "emotionDetected": "Neutral",
+            "moodScore": 0.5,
+        }
+
     # 2. Gather context
     # Profile
     profile = await _get_emotional_profile_dict(db, current_user.id, current_user.name)

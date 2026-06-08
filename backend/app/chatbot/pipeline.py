@@ -74,6 +74,31 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     user_message = state.get("user_message", "")
     history = state.get("conversation_history", [])
     profile = state.get("emotional_profile", {})
+    db = state.get("db")
+    user_id = state.get("user_id", "")
+
+    # 1. Run MentalBERT Emotion Classification and save to db (happens inside the service)
+    detected_emotion = "Neutral"
+    confidence_score = 1.0
+    if user_id:
+        try:
+            from app.services.emotion_service import emotion_service
+            from app.database import async_session_maker
+            close_temp_db = False
+            temp_db = db
+            if temp_db is None:
+                temp_db = async_session_maker()
+                close_temp_db = True
+            
+            emotion_res = await emotion_service.classify_emotion_mentalbert(temp_db, user_id, user_message)
+            detected_emotion = emotion_res.get("detected_emotion", "Neutral")
+            confidence_score = emotion_res.get("confidence_score", 1.0)
+            
+            if close_temp_db:
+                await temp_db.commit()
+                await temp_db.close()
+        except Exception as emo_err:
+            logger.error(f"Failed to run MentalBERT classification in pipeline: {emo_err}", exc_info=True)
 
     recent_context = ""
     if history:
@@ -87,17 +112,16 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
         profile_snippet = f"\nUser Profile:\n{json.dumps(profile, indent=2)}"
 
     try:
+        user_content = (
+            f"User Profile details:\n{profile_snippet}\n\n"
+            f"Recent conversation history:\n{recent_context}\n\n"
+            f"MentalBERT Sequence Classifier result for current message: {detected_emotion} (confidence: {confidence_score})\n\n"
+            f"Current message to analyze: {user_message}"
+        )
         raw = await generate_chat_completion_with_fallback(
             messages=[
                 {"role": "system", "content": MULTI_AGENT_ANALYZER_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"User Profile details:\n{profile_snippet}\n\n"
-                        f"Recent conversation history:\n{recent_context}\n\n"
-                        f"Current message to analyze: {user_message}"
-                    ),
-                },
+                {"role": "user", "content": user_content},
             ],
             temperature=0.2,
             max_tokens=1000,
@@ -118,7 +142,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
                 "introvert_extrovert_tendencies": "ambivert"
             },
             "emotion_agent": {
-                "primary_emotion": "neutral",
+                "primary_emotion": detected_emotion.lower(),
                 "stress": 0.3,
                 "anxiety": 0.3,
                 "sadness": 0.3,
@@ -158,12 +182,31 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     b_data = behavior_agent.analyze(analysis)
     g_data = growth_agent.analyze(analysis)
     
+    # Force alignment between MentalBERT classification and emotion agent's primary_emotion
+    e_data["primary_emotion"] = detected_emotion.lower()
+    
+    # Adjust emotional dimensions based on MentalBERT result
+    if detected_emotion == "Stress":
+        e_data["stress"] = max(e_data.get("stress", 0.3), 0.75)
+    elif detected_emotion == "Anxiety":
+        e_data["anxiety"] = max(e_data.get("anxiety", 0.3), 0.80)
+    elif detected_emotion == "Sadness":
+        e_data["sadness"] = max(e_data.get("sadness", 0.3), 0.80)
+    elif detected_emotion == "Loneliness":
+        e_data["sadness"] = max(e_data.get("sadness", 0.3), 0.75)
+        e_data["anxiety"] = max(e_data.get("anxiety", 0.3), 0.60)
+    elif detected_emotion == "Frustration":
+        e_data["stress"] = max(e_data.get("stress", 0.3), 0.70)
+    elif detected_emotion == "Happy":
+        e_data["stress"] = min(e_data.get("stress", 0.3), 0.20)
+        e_data["anxiety"] = min(e_data.get("anxiety", 0.3), 0.20)
+        e_data["sadness"] = min(e_data.get("sadness", 0.3), 0.10)
+        e_data["burnout"] = min(e_data.get("burnout", 0.3), 0.20)
+
     # Run new Intent and Safety Agents
     i_data = intent_agent.analyze(analysis)
     s_data = safety_agent.check_safety(analysis, user_message)
 
-    detected_emotion = e_data.get("primary_emotion", "neutral")
-    
     # Calculate mood score (0.0 to 1.0)
     stress_val = e_data.get("stress", 0.3)
     anxiety_val = e_data.get("anxiety", 0.3)

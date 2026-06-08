@@ -47,13 +47,15 @@ Analyze for the following categories using the four logical agents:
    - 1 to 3 personalized, highly actionable coping suggestions ONLY if they would be helpful (e.g., for emotional/crisis/check_in states). Keep them specific. Avoid generic platitudes.
 8. MEMORY EXTRACTION:
    - We only save memories that represent:
-     - Personality traits or preferences (e.g. studies better at night, prefers supportive tone)
-     - Emotional state, triggers, or stressors (e.g. gets anxious before exams, lonely on weekends)
-     - Burnout indicators or routine patterns.
+     - Profile details / Preferences (name, age, profession, communication style) -> type "profile"
+     - Hobbies, interests, passions -> type "interest"
+     - Placements, exams prep, projects, fitness -> type "goal"
+     - Anxiety patterns, stress triggers, recurring concerns -> type "emotion"
+     - Important upcoming events (upcoming exam next Friday, interview next Wednesday, birthday, internship application) -> type "event"
    - Set "is_meaningful" to false and summary/patterns to null for casual greetings, small talk, filler messages.
    - Set "is_meaningful" to true, provide a concise summary, and behavior patterns for meaningful insights.
-   - For meaningful insights, assign an "importance_level" between 1 and 5 (1 = lowest, 5 = highest). Core emotional trends, major stressors, triggers, and preferences get 4-5. Minor updates get 1-2.
-   - Assign a "decay_priority": 1 (temporary, fade quickly) to 5 (core memory, permanent).
+   - For meaningful insights, assign a "memory_type" ("profile" | "interest" | "goal" | "emotion" | "event") and an "importance_score" between 1 and 10 (10 = highest priority). Events/exams/profile preferences get 8-10.
+   - Set decay_priority: 1 (temporary, fade quickly) to 5 (core memory, permanent).
 
 Respond with ONLY a valid JSON object matching this schema:
 {
@@ -94,7 +96,8 @@ Respond with ONLY a valid JSON object matching this schema:
   "recommendations": ["string"],
   "memory_extraction": {
     "is_meaningful": true | false,
-    "importance_level": 1-5,
+    "memory_type": "profile" | "interest" | "goal" | "emotion" | "event" | null,
+    "importance_score": 1-10 | null,
     "decay_priority": 1-5,
     "memory_summary": "string" | null,
     "behavior_patterns": {

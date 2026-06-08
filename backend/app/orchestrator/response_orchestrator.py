@@ -81,19 +81,83 @@ class ResponseOrchestrator:
         # Format memories
         memories_list = []
         for m in memories:
-            memories_list.append(f"- User once said: '{m.get('content', '')}' (emotion/pattern: {m.get('metadata', {}).get('emotion', 'neutral')})")
+            m_type = m.get("memory_type") or "emotion"
+            imp = m.get("importance_score") or 5.0
+            memories_list.append(f"- [{m_type.upper()} | Importance: {imp}] User once said: '{m.get('content', '')}'")
         memories_str = "\n".join(memories_list) if memories_list else "No relevant past memories found."
 
         # Preferred texting style
         reply_style = personality_profile.get("reply_style", {})
-        reply_style_str = (
-            f"- Style Mode: {reply_style.get('reply_style', 'casual')}\n"
-            f"- Likes Humor: {'Yes' if reply_style.get('likes_humor', True) else 'No'}\n"
-            f"- Paragraph Preference: {reply_style.get('paragraph_preference', 'short')}\n"
-            f"- Emoji Usage: {reply_style.get('emoji_usage', 'medium')}\n"
-            f"- Communication Style: {reply_style.get('communication_style', 'gentle')}\n"
-            f"- Energy Level: {reply_style.get('energy', 'supportive')}"
+        pref_style = personality_profile.get("communication_style") or reply_style.get("communication_style") or "Friendly Friend"
+        
+        # Guide Esona to adopt the preferred communication style:
+        style_instructions = ""
+        if pref_style == "Friendly Friend":
+            style_instructions = (
+                "Adopt the 'Friendly Friend' style: speak like a supportive, relatable college friend. "
+                "Use casual language, abbreviations naturally (like 'tbh', 'idk', 'fr', 'damn', 'lmao'), light teases, and occasional emojis (1-2 per bubble). "
+                "Be warm, conversational, and lighthearted. Do not sound like a coach or therapist."
+            )
+        elif pref_style == "Supportive Listener":
+            style_instructions = (
+                "Adopt the 'Supportive Listener' style: be extremely warm, empathetic, and validating. "
+                "Focus on emotional safety. Mirror their feelings, validate their struggle, and sit with them in the moment. "
+                "Ask open, thoughtful questions about how they feel. Do not offer unsolicited advice or push solutions."
+            )
+        elif pref_style == "Motivational Coach":
+            style_instructions = (
+                "Adopt the 'Motivational Coach' style: be energetic, encouraging, and goal-oriented. "
+                "Acknowledge their friction/struggle, but focus on building momentum. "
+                "Help them break goals/tasks down into micro-steps, prompt daily action, and celebrate their small wins."
+            )
+        elif pref_style == "Honest and Direct":
+            style_instructions = (
+                "Adopt the 'Honest and Direct' style: be straightforward, practical, and honest. "
+                "No excessive fluff or overly soft language. Give direct, practical feedback and realistic reactions. "
+                "Help them see things clearly and focus on what they can actually control."
+            )
+
+        user_age = personality_profile.get("age") or "Not specified"
+        user_profession = personality_profile.get("profession") or "Not specified"
+        
+        # Extract interests, goals, stress triggers
+        interests_val = personality_profile.get("interests") or []
+        if isinstance(interests_val, dict):
+            interests_list = interests_val.get("hobbies") or interests_val.get("items") or []
+        else:
+            interests_list = interests_val
+            
+        goals_val = personality_profile.get("goals") or []
+        
+        triggers_val = personality_profile.get("stress_triggers") or []
+        if isinstance(triggers_val, dict):
+            triggers_list = triggers_val.get("triggers") or []
+        else:
+            triggers_list = triggers_val
+
+        profile_details = (
+            f"- Age: {user_age}\n"
+            f"- Profession: {user_profession}\n"
+            f"- Preferred Communication Style: {pref_style}\n"
+            f"- Interests/Hobbies: {', '.join(interests_list) if interests_list else 'None specified'}\n"
+            f"- Current Goals: {', '.join(goals_val) if goals_val else 'None specified'}\n"
+            f"- Stress Triggers: {', '.join(triggers_list) if triggers_list else 'None specified'}"
         )
+
+        # Check for event memory check-ins (Phase 6)
+        event_checkin_instr = ""
+        events = [m for m in memories if m.get("memory_type") == "event"]
+        if events:
+            event_checkin_instr = (
+                "\n=================================================\n"
+                "CRITICAL FRIEND RECALL CHECK-IN RULE:\n"
+                "The user has the following important upcoming/past event memory:\n"
+                f"{json.dumps([e['content'] for e in events])}\n"
+                "If the user is just saying hi or if it is natural in the conversation, "
+                "you MUST check in on this event/status casually, like a close friend would. "
+                "For example: 'Hey! How's the exam preparation going? last time you mentioned it was coming up' or "
+                "'Hey! How did that interview go?' Keep it natural, casual, and brief.\n"
+            )
 
         system_prompt = f"""You are Esona, a deeply supportive, emotionally intelligent AI wellness companion for students.
 Your job is NOT to be a therapist, counselor, or advice engine. Your job is to feel like a real, emotionally-aware friend texting the user. The user should forget they are talking to an AI.
@@ -101,19 +165,21 @@ Your job is NOT to be a therapist, counselor, or advice engine. Your job is to f
 =================================================
 CURRENT USER PROFILE DETAILS:
 - Name: {user_name}
+{profile_details}
+
 - Personality Traits: {json.dumps(personality)}
 - Behavioral State: {json.dumps(behavior)}
 - Mental Growth Indicators: {json.dumps(growth)}
 
-PREFERRED TEXTING STYLE DETAILS:
-{reply_style_str}
+COMMUNICATION STYLE DIRECTION:
+{style_instructions}
 
 CURRENT DATE & TIME:
 - {current_time_str}
 
 RELEVANT PAST MEMORIES:
 {memories_str}
-
+{event_checkin_instr}
 =================================================
 ORCHESTRATED RESPONSE DIRECTIVES:
 - Target Tone: {tone.upper()}

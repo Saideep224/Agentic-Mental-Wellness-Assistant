@@ -39,6 +39,8 @@ class MemoryAgent:
             retrieved_memories = [
                 {
                     "content": m.memory_summary,
+                    "memory_type": m.memory_type,
+                    "importance_score": m.importance_score,
                     "metadata": m.metadata_json,
                     "distance": 0.0
                 }

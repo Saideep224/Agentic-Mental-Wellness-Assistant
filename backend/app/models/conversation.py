@@ -88,7 +88,16 @@ class Message(Base):
         nullable=False,
     )
     content: Mapped[str] = mapped_column("message", Text, nullable=False)
-    emotion_detected: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    emotion: Mapped[str | None] = mapped_column("emotion", String(100), nullable=True)
+
+    @property
+    def emotion_detected(self) -> str | None:
+        return self.emotion
+
+    @emotion_detected.setter
+    def emotion_detected(self, value: str | None) -> None:
+        self.emotion = value
+
     mood_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     agent_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     emotional_context: Mapped[dict | None] = mapped_column(JSON, nullable=True)

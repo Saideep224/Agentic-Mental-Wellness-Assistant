@@ -27,13 +27,29 @@ class Memory(Base):
         nullable=False,
         index=True
     )
-    memory_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    memory_content: Mapped[str] = mapped_column("memory_content", Text, nullable=False)
+    memory_type: Mapped[str | None] = mapped_column("memory_type", String(100), nullable=True)
+    importance_score: Mapped[float | None] = mapped_column("importance_score", Float, nullable=True)
     behavior_patterns: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    @property
+    def memory_summary(self) -> str:
+        return self.memory_content
+
+    @memory_summary.setter
+    def memory_summary(self, value: str) -> None:
+        self.memory_content = value
 
     @property
     def content(self) -> str:

@@ -90,29 +90,57 @@ class MemoryService:
             return {"is_meaningful": False, "memory_summary": None, "behavior_patterns": None}
 
     async def save_memory(
-        self, db: AsyncSession, user_id: str, memory_summary: str, behavior_patterns: Dict[str, Any]
+        self,
+        db: AsyncSession,
+        user_id: str,
+        memory_summary: str,
+        behavior_patterns: Dict[str, Any],
+        memory_type: Optional[str] = None,
+        importance_score: Optional[float] = None,
     ) -> Optional[Memory]:
         """
         Saves a memory to the database and handles embedding generation automatically.
         """
         try:
+            import uuid
             # Ensure patterns dict is mutable and sanitized
             patterns = dict(behavior_patterns or {})
+
+            # Extract memory_type and importance_score from patterns or parameters
+            resolved_type = memory_type or patterns.pop("memory_type", None)
+            resolved_importance = importance_score or patterns.pop("importance_score", None)
+
+            # Map legacy values
+            if resolved_importance is None and "importance_level" in patterns:
+                resolved_importance = float(patterns.pop("importance_level")) * 2.0  # Scale 1-5 to 1-10
+            
+            if resolved_type is None:
+                if patterns.get("source") == "conversation_summary":
+                    resolved_type = "event"
+                else:
+                    resolved_type = "emotion" # default fallback
+            
+            if resolved_importance is None:
+                resolved_importance = 5.0 # default fallback
 
             # Generate and embed vector representation of the memory_summary
             embedding = await self.memory_manager._get_embedding(memory_summary)
             if embedding:
                 patterns["embedding"] = embedding
 
+            user_uuid = uuid.UUID(str(user_id)) if isinstance(user_id, (str, uuid.UUID)) else user_id
+
             memory = Memory(
-                user_id=user_id,
+                user_id=user_uuid,
                 memory_summary=memory_summary,
+                memory_type=resolved_type,
+                importance_score=float(resolved_importance),
                 behavior_patterns=patterns,
             )
             db.add(memory)
             await db.flush()
 
-            logger.info(f"Memory saved successfully for user {user_id}: '{memory_summary}'")
+            logger.info(f"Memory saved successfully for user {user_id}: '{memory_summary}' [Type: {resolved_type}, Importance: {resolved_importance}]")
             return memory
         except Exception as e:
             logger.error(f"Memory save failed for user {user_id}: {e}", exc_info=True)
@@ -164,12 +192,12 @@ class MemoryService:
                 # Apply decay priority and confidence weighting
                 patterns = mem.behavior_patterns or {}
                 decay_priority = patterns.get("decay_priority", 3)
-                importance = patterns.get("importance_level", 3)
+                importance = mem.importance_score if mem.importance_score is not None else float(patterns.get("importance_level", 3.0))
                 
                 # Confidence score is base similarity + importance boost + decay preservation
                 # Core memories (decay_priority=5) get a permanent boost
                 # Temporary memories (decay_priority=1) lose relevance easily if similarity isn't very high
-                boost = (importance * 0.05) + (decay_priority * 0.02)
+                boost = (importance * 0.025) + (decay_priority * 0.02)
                 final_score = similarity + boost
                 
                 matches.append((mem, final_score))
@@ -187,9 +215,17 @@ class MemoryService:
         return await self.analyze_memory_importance(user_message, history_context)
 
     async def saveMemory(
-        self, db: AsyncSession, user_id: str, memory_summary: str, behavior_patterns: Dict[str, Any]
+        self,
+        db: AsyncSession,
+        user_id: str,
+        memory_summary: str,
+        behavior_patterns: Dict[str, Any],
+        memory_type: Optional[str] = None,
+        importance_score: Optional[float] = None,
     ) -> Optional[Memory]:
-        return await self.save_memory(db, user_id, memory_summary, behavior_patterns)
+        return await self.save_memory(
+            db, user_id, memory_summary, behavior_patterns, memory_type, importance_score
+        )
 
     async def retrieveRelevantMemories(
         self, db: AsyncSession, user_id: str, query: str, limit: int = 5

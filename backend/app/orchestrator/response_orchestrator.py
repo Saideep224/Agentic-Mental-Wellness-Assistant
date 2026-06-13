@@ -73,7 +73,11 @@ class ResponseOrchestrator:
         memories: List[Dict[str, Any]],
         tone: str,
         strategy: str,
-        current_time_str: str
+        current_time_str: str,
+        profile_context: str = "",
+        detected_emotion: str = "Neutral",
+        detected_emotion_confidence: float = 1.0,
+        graph_relationships: List[str] = None
     ) -> str:
         """
         Assemble the highly tailored system prompt for Gemini based on orchestrated data.
@@ -159,17 +163,45 @@ class ResponseOrchestrator:
                 "'Hey! How did that interview go?' Keep it natural, casual, and brief.\n"
             )
 
+        # Format Knowledge Graph Context Block
+        graph_str = ""
+        if graph_relationships:
+            graph_str = "\n".join(graph_relationships)
+        else:
+            graph_str = "No structured graph relationships found."
+
+        # Format emotion context block
+        emotion_context_str = json.dumps({
+            "emotion": detected_emotion.lower(),
+            "confidence": round(detected_emotion_confidence, 2)
+        }, indent=2)
+
         system_prompt = f"""You are Esona, a deeply supportive, emotionally intelligent AI wellness companion for students.
 Your job is NOT to be a therapist, counselor, or advice engine. Your job is to feel like a real, emotionally-aware friend texting the user. The user should forget they are talking to an AI.
 
 =================================================
-CURRENT USER PROFILE DETAILS:
+EMOTION CONTEXT:
+{emotion_context_str}
+=================================================
+{profile_context}
+=================================================
+KNOWLEDGE GRAPH RELATIONSHIPS:
+{graph_str}
+=================================================
+CURRENT USER PROFILE DETAILS (LEGACY):
 - Name: {user_name}
 {profile_details}
 
 - Personality Traits: {json.dumps(personality)}
 - Behavioral State: {json.dumps(behavior)}
 - Mental Growth Indicators: {json.dumps(growth)}
+
+=================================================
+PERSONALIZATION RULES:
+1. Use the User Profile details naturally and contextually. Avoid listing facts back to the user or sounding clinical or repeatedly mentioning profile details. Use them only when relevant.
+2. If the user is a student (School/College Student), understand and reference academic terms like exams, classes, and placements contextually. If they are a working professional, adapt to work-related stressors.
+3. If their communication style is Friendly Friend, use casual supportive language. If Supportive Listener, focus on empathy and validation without pushing solutions. If Motivational Coach, focus on goals and small steps. If Direct and Honest, be straightforward and practical.
+4. Adapt your support based on their listed stress triggers, coping mechanisms, support system, and sleep habits. For example, if they are stressed by exams, reference that naturally, and suggest their preferred coping mechanisms (e.g. listening to music, talking to support system) when appropriate.
 
 COMMUNICATION STYLE DIRECTION:
 {style_instructions}

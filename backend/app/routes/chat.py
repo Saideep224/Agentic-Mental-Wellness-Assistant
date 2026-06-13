@@ -479,8 +479,8 @@ async def send_message(
             await onboarding_service.parse_and_save_answer(db, current_user, profile, stage, body.message)
             
             # Re-read profile stage after save
-            next_stage = stage + 1
-            if next_stage <= 8:
+            next_stage = profile.personality_profile.get("onboarding_stage", stage + 1)
+            if not profile.onboarding_completed and next_stage <= 11:
                 reply = onboarding_service.get_question(next_stage)
             else:
                 reply = f"Thanks for sharing all that with me, {current_user.name}! 💙 ||| I've got a good feel for your vibe now. ||| Let's chat about whatever's on your mind today!"
@@ -933,8 +933,8 @@ async def stream_message_sse(
             # Parse and save answer
             await onboarding_service.parse_and_save_answer(db, current_user, profile, stage, message)
             
-            next_stage = stage + 1
-            if next_stage <= 8:
+            next_stage = profile.personality_profile.get("onboarding_stage", stage + 1)
+            if not profile.onboarding_completed and next_stage <= 11:
                 reply = onboarding_service.get_question(next_stage)
             else:
                 reply = f"Thanks for sharing all that with me, {current_user.name}! 💙 ||| I've got a good feel for your vibe now. ||| Let's chat about whatever's on your mind today!"
@@ -1180,6 +1180,9 @@ async def generate_first_message(
     personality_str = json.dumps(profile.get("personality_profile", {}))
     interests_str = json.dumps(profile.get("interests", {}))
     
+    from app.services.profile_service import profile_service
+    profile_context = await profile_service.build_profile_context(db, current_user.id)
+    
     # Recent Mood logs
     mood_result = await db.execute(
         select(MoodLog)
@@ -1217,7 +1220,9 @@ Your job is to generate a personalized first greeting message (opening check-in)
 Avoid repeating the exact same message every time. Be creative, casual, warm, and mirror a human texting style.
 
 ============================================
-USER PROFILE & CONTEXT:
+{profile_context}
+============================================
+USER PROFILE & CONTEXT (LEGACY):
 - Name: {user_name}
 - Personality: {personality_str}
 - Interests: {interests_str}

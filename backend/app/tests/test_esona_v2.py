@@ -159,24 +159,24 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.user.name, "Saideep")
         self.assertEqual(profile.personality_profile["onboarding_stage"], 2)
 
-        # Mock Stage 4 Parser (Communication Style)
-        mock_response_4 = MagicMock()
-        mock_response_4.choices = [
+        # Mock Stage 10 Parser (Communication Style)
+        mock_response_10 = MagicMock()
+        mock_response_10.choices = [
             MagicMock(message=MagicMock(content='{"communication_style": "Friendly Friend"}'))
         ]
-        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_4)
+        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_10)
 
-        # Parse & save communication style (Stage 4)
+        # Parse & save communication style (Stage 10)
         success = await onboarding_service.parse_and_save_answer(
-            self.db, self.user, profile, 4, "Friendly Friend please"
+            self.db, self.user, profile, 10, "Friendly Friend please"
         )
         self.assertTrue(success)
         self.assertEqual(self.user.communication_style, "Friendly Friend")
 
-        # Mock Stage 8 finalize compilation
-        mock_response_8 = MagicMock()
-        mock_response_8.choices = [
-            MagicMock(message=MagicMock(content='{"important_info": "I study best at night"}'))
+        # Mock Stage 11 finalize compilation
+        mock_response_11 = MagicMock()
+        mock_response_11.choices = [
+            MagicMock(message=MagicMock(content='{"sleep_habits": "Good"}'))
         ]
         mock_finalize_response = MagicMock()
         mock_finalize_response.choices = [
@@ -192,12 +192,12 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
             )
         ]
         
-        # We'll use side_effect to return mock_response_8, then mock_finalize_response
-        mock_get_client.return_value.chat.completions.create = AsyncMock(side_effect=[mock_response_8, mock_finalize_response])
+        # We'll use side_effect to return mock_response_11, then mock_finalize_response
+        mock_get_client.return_value.chat.completions.create = AsyncMock(side_effect=[mock_response_11, mock_finalize_response])
 
-        # Complete final stage
+        # Complete final stage (Stage 11)
         success = await onboarding_service.parse_and_save_answer(
-            self.db, self.user, profile, 8, "Remember I study best at night."
+            self.db, self.user, profile, 11, "Good sleep"
         )
         self.assertTrue(success)
         self.assertTrue(self.user.onboarding_completed)

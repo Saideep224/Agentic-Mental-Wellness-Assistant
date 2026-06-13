@@ -1,0 +1,222 @@
+"""
+Unit and Integration Tests for User Profile Personalization System.
+"""
+
+import os
+import uuid
+import unittest
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy import select
+
+from app.database import Base
+from app.models import User, UserProfile
+from app.models.user_personal_profile import UserPersonalProfile
+from app.services.profile_service import profile_service
+from app.services.onboarding_service import onboarding_service
+from app.orchestrator.response_orchestrator import response_orchestrator
+
+TEST_DB_URL = "sqlite+aiosqlite:///./test_personalization.db"
+
+
+class PersonalizationTestCase(unittest.IsolatedAsyncioTestCase):
+    """Test suite for personalization, UserPersonalProfile and onboarding changes."""
+
+    async def asyncSetUp(self):
+        # Initialize test engine and tables
+        self.engine = create_async_engine(TEST_DB_URL, echo=False)
+        self.session_maker = async_sessionmaker(self.engine, expire_on_commit=False, class_=AsyncSession)
+
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+
+        self.db = self.session_maker()
+
+        # Create a test user
+        self.user_id = uuid.uuid4()
+        self.user = User(
+            id=self.user_id,
+            email="personalization_test@esona.com",
+            name="Bob",
+            onboarding_completed=False,
+            personality_profile={"onboarding_stage": 1}
+        )
+        self.db.add(self.user)
+
+        # Create a test UserProfile (legacy user_personality)
+        self.profile = UserProfile(
+            user_id=self.user_id,
+            onboarding_completed=False,
+            personality_profile={"onboarding_stage": 1}
+        )
+        self.db.add(self.profile)
+        await self.db.commit()
+        await self.db.refresh(self.user)
+        await self.db.refresh(self.profile)
+
+    async def asyncTearDown(self):
+        await self.db.close()
+        await self.engine.dispose()
+        # Clean up database file
+        if os.path.exists("./test_personalization.db"):
+            try:
+                os.remove("./test_personalization.db")
+            except Exception:
+                pass
+
+    async def test_profile_service_crud(self):
+        """Verify ProfileService can create, get, update, and build context."""
+        # 1. Create profile
+        profile_data = {
+            "name": "Saideep",
+            "age": "20",
+            "profession": "College Student",
+            "student_year": "2nd year",
+            "communication_style": "Friendly Friend",
+            "interests": ["Anime", "Coding"],
+            "goals": ["Get an internship"],
+            "stress_triggers": ["Exams"],
+            "coping_mechanisms": ["Listening to music"],
+            "support_system": "Parents",
+            "sleep_habits": "Average"
+        }
+        
+        profile = await profile_service.create_profile(self.db, self.user_id, profile_data)
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile.name, "Saideep")
+        self.assertEqual(profile.age, "20")
+        self.assertEqual(profile.interests, ["Anime", "Coding"])
+
+        # 2. Get profile
+        fetched = await profile_service.get_profile(self.db, self.user_id)
+        self.assertEqual(fetched.id, profile.id)
+        self.assertEqual(fetched.profession, "College Student")
+
+        # 3. Update profile
+        updated_data = {
+            "age": "21",
+            "goals": ["Get a job", "Fitness"],
+            "sleep_habits": "Good"
+        }
+        updated = await profile_service.update_profile(self.db, self.user_id, updated_data)
+        self.assertEqual(updated.age, "21")
+        self.assertEqual(updated.goals, ["Get a job", "Fitness"])
+        self.assertEqual(updated.sleep_habits, "Good")
+        # Ensure name is untouched
+        self.assertEqual(updated.name, "Saideep")
+
+        # 4. Build context
+        context = await profile_service.build_profile_context(self.db, self.user_id)
+        self.assertIn("Name: Saideep", context)
+        self.assertIn("Age: 21", context)
+        self.assertIn("Profession: College Student", context)
+        self.assertIn("Student Year: 2nd year", context)
+        self.assertIn("Communication Style: Friendly Friend", context)
+        self.assertIn("Goals: Get a job, Fitness", context)
+        self.assertIn("Sleep Habits: Good", context)
+
+    @patch("app.services.onboarding_service.get_chat_client")
+    async def test_onboarding_student_flow(self, mock_get_client):
+        """Verify student onboarding proceeds step by step through all stages."""
+        # Setup mock LLM response
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(message=MagicMock(content='{"profession": "College Student"}'))
+        ]
+        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        # Answer stage 3 (Profession) as College Student
+        success = await onboarding_service.parse_and_save_answer(
+            self.db, self.user, self.profile, 3, "I am a college student"
+        )
+        self.assertTrue(success)
+        
+        # Verify onboarding stage is advanced to 4
+        await self.db.refresh(self.profile)
+        self.assertEqual(self.profile.personality_profile["onboarding_stage"], 4)
+
+        # Verify UserPersonalProfile was updated with profession
+        personal_profile = await profile_service.get_profile(self.db, self.user_id)
+        self.assertEqual(personal_profile.profession, "College Student")
+        # student_year should not be N/A yet
+        self.assertNotEqual(personal_profile.student_year, "N/A")
+
+    @patch("app.services.onboarding_service.get_chat_client")
+    async def test_onboarding_non_student_skip_flow(self, mock_get_client):
+        """Verify non-student onboarding skips stage 4 (student_year) and advances to stage 5."""
+        # Setup mock LLM response
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(message=MagicMock(content='{"profession": "Working Professional"}'))
+        ]
+        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        # Answer stage 3 (Profession) as Working Professional
+        success = await onboarding_service.parse_and_save_answer(
+            self.db, self.user, self.profile, 3, "I am a software engineer"
+        )
+        self.assertTrue(success)
+        
+        # Verify onboarding stage is advanced directly to 5 (skipping 4)
+        await self.db.refresh(self.profile)
+        self.assertEqual(self.profile.personality_profile["onboarding_stage"], 5)
+
+        # Verify UserPersonalProfile was updated with profession and student_year set to N/A
+        personal_profile = await profile_service.get_profile(self.db, self.user_id)
+        self.assertEqual(personal_profile.profession, "Working Professional")
+        self.assertEqual(personal_profile.student_year, "N/A")
+
+    def test_response_orchestrator_personalization_rules(self):
+        """Verify build_final_prompt correctly formats the prompt and includes personalization rules."""
+        profile_context = (
+            "User Profile:\n"
+            "Name: Sdr\n"
+            "Age: 19\n"
+            "Profession: College Student\n"
+            "Communication Style: Friendly Friend\n"
+            "Goals: Internship"
+        )
+        
+        prompt = response_orchestrator.build_final_prompt(
+            user_name="Sdr",
+            personality_profile={"communication_style": "Friendly Friend"},
+            personality={},
+            emotion={},
+            behavior={},
+            growth={},
+            memories=[],
+            tone="reflective",
+            strategy="Ask questions",
+            current_time_str="Monday, June 15, 2026 10:00 AM",
+            profile_context=profile_context
+        )
+
+        self.assertIn("User Profile:", prompt)
+        self.assertIn("Name: Sdr", prompt)
+        self.assertIn("Profession: College Student", prompt)
+        self.assertIn("PERSONALIZATION RULES:", prompt)
+        self.assertIn("communication style is Friendly Friend, use casual supportive language", prompt)
+
+    def test_emotion_context_injection(self):
+        """Verify build_final_prompt correctly formats and injects emotion context."""
+        prompt = response_orchestrator.build_final_prompt(
+            user_name="Bob",
+            personality_profile={},
+            personality={},
+            emotion={},
+            behavior={},
+            growth={},
+            memories=[],
+            tone="reflective",
+            strategy="Ask open questions",
+            current_time_str="Monday, June 15, 2026 10:00 AM",
+            profile_context="",
+            detected_emotion="Anxiety",
+            detected_emotion_confidence=0.91
+        )
+        self.assertIn("EMOTION CONTEXT:", prompt)
+        self.assertIn('"emotion": "anxiety"', prompt)
+        self.assertIn('"confidence": 0.91', prompt)

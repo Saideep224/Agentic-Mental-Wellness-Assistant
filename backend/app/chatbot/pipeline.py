@@ -94,6 +94,17 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             detected_emotion = emotion_res.get("detected_emotion", "Neutral")
             confidence_score = emotion_res.get("confidence_score", 1.0)
             
+            # Run Knowledge Graph Extraction
+            try:
+                from app.services.knowledge_graph_service import knowledge_graph_service
+                import uuid
+                extracted_rels = await knowledge_graph_service.extract_relationships(user_message)
+                if extracted_rels:
+                    user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                    await knowledge_graph_service.store_relationships(temp_db, user_uuid, extracted_rels)
+            except Exception as kg_err:
+                logger.error(f"Failed to extract/store knowledge graph relations: {kg_err}", exc_info=True)
+
             if close_temp_db:
                 await temp_db.commit()
                 await temp_db.close()
@@ -251,6 +262,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
         "context_analysis": analysis.get("context_analysis", {}),
         "recommendations": analysis.get("recommendations", []),
         "detected_emotion": detected_emotion,
+        "detected_emotion_confidence": confidence_score,
         "mood_score": mood_score,
     }
 
@@ -286,11 +298,23 @@ async def memory_agent_node(state: AgentState) -> dict:
             retrieved_memories, patterns = cached
         else:
             retrieved_memories, patterns = [], {}
+            
+    # Retrieve relevant Knowledge Graph relationships
+    graph_relationships = []
+    try:
+        from app.services.knowledge_graph_service import knowledge_graph_service
+        import uuid
+        user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+        rels = await knowledge_graph_service.retrieve_relevant_relationships(db, user_uuid, user_message)
+        graph_relationships = [f"- {r.subject} -> {r.predicate} -> {r.object}" for r in rels]
+    except Exception as kg_retrieve_err:
+        logger.error(f"Failed to retrieve knowledge graph relations: {kg_retrieve_err}", exc_info=True)
+        
     finally:
         if close_db:
             await db.close()
 
-    return {"memories": retrieved_memories, "emotional_patterns": patterns}
+    return {"memories": retrieved_memories, "graph_relationships": graph_relationships, "emotional_patterns": patterns}
 
 
 # ── 3. Response Agent ─────────────────────────────────────────
@@ -305,6 +329,12 @@ async def response_agent_node(state: AgentState) -> dict:
 
     personality_profile = profile.get("personality_profile", {})
     user_name = profile.get("user_name", "friend")
+
+    db = state.get("db")
+    profile_context = ""
+    if db and user_id:
+        from app.services.profile_service import profile_service
+        profile_context = await profile_service.build_profile_context(db, user_id)
 
     # If crisis is detected by the Safety Agent, override response strategy
     safety_data = state.get("safety_agent", {})
@@ -338,7 +368,11 @@ async def response_agent_node(state: AgentState) -> dict:
         memories=memories,
         tone=tone,
         strategy=strategy,
-        current_time_str=current_time_str
+        current_time_str=current_time_str,
+        profile_context=profile_context,
+        detected_emotion=state.get("detected_emotion", "Neutral"),
+        detected_emotion_confidence=state.get("detected_emotion_confidence", 1.0),
+        graph_relationships=state.get("graph_relationships", [])
     )
 
     # Prompt Summary for Live Debug Panel

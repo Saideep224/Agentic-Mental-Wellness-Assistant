@@ -25,11 +25,13 @@ class AgentState(TypedDict, total=False):
     personality_analysis: dict
     context_analysis: dict
     memories: list[dict]
+    graph_relationships: list[str]
     emotional_patterns: dict
     recommendations: list[str]
     response: str
     mood_score: float
     detected_emotion: str
+    detected_emotion_confidence: float
 
     # Multi-Agent keys
     personality_agent: dict

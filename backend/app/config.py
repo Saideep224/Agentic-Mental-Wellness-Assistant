@@ -13,6 +13,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # ── Database ──────────────────────────────────────────────
@@ -99,6 +100,10 @@ class Settings(BaseSettings):
 
     # ── Frontend ──────────────────────────────────────────────
     FRONTEND_URL: str = "http://localhost:3000"
+
+    # ── Local Emotion Model (MentalBERT / general) ────────────
+    USE_LOCAL_EMOTION_MODEL: bool = False
+    EMOTION_MODEL_NAME: str = "bhadresh-savani/bert-base-uncased-emotion"
 
 
 settings = Settings()

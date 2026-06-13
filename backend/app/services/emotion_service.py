@@ -36,6 +36,54 @@ Output ONLY a valid JSON object matching this schema:
 }"""
 
 
+_local_classifier = None
+
+
+def get_local_classifier():
+    """Helper to lazily load the local emotion classifier pipeline."""
+    global _local_classifier
+    if _local_classifier is not None:
+        return _local_classifier
+
+    try:
+        from transformers import pipeline
+        logger.info(f"Loading local emotion classifier pipeline: {settings.EMOTION_MODEL_NAME}...")
+        _local_classifier = pipeline(
+            "text-classification",
+            model=settings.EMOTION_MODEL_NAME,
+            device=-1  # CPU by default
+        )
+        logger.info("Local emotion classifier pipeline loaded successfully.")
+        return _local_classifier
+    except Exception as e:
+        logger.warning(
+            f"Failed to load local emotion model '{settings.EMOTION_MODEL_NAME}': {e}. "
+            f"Falling back to API-based classification."
+        )
+        return None
+
+
+def map_model_label_to_wellness_emotion(label: str) -> str:
+    """Maps typical text classification model labels to the 7 supported wellness emotions."""
+    lbl = label.lower().strip()
+    
+    # Supported categories: anxiety, stress, sadness, frustration, happiness, neutral, loneliness
+    if lbl in ["joy", "love", "happiness", "happy", "relief"]:
+        return "Happy"
+    elif lbl in ["fear", "anxiety", "anxious", "panic", "worry", "dread"]:
+        return "Anxiety"
+    elif lbl in ["sadness", "sad", "grief", "sorrow", "low", "disappointment"]:
+        return "Sadness"
+    elif lbl in ["anger", "frustration", "frustrated", "annoyance", "irritation", "resentment"]:
+        return "Frustration"
+    elif lbl in ["stress", "stressed", "overwhelmed", "burnout", "pressure"]:
+        return "Stress"
+    elif lbl in ["loneliness", "lonely", "isolated", "isolation"]:
+        return "Loneliness"
+    else:
+        return "Neutral"
+
+
 class EmotionService:
     """Manages emotion classification and logs results to the database."""
 
@@ -49,8 +97,36 @@ class EmotionService:
         if not message or len(message.strip()) < 1:
             return {"detected_emotion": "Neutral", "confidence_score": 1.0}
 
+        # 1. Attempt local classification if configured
+        if settings.USE_LOCAL_EMOTION_MODEL:
+            classifier = get_local_classifier()
+            if classifier is not None:
+                try:
+                    # Run inference locally
+                    predictions = classifier(message)
+                    if predictions and len(predictions) > 0:
+                        pred = predictions[0]
+                        detected_label = pred.get("label", "Neutral")
+                        confidence_score = float(pred.get("score", 0.8))
+                        
+                        matched_emotion = map_model_label_to_wellness_emotion(detected_label)
+                        
+                        logger.info(
+                            f"[Local MentalBERT] Classified message: '{message[:40]}...' as "
+                            f"'{matched_emotion}' (confidence: {confidence_score})"
+                        )
+                        
+                        await self._save_emotion_log(db, user_id, message, matched_emotion, confidence_score)
+                        
+                        return {
+                            "detected_emotion": matched_emotion,
+                            "confidence_score": confidence_score
+                        }
+                except Exception as local_err:
+                    logger.error(f"Local emotion classification failed: {local_err}. Falling back to LLM.", exc_info=True)
+
+        # 2. Fallback: Execute classification call via LLM simulating MentalBERT
         try:
-            # 1. Execute classification call via LLM simulating MentalBERT
             client = get_chat_client()
             response = await client.chat.completions.create(
                 model=settings.llm_model,
@@ -76,24 +152,11 @@ class EmotionService:
                     break
 
             logger.info(
-                f"[MentalBERT Classifier] Classified message: '{message[:40]}...' as "
+                f"[MentalBERT API Simulator] Classified message: '{message[:40]}...' as "
                 f"'{matched_emotion}' (confidence: {confidence_score})"
             )
 
-            # 2. Persist in emotion_logs table
-            try:
-                user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
-                emotion_log = EmotionLog(
-                    user_id=user_uuid,
-                    message=message,
-                    detected_emotion=matched_emotion,
-                    confidence_score=confidence_score,
-                )
-                db.add(emotion_log)
-                await db.flush()
-                logger.info("[MentalBERT Classifier] Successfully stored emotion log.")
-            except Exception as db_err:
-                logger.error(f"Failed to save emotion log to database: {db_err}", exc_info=True)
+            await self._save_emotion_log(db, user_id, message, matched_emotion, confidence_score)
 
             return {
                 "detected_emotion": matched_emotion,
@@ -103,6 +166,24 @@ class EmotionService:
         except Exception as e:
             logger.error(f"Error in classify_emotion_mentalbert: {e}", exc_info=True)
             return {"detected_emotion": "Neutral", "confidence_score": 0.5}
+
+    async def _save_emotion_log(
+        self, db: AsyncSession, user_id: str, message: str, emotion: str, confidence: float
+    ):
+        """Helper to save classification result to the database."""
+        try:
+            user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+            emotion_log = EmotionLog(
+                user_id=user_uuid,
+                message=message,
+                detected_emotion=emotion,
+                confidence_score=confidence,
+            )
+            db.add(emotion_log)
+            await db.flush()
+            logger.info("[MentalBERT Classifier] Successfully stored emotion log.")
+        except Exception as db_err:
+            logger.error(f"Failed to save emotion log to database: {db_err}", exc_info=True)
 
 
 # Export singleton instance

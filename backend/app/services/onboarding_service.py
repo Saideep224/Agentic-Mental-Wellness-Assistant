@@ -15,18 +15,22 @@ from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.memory import Memory
 from app.utils.llm import get_chat_client
+from app.services.profile_service import profile_service
 
 logger = logging.getLogger(__name__)
 
 ONBOARDING_QUESTIONS = {
     1: "Hey there! I'm Esona, your AI wellness companion. I'd love to get to know you a bit so I can be the best buddy possible. First, what should I call you? 😊",
     2: "Nice to meet you! How old are you?",
-    3: "Got it! And what do you do? (School Student, College Student, Working Professional, or Other?)",
-    4: "How would you like me to talk to you? You can choose from:\n- Friendly Friend\n- Supportive Listener\n- Motivational Coach\n- Honest and Direct",
+    3: "Got it! And what do you do?\n- School Student\n- College Student\n- Working Professional\n- Other",
+    4: "Which year are you currently in?",
     5: "What are your hobbies and interests? (like Gaming, Sports, Anime, Reading, Music, Coding, or anything else!)",
-    6: "What are you currently working towards? (like Placements, Exams, Fitness, Business, or Mental Wellness?)",
-    7: "What usually stresses you out? (like Exams, Deadlines, Relationships, Loneliness, Family Issues?)",
-    8: "Is there anything else important you want me to remember about you?",
+    6: "What are your current goals?",
+    7: "What usually stresses you out?",
+    8: "What helps you feel better when stressed?",
+    9: "Who do you usually talk to when you need support?",
+    10: "How would you like me to talk to you? You can choose from:\n- Friendly Friend\n- Supportive Listener\n- Motivational Coach\n- Direct and Honest",
+    11: "How is your sleep generally?\n- Good\n- Average\n- Poor",
 }
 
 ONBOARDING_PARSER_PROMPT = """You are an Onboarding Information Extractor. Your task is to extract the answer for a specific onboarding question from the user's message.
@@ -40,14 +44,17 @@ Instructions:
 2. Return a JSON object containing the parsed information.
 
 Expected output formats based on Type:
-- identity: {{"name": "extracted name or nickname"}}
+- name: {{"name": "extracted name or nickname"}}
 - age: {{"age": int or string}}
 - profession: {{"profession": "School Student" | "College Student" | "Working Professional" | "Other"}}
-- style: {{"communication_style": "Friendly Friend" | "Supportive Listener" | "Motivational Coach" | "Honest and Direct"}}
-- interests: {{"interests": ["interest1", "interest2", ...]}} (extract hobbies)
-- goals: {{"goals": ["goal1", "goal2", ...]}} (extract goals)
-- triggers: {{"stress_triggers": ["trigger1", "trigger2", ...]}} (extract stressors)
-- important_info: {{"important_info": "extracted important details" | null}}
+- student_year: {{"student_year": "extracted year (e.g. 1st year, Sophomore, etc)"}}
+- interests: {{"interests": ["interest1", "interest2", ...], "hobbies": ["hobby1", "hobby2", ...]}} (extract hobbies and interests as separate lists if possible, or same lists)
+- goals: {{"goals": ["goal1", "goal2", ...]}}
+- triggers: {{"stress_triggers": ["trigger1", "trigger2", ...]}}
+- coping: {{"coping_mechanisms": ["coping1", "coping2", ...]}}
+- support: {{"support_system": "extracted support system"}}
+- style: {{"communication_style": "Friendly Friend" | "Supportive Listener" | "Motivational Coach" | "Direct and Honest"}}
+- sleep: {{"sleep_habits": "Good" | "Average" | "Poor"}}
 
 Output ONLY valid JSON.
 """
@@ -68,14 +75,17 @@ class OnboardingService:
         and advances the onboarding stage. Returns True if successfully parsed.
         """
         question_types = {
-            1: "identity",
+            1: "name",
             2: "age",
             3: "profession",
-            4: "style",
+            4: "student_year",
             5: "interests",
             6: "goals",
             7: "triggers",
-            8: "important_info"
+            8: "coping",
+            9: "support",
+            10: "style",
+            11: "sleep"
         }
         
         q_type = question_types.get(stage)
@@ -90,7 +100,7 @@ class OnboardingService:
                         question_type=q_type,
                         question_text=q_text,
                         user_message=message
-                    )}
+                     )}
                 ],
                 temperature=0.1,
                 response_format={"type": "json_object"}
@@ -100,49 +110,75 @@ class OnboardingService:
             
             logger.info(f"[Onboarding Parser] Parsed stage {stage} response: {parsed}")
             
-            # Save parsed values to user_personality (UserProfile)
+            # Save parsed values to user_personality (UserProfile) and new UserPersonalProfile table
             profile_data = dict(profile.personality_profile or {})
             
             if stage == 1:
                 name = parsed.get("name", message.strip())
                 user.name = name
                 profile_data["name"] = name
+                await profile_service.update_profile(db, user.id, {"name": name})
             elif stage == 2:
                 age = parsed.get("age", message.strip())
                 profile_data["age"] = age
+                await profile_service.update_profile(db, user.id, {"age": age})
             elif stage == 3:
                 prof = parsed.get("profession", "Other")
                 profile_data["profession"] = prof
+                is_student = prof in ["School Student", "College Student"]
+                if not is_student:
+                    profile_data["student_year"] = "N/A"
+                    await profile_service.update_profile(db, user.id, {
+                        "profession": prof,
+                        "student_year": "N/A"
+                    })
+                else:
+                    await profile_service.update_profile(db, user.id, {"profession": prof})
             elif stage == 4:
-                style = parsed.get("communication_style", "Friendly Friend")
-                profile.communication_style = {"preferred_style": style}
-                user.communication_style = style
+                year = parsed.get("student_year", message.strip())
+                profile_data["student_year"] = year
+                await profile_service.update_profile(db, user.id, {"student_year": year})
             elif stage == 5:
                 interests_list = parsed.get("interests", [message.strip()])
-                profile.interests = {"hobbies": interests_list}
-                user.interests = {"items": interests_list}
+                hobbies_list = parsed.get("hobbies", [message.strip()])
+                profile.interests = {"hobbies": hobbies_list + interests_list}
+                user.interests = {"items": hobbies_list + interests_list}
+                await profile_service.update_profile(db, user.id, {
+                    "interests": interests_list,
+                    "hobbies": hobbies_list
+                })
             elif stage == 6:
                 goals_list = parsed.get("goals", [message.strip()])
                 profile_data["goals"] = goals_list
+                await profile_service.update_profile(db, user.id, {"goals": goals_list})
             elif stage == 7:
                 triggers_list = parsed.get("stress_triggers", [message.strip()])
                 profile.stress_triggers = {"triggers": triggers_list}
+                await profile_service.update_profile(db, user.id, {"stress_triggers": triggers_list})
             elif stage == 8:
-                info = parsed.get("important_info", message.strip())
-                if info and info.lower() != "none" and info.lower() != "nothing":
-                    profile_data["important_info"] = info
-                    # Save as long term profile memory
-                    from app.services.memory_service import memory_service
-                    await memory_service.saveMemory(
-                        db=db,
-                        user_id=str(user.id),
-                        memory_summary=f"User wants AI to remember: {info}",
-                        behavior_patterns={
-                            "memory_type": "profile",
-                            "importance_score": 9,
-                            "source": "conversational_onboarding"
-                        }
-                    )
+                coping_list = parsed.get("coping_mechanisms", [message.strip()])
+                await profile_service.update_profile(db, user.id, {"coping_mechanisms": coping_list})
+            elif stage == 9:
+                support = parsed.get("support_system", message.strip())
+                await profile_service.update_profile(db, user.id, {"support_system": support})
+            elif stage == 10:
+                style = parsed.get("communication_style", "Friendly Friend")
+                profile.communication_style = {"preferred_style": style}
+                user.communication_style = style
+                await profile_service.update_profile(db, user.id, {"communication_style": style})
+            elif stage == 11:
+                sleep = parsed.get("sleep_habits", "Average")
+                await profile_service.update_profile(db, user.id, {"sleep_habits": sleep})
+            
+            # Determine next stage
+            is_student = profile_data.get("profession") in ["School Student", "College Student"]
+            if stage == 3 and not is_student:
+                next_stage = 5
+            else:
+                next_stage = stage + 1
+
+            profile_data["onboarding_stage"] = next_stage
+            profile.personality_profile = profile_data
             
             # Save onboarding answers raw list
             ans_history = list(profile.onboarding_answers.get("answers", []))
@@ -152,26 +188,27 @@ class OnboardingService:
                 "user_answer": message
             })
             profile.onboarding_answers = {"answers": ans_history}
-
-            # Update personality profile block
-            profile_data["onboarding_stage"] = stage + 1
-            profile.personality_profile = profile_data
             
             db.add(profile)
             db.add(user)
             await db.flush()
             
-            # If onboarding completed (finished stage 8)
-            if stage >= 8:
+            # If onboarding completed (finished stage 11 or skipped remaining to 12)
+            if next_stage > 11:
                 await self.finalize_profile(db, user, profile)
                 
             return True
             
         except Exception as e:
             logger.error(f"Failed to parse onboarding answer for stage {stage}: {e}", exc_info=True)
-            # Safe recovery fallback: increment stage and store raw answer
+            # Safe recovery fallback
             profile_data = dict(profile.personality_profile or {})
-            profile_data["onboarding_stage"] = stage + 1
+            is_student = profile_data.get("profession") in ["School Student", "College Student"]
+            if stage == 3 and not is_student:
+                next_stage = 5
+            else:
+                next_stage = stage + 1
+            profile_data["onboarding_stage"] = next_stage
             profile.personality_profile = profile_data
             db.add(profile)
             await db.flush()

@@ -20,6 +20,7 @@ import {
   FileText,
   Heart,
   Brain,
+  Loader2,
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import EsonaLogo from '@/components/layout/EsonaLogo';
@@ -213,6 +214,14 @@ export default function ChatPage() {
       </div>
     );
   };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col relative overflow-hidden">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, ArrowRight, Sparkles, Loader2, SkipForward, AlertTriangle } from 'lucide-react';
@@ -16,6 +16,7 @@ import { getToken, getStoredUser, setStoredUser, getOnboardingStatus } from '@/a
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const {
     currentQuestion,
     currentIndex,
@@ -37,6 +38,10 @@ export default function OnboardingPage() {
     goToPrevious,
     continuePastTransition,
   } = useOnboarding();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Check auth and onboarding status
   useEffect(() => {
@@ -81,6 +86,14 @@ export default function OnboardingPage() {
       return () => clearTimeout(timer);
     }
   }, [isComplete, router]);
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+      </div>
+    );
+  }
 
   // Completion screen
   if (isComplete) {

@@ -65,7 +65,10 @@ export default function Navbar() {
 
           {/* Desktop Nav Links */}
           <div className="hidden md:flex items-center gap-1">
-            {isLoggedIn &&
+            {!mounted ? (
+              <div className="h-9 w-64 bg-white/5 rounded-xl animate-pulse" />
+            ) : (
+              isLoggedIn &&
               navLinks.map((link) => {
                 const isActive = pathname === link.href;
                 return (
@@ -91,12 +94,15 @@ export default function Navbar() {
                     {link.label}
                   </Link>
                 );
-              })}
+              })
+            )}
           </div>
 
           {/* Right side - User/Login */}
           <div className="hidden md:flex items-center gap-3">
-            {isLoggedIn ? (
+            {!mounted ? (
+              <div className="h-9 w-24 bg-white/5 rounded-xl animate-pulse" />
+            ) : isLoggedIn ? (
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setIsProfileModalOpen(true)}

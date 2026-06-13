@@ -55,6 +55,8 @@ export default function CloudAnimation() {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
+  const animateRef = useRef<() => void>(() => {});
+
   // Animation loop — smooth lerp + drift
   const animate = useCallback(() => {
     const lerpFactor = 0.04; // smooth interpolation speed
@@ -81,8 +83,12 @@ export default function CloudAnimation() {
       el.style.transform = `translate(${parallaxX + driftX}px, ${parallaxY + driftY}px)`;
     });
 
-    rafIdRef.current = requestAnimationFrame(animate);
+    rafIdRef.current = requestAnimationFrame(animateRef.current);
   }, []);
+
+  useEffect(() => {
+    animateRef.current = animate;
+  }, [animate]);
 
   useEffect(() => {
     rafIdRef.current = requestAnimationFrame(animate);

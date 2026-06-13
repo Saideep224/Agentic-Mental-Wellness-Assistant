@@ -66,17 +66,7 @@ export default function KnowingMePage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setMounted(true);
-    const token = getToken();
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-    fetchAnswers(token);
-  }, [router]);
-
-  const fetchAnswers = async (token: string) => {
+  const fetchAnswers = useCallback(async (token: string) => {
     setIsLoading(true);
     try {
       const rawAnswers = await getOnboardingAnswers(token);
@@ -96,7 +86,17 @@ export default function KnowingMePage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    setMounted(true);
+    const token = getToken();
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+    fetchAnswers(token);
+  }, [router, fetchAnswers]);
 
   const toggleCategory = (catId: string) => {
     setExpandedCategories(prev => {
@@ -228,7 +228,13 @@ export default function KnowingMePage() {
   const totalQuestions = questions.length;
   const progressPercent = Math.round((totalAnswered / totalQuestions) * 100);
 
-  if (!mounted) return null;
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">

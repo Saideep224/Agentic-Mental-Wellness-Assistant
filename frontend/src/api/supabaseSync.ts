@@ -122,50 +122,69 @@ async function ensureSupabaseProfile(user: NonNullable<Awaited<ReturnType<typeof
 export async function upsertQuestionAnswersToSupabase(
   responses: QuestionAnswerSaveInput[]
 ): Promise<void> {
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError) {
-    console.error('[Supabase] Auth user lookup failed:', userError);
-    throw formatSupabaseError('Unable to verify your login session', userError);
-  }
-  if (!user) throw new Error('You are not signed in. Please log in again before saving answers.');
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      console.error('[Supabase] Auth user lookup failed:', userError);
+      throw formatSupabaseError('Unable to verify your login session', userError);
+    }
+    if (!user) throw new Error('You are not signed in. Please log in again before saving answers.');
 
-  await ensureSupabaseProfile(user);
+    await ensureSupabaseProfile(user);
 
-  const rows = responses.map((response) => ({
-    user_id: user.id,
-    question_id: response.questionId,
-    question_text: response.questionText,
-    selected_answer: response.selectedAnswers,
-    category: response.category,
-    custom_answer: response.customAnswer || null,
-    updated_at: new Date().toISOString(),
-  }));
-
-  const { error } = await supabase
-    .from('user_question_answers')
-    .upsert(rows, { onConflict: 'user_id,question_id' });
-
-  if (error) {
-    console.error('[Supabase] Knowing Me answer upsert failed:', {
-      error,
-      attemptedRows: rows,
-      userId: user.id,
-    });
-    throw formatSupabaseError('Failed to save your answers', error);
-  }
-
-  const personalityProfile = derivePersonalityProfile(responses);
-  const { error: profileError } = await supabase
-    .from('profiles')
-    .update({
-      personality_profile: personalityProfile,
-      onboarding_completed: true,
+    const rows = responses.map((response) => ({
+      user_id: user.id,
+      question_id: response.questionId,
+      question_text: response.questionText,
+      selected_answer: response.selectedAnswers,
+      category: response.category,
+      custom_answer: response.customAnswer || null,
       updated_at: new Date().toISOString(),
-    })
-    .eq('user_id', user.id);
+    }));
 
-  if (profileError) {
-    console.error('[Supabase] Personality profile update failed:', profileError);
-    throw formatSupabaseError('Answers saved, but profile personalization failed', profileError);
+    const { error } = await supabase
+      .from('user_question_answers')
+      .upsert(rows, { onConflict: 'user_id,question_id' });
+
+    if (error) {
+      console.error('[Supabase] Knowing Me answer upsert failed:', {
+        error,
+        attemptedRows: rows,
+        userId: user.id,
+      });
+      throw formatSupabaseError('Failed to save your answers', error);
+    }
+
+    const personalityProfile = derivePersonalityProfile(responses);
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        personality_profile: personalityProfile,
+        onboarding_completed: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', user.id);
+
+    if (profileError) {
+      console.error('[Supabase] Personality profile update failed:', profileError);
+      throw formatSupabaseError('Answers saved, but profile personalization failed', profileError);
+    }
+  } catch (err: any) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const isUserNotFound = 
+      errMsg.includes('user_not_found') || 
+      errMsg.includes('sub claim') || 
+      errMsg.includes('does not exist') ||
+      errMsg.includes('403');
+    
+    if (isUserNotFound) {
+      console.warn('[SupabaseSync] User not found or invalid session. Clearing auth and redirecting...', errMsg);
+      if (typeof window !== 'undefined') {
+        const { clearAuth } = await import('./client');
+        clearAuth();
+        window.location.href = '/login';
+      }
+    }
+    throw err;
   }
 }

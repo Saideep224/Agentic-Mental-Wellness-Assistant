@@ -288,6 +288,18 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIn("CRITICAL FRIEND RECALL CHECK-IN RULE", sys_prompt)
         self.assertIn("How's the exam preparation going", sys_prompt)
 
+    async def test_onboarding_step_persistence(self):
+        """Verify onboarding step saving and retrieving works as expected."""
+        # 1. Initially it should be 1 (default value)
+        self.assertEqual(self.user.onboarding_step, 1)
+
+        # 2. Update step
+        self.user.onboarding_step = 5
+        self.db.add(self.user)
+        await self.db.commit()
+        await self.db.refresh(self.user)
+        self.assertEqual(self.user.onboarding_step, 5)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -30,14 +30,23 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   const handleInvalidSession = async () => {
     console.log('[AuthProvider] Clearing invalid or deleted session...');
-    localStorage.removeItem('esona_token');
-    localStorage.removeItem('esona_user');
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (err) {
+        console.warn('[AuthProvider] Storage clear error:', err);
+      }
+    }
     setTokenState(null);
     setUser(null);
     try {
       await supabase.auth.signOut();
     } catch (err) {
       console.warn('[AuthProvider] Supabase signOut error on invalid session:', err);
+    }
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login';
     }
   };
 

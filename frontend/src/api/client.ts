@@ -9,6 +9,7 @@
  */
 
 import { User } from '@/types';
+import { supabase } from '@/database/supabase';
 
 // ============================================
 // API BASE URL
@@ -90,6 +91,15 @@ export function removeStoredUser(): void {
 export function clearAuth(): void {
   removeToken();
   removeStoredUser();
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+      supabase.auth.signOut();
+    } catch (err) {
+      console.warn('[clearAuth] Supabase signOut error:', err);
+    }
+  }
 }
 
 // ============================================
@@ -177,7 +187,7 @@ export async function apiGet<T>(endpoint: string, token?: string | null): Promis
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
       clearAuth();
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
@@ -211,7 +221,7 @@ export async function apiPost<T>(endpoint: string, body?: unknown, token?: strin
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
       clearAuth();
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
@@ -245,7 +255,7 @@ export async function apiPatch<T>(endpoint: string, body?: unknown, token?: stri
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
       clearAuth();
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
@@ -276,7 +286,7 @@ export async function apiDelete<T = void>(endpoint: string, token?: string | nul
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
       clearAuth();
       if (typeof window !== 'undefined') {
         window.location.href = '/login';

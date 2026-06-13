@@ -37,6 +37,8 @@ export default function OnboardingPage() {
     skipAllQuestions,
     goToPrevious,
     continuePastTransition,
+    backToLogin,
+    saveAndContinueLater,
   } = useOnboarding();
 
   useEffect(() => {
@@ -184,8 +186,21 @@ export default function OnboardingPage() {
 
   return (
     <main className="min-h-screen flex flex-col px-4 pt-4 pb-20">
+      {/* Back to Login at the top left */}
+      <div className="max-w-2xl mx-auto w-full flex justify-start mt-2">
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={backToLogin}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition-all duration-300 cursor-pointer hover:bg-white/5"
+        >
+          <ArrowLeft size={14} />
+          Back to Login
+        </motion.button>
+      </div>
+
       {/* Header and Subtext */}
-      <div className="text-center mt-6 mb-4">
+      <div className="text-center mt-4 mb-4">
         <h1
           className="text-2xl sm:text-3xl font-bold text-white flex items-center justify-center gap-2 mb-2"
           style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
@@ -272,66 +287,84 @@ export default function OnboardingPage() {
       </div>
 
       {/* Navigation buttons */}
-      <div className="max-w-2xl mx-auto w-full flex items-center justify-between mt-8">
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={goToPrevious}
-          disabled={currentIndex === 0}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-          style={{
-            background: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid var(--glass-border)',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          <ArrowLeft size={16} />
-          Back
-        </motion.button>
+      <div className="max-w-2xl mx-auto w-full flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-8">
+        <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={goToPrevious}
+            disabled={currentIndex === 0}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid var(--glass-border)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <ArrowLeft size={16} />
+            Back
+          </motion.button>
+        </div>
 
-        {/* Skip ALL Questions button */}
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={() => setShowSkipModal(true)}
-          disabled={isSubmitting}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent"
-        >
-          <SkipForward size={14} />
-          Skip Questions
-        </motion.button>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          {/* Skip ALL Questions button */}
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setShowSkipModal(true)}
+            disabled={isSubmitting}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-white/5"
+          >
+            <SkipForward size={14} />
+            Skip Questions
+          </motion.button>
 
-        <motion.button
-          whileHover={{ scale: canGoNext ? 1.03 : 1 }}
-          whileTap={{ scale: canGoNext ? 0.97 : 1 }}
-          onClick={goToNext}
-          disabled={!canGoNext || isSubmitting}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{
-            background: canGoNext
-              ? 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))'
-              : 'rgba(255, 255, 255, 0.03)',
-            color: canGoNext ? 'var(--bg-primary)' : 'var(--text-muted)',
-            boxShadow: canGoNext ? 'var(--glow-cyan)' : 'none',
-          }}
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              Submitting...
-            </>
-          ) : isLastQuestion ? (
-            <>
-              <Sparkles size={16} />
-              Complete
-            </>
-          ) : (
-            <>
-              Next
-              <ArrowRight size={16} />
-            </>
-          )}
-        </motion.button>
+          {/* Save & Continue Later button */}
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={saveAndContinueLater}
+            disabled={isSubmitting}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer text-sky-400 hover:text-sky-200 hover:bg-sky-500/10 border border-sky-500/20"
+          >
+            <Sparkles size={14} />
+            Save & Continue Later
+          </motion.button>
+        </div>
+
+        <div className="flex items-center justify-end w-full sm:w-auto">
+          <motion.button
+            whileHover={{ scale: canGoNext ? 1.03 : 1 }}
+            whileTap={{ scale: canGoNext ? 0.97 : 1 }}
+            onClick={goToNext}
+            disabled={!canGoNext || isSubmitting}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{
+              background: canGoNext
+                ? 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))'
+                : 'rgba(255, 255, 255, 0.03)',
+              color: canGoNext ? 'var(--bg-primary)' : 'var(--text-muted)',
+              boxShadow: canGoNext ? 'var(--glow-cyan)' : 'none',
+            }}
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Submitting...
+              </>
+            ) : isLastQuestion ? (
+              <>
+                <Sparkles size={16} />
+                Complete
+              </>
+            ) : (
+              <>
+                Next
+                <ArrowRight size={16} />
+              </>
+            )}
+          </motion.button>
+        </div>
       </div>
 
       {/* ━━━ Skip Confirmation Modal ━━━ */}

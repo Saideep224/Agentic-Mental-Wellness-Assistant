@@ -24,8 +24,14 @@ class OnboardingSubmitRequest(BaseModel):
     )
 
 
+class OnboardingStepRequest(BaseModel):
+    """Request for POST /api/onboarding/step."""
+    step: int = Field(..., ge=1, le=25)
+
+
 class OnboardingStatusResponse(BaseModel):
     """Response for GET /api/onboarding/status."""
     onboarding_completed: bool
     total_questions: int = 25
     answers_submitted: int = 0
+    onboarding_step: int | None = 1

@@ -5,7 +5,7 @@ User model – representing the 'profiles' table.
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, DateTime, JSON, Text
+from sqlalchemy import String, Boolean, DateTime, JSON, Text, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, SafeUUID
@@ -43,6 +43,9 @@ class User(Base):
     github_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     onboarding_completed: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
+    )
+    onboarding_step: Mapped[int | None] = mapped_column(
+        Integer, default=1, nullable=True
     )
     
     # New profile fields stored directly on the profiles table

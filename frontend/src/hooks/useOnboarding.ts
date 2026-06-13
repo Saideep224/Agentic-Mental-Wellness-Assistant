@@ -8,7 +8,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { supabase } from '@/database/supabase';
 
 export function useOnboarding() {
-  const { refreshUser } = useAuth();
+  const { refreshUser, logout } = useAuth();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [responses, setResponses] = useState<OnboardingResponse[]>([]);
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
@@ -74,8 +74,6 @@ export function useOnboarding() {
 
       try {
         const saved = await api.getOnboardingAnswers(token);
-        if (!saved.length) return;
-
         const savedResponses: OnboardingResponse[] = saved.map((answer: {
           question_id: number;
           category: string;
@@ -89,11 +87,26 @@ export function useOnboarding() {
         }));
 
         setResponses(savedResponses);
+
         const firstUnansweredIndex = questions.findIndex((question) => {
           const savedAnswer = savedResponses.find((item) => item.questionId === question.id);
           return !savedAnswer || (savedAnswer.selectedAnswers.length === 0 && !savedAnswer.customAnswer);
         });
-        const nextIndex = firstUnansweredIndex >= 0 ? firstUnansweredIndex : Math.max(0, questions.length - 1);
+        const unansweredIdx = firstUnansweredIndex >= 0 ? firstUnansweredIndex : Math.max(0, questions.length - 1);
+
+        // Fetch onboarding step from backend status
+        let nextIndex = unansweredIdx;
+        try {
+          const savedStatus = await api.getOnboardingStatus(token);
+          const savedStep = savedStatus.onboarding_step || 1;
+          const savedStepIdx = savedStep - 1;
+          if (savedStepIdx > 0 && savedStepIdx < questions.length) {
+            nextIndex = savedStepIdx;
+          }
+        } catch (statusErr) {
+          console.warn('[Onboarding] Could not load onboarding status, falling back to unanswered index:', statusErr);
+        }
+
         setCurrentIndex(nextIndex);
 
         const currentSaved = savedResponses.find((item) => item.questionId === questions[nextIndex]?.id);
@@ -170,6 +183,21 @@ export function useOnboarding() {
     } catch (err: any) {
       console.error('Onboarding submission failed:', err);
       const errMsg = err instanceof Error ? err.message : '';
+      const isUserNotFound = 
+        errMsg.includes('user_not_found') || 
+        errMsg.includes('sub claim') || 
+        errMsg.includes('does not exist') ||
+        errMsg.includes('403');
+
+      if (isUserNotFound) {
+        console.warn('[Onboarding] User not found or invalid session. Clearing auth and redirecting...');
+        api.clearAuth();
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        return;
+      }
+
       if (errMsg.includes('Onboarding already completed')) {
         // Update stored user and mark complete gracefully
         await refreshUser();
@@ -210,6 +238,13 @@ export function useOnboarding() {
       api.saveOnboardingAnswer(response, token).catch((err) => {
         console.warn('[Onboarding] Live answer saving failed:', err);
       });
+      // Save next onboarding step live
+      const nextIdx = currentIndex + 1;
+      if (nextIdx < totalQuestions) {
+        api.saveOnboardingStep(questions[nextIdx].id, token).catch((err) => {
+          console.warn('[Onboarding] Live step saving failed:', err);
+        });
+      }
     }
 
     // Update or add response
@@ -291,6 +326,67 @@ export function useOnboarding() {
     }
   }, [currentIndex, responses]);
 
+  const saveCurrentStepProgress = useCallback(async () => {
+    const token = api.getToken();
+    if (!token) return;
+
+    // 1. Save current question's response if there is one
+    const hasCustomText = customText.trim().length > 0;
+    if (selectedOptions.length > 0 || hasCustomText) {
+      const response: OnboardingResponse = {
+        questionId: currentQuestion.id,
+        category: currentQuestion.category,
+        selectedAnswers: selectedOptions,
+        customAnswer: hasCustomText ? customText.trim() : undefined,
+      };
+      
+      try {
+        await api.saveOnboardingAnswer(response, token);
+      } catch (err) {
+        console.warn('[Onboarding] Failed to save current answer:', err);
+      }
+    }
+
+    // 2. Save the current step (1-indexed question ID)
+    try {
+      await api.saveOnboardingStep(currentQuestion.id, token);
+    } catch (err) {
+      console.warn('[Onboarding] Failed to save onboarding step:', err);
+    }
+  }, [currentQuestion, selectedOptions, customText]);
+
+  const backToLogin = useCallback(async () => {
+    setIsSubmitting(true);
+    try {
+      await saveCurrentStepProgress();
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('esona_onboarding_index');
+        localStorage.removeItem('esona_onboarding_responses');
+      }
+      await logout();
+    } catch (err) {
+      console.error('[Onboarding] Back to Login failed:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [saveCurrentStepProgress, logout]);
+
+  const saveAndContinueLater = useCallback(async () => {
+    setIsSubmitting(true);
+    try {
+      await saveCurrentStepProgress();
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('esona_onboarding_index');
+        localStorage.removeItem('esona_onboarding_responses');
+      }
+      await logout();
+    } catch (err) {
+      console.error('[Onboarding] Save & Continue Later failed:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [saveCurrentStepProgress, logout]);
+
 
   return {
     currentQuestion,
@@ -315,5 +411,7 @@ export function useOnboarding() {
     skipAllQuestions,
     goToPrevious,
     continuePastTransition,
+    backToLogin,
+    saveAndContinueLater,
   };
 }

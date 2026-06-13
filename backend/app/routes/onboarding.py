@@ -11,6 +11,7 @@ from app.schemas.onboarding import (
     OnboardingSubmitRequest,
     OnboardingStatusResponse,
     OnboardingAnswer,
+    OnboardingStepRequest,
 )
 from app.services.onboarding_analyzer import analyze_onboarding
 
@@ -264,7 +265,21 @@ async def get_onboarding_status(
     return OnboardingStatusResponse(
         onboarding_completed=current_user.onboarding_completed,
         answers_submitted=count,
+        onboarding_step=current_user.onboarding_step or 1,
     )
+
+
+@router.post("/step", status_code=status.HTTP_200_OK)
+async def save_onboarding_step(
+    body: OnboardingStepRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save the current onboarding step/question_id the user is on."""
+    current_user.onboarding_step = body.step
+    db.add(current_user)
+    await db.commit()
+    return {"message": "Onboarding step saved."}
 
 
 @router.get("/answers")

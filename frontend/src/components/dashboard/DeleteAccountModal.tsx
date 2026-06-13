@@ -56,15 +56,15 @@ export default function DeleteAccountModal({ userEmail, onClose }: DeleteAccount
       await deleteAccount(token);
       setDeleted(true);
 
-      // Clear all local auth state
-      clearAuth();
-
       // Sign out from Supabase Auth immediately to clear stored local auth session
       try {
         await supabase.auth.signOut();
       } catch (supaErr) {
         console.warn('[DeleteAccountModal] Supabase signOut error:', supaErr);
       }
+
+      // Clear all local auth state and other storage
+      clearAuth();
 
       // Small delay so user can read the success message, then redirect
       setTimeout(() => {

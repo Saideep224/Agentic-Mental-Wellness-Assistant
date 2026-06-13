@@ -28,6 +28,19 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const handleInvalidSession = async () => {
+    console.log('[AuthProvider] Clearing invalid or deleted session...');
+    localStorage.removeItem('esona_token');
+    localStorage.removeItem('esona_user');
+    setTokenState(null);
+    setUser(null);
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('[AuthProvider] Supabase signOut error on invalid session:', err);
+    }
+  };
+
   // Warmup Backend Mount Ping and 4-minute heartbeat to keep connection pool active and prevent Render cold starts
   useEffect(() => {
     const runPing = async () => {
@@ -72,6 +85,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch (err) {
         console.warn('[AuthProvider] Session restoration error:', err);
+        await handleInvalidSession();
       } finally {
         setIsLoading(false);
       }
@@ -93,6 +107,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem('esona_user', JSON.stringify(freshUser));
         } catch (err) {
           console.error('[AuthProvider] Failed to sync profile on event:', err);
+          await handleInvalidSession();
         }
       } else {
         setTokenState(null);
@@ -113,12 +128,12 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       const storedToken = localStorage.getItem('esona_token') || token;
       const storedUser = getStoredUser() || user;
 
-      if (!storedToken) {
+      if (!storedToken || !storedUser) {
         if (protectedRoutes.some(route => pathname.startsWith(route)) && pathname !== '/login') {
           router.push('/login');
         }
       } else {
-        const hasCompletedOnboarding = storedUser?.onboardingCompleted ?? false;
+        const hasCompletedOnboarding = storedUser.onboardingCompleted ?? false;
         
         if (pathname === '/' || pathname === '/login') {
           if (!hasCompletedOnboarding) {

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, X, Trash2, Loader2, ShieldOff } from 'lucide-react';
 import { deleteAccount } from '@/api/auth';
 import { clearAuth, getToken } from '@/api/client';
+import { supabase } from '@/database/supabase';
 
 const DANGER_ITEMS = [
   { icon: '👤', label: 'Profile & account details' },
@@ -42,6 +43,13 @@ export default function DeleteAccountModal({ userEmail, onClose }: DeleteAccount
 
       // Clear all local auth state
       clearAuth();
+
+      // Sign out from Supabase Auth immediately to clear stored local auth session
+      try {
+        await supabase.auth.signOut();
+      } catch (supaErr) {
+        console.warn('[DeleteAccountModal] Supabase signOut error:', supaErr);
+      }
 
       // Small delay so user can read the success message, then redirect
       setTimeout(() => {

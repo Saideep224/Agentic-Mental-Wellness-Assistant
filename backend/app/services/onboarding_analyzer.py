@@ -47,13 +47,14 @@ async def analyze_onboarding(
     answers_summary = "\n".join(formatted_responses)
 
     system_prompt = """
-    You are an advanced psychological profiling system. Your task is to analyze a user's answers to a 20-question onboarding questionnaire and produce a structured, deep emotional and behavioral profile.
+    You are an advanced psychological profiling system. Your task is to analyze a user's answers to a 25-question onboarding questionnaire and produce a structured, deep emotional and behavioral profile.
     
-    The questionnaire covers four categories:
-    1. Personality & Behavioral Understanding (Q1-Q5)
-    2. Emotional State & Stress Analysis (Q6-Q10)
-    3. Hobbies & Comfort Zone Understanding (Q11-Q15)
-    4. Communication & Response Preference (Q16-Q20)
+    The questionnaire covers five categories:
+    1. Background & Demographics (Q1-Q5)
+    2. Personality & Behavioral Understanding (Q6-Q10)
+    3. Emotional State & Stress Analysis (Q11-Q15)
+    4. Hobbies & Comfort Zone Understanding (Q16-Q20)
+    5. Communication & Response Preference (Q21-Q25)
 
     Analyze these answers and output a single JSON object containing exactly these keys:
     - personality_type: containing 'type' (a descriptive name, e.g. "Thoughtful Introvert", "Empathetic Rescuer", etc.), 'description', 'strengths' (list of strings), 'growth_areas' (list of strings), and 'summary' (a brief overview).

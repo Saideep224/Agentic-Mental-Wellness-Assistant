@@ -480,7 +480,7 @@ async def send_message(
             
             # Re-read profile stage after save
             next_stage = profile.personality_profile.get("onboarding_stage", stage + 1)
-            if not profile.onboarding_completed and next_stage <= 11:
+            if not profile.onboarding_completed and next_stage <= 16:
                 reply = onboarding_service.get_question(next_stage)
             else:
                 reply = f"Thanks for sharing all that with me, {current_user.name}! 💙 ||| I've got a good feel for your vibe now. ||| Let's chat about whatever's on your mind today!"
@@ -934,7 +934,7 @@ async def stream_message_sse(
             await onboarding_service.parse_and_save_answer(db, current_user, profile, stage, message)
             
             next_stage = profile.personality_profile.get("onboarding_stage", stage + 1)
-            if not profile.onboarding_completed and next_stage <= 11:
+            if not profile.onboarding_completed and next_stage <= 16:
                 reply = onboarding_service.get_question(next_stage)
             else:
                 reply = f"Thanks for sharing all that with me, {current_user.name}! 💙 ||| I've got a good feel for your vibe now. ||| Let's chat about whatever's on your mind today!"

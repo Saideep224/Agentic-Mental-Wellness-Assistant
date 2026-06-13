@@ -1,11 +1,92 @@
 import { Question } from '@/types';
 
 export const questions: Question[] = [
+  {
+    id: 1,
+    text: "What is your profession or current occupation?",
+    category: "background",
+    categoryLabel: "About You",
+    agentTarget: "context",
+    allowOther: true,
+    options: [
+      { label: "School Student", value: "School Student", emoji: "🏫" },
+      { label: "College Student", value: "College Student", emoji: "🎓" },
+      { label: "Working Professional", value: "Working Professional", emoji: "💼" },
+      { label: "Entrepreneur", value: "Entrepreneur", emoji: "🚀" },
+      { label: "Job Seeker", value: "Job Seeker", emoji: "🔍" },
+    ],
+  },
+  {
+    id: 2,
+    text: "What field are you studying or working in?",
+    category: "background",
+    categoryLabel: "About You",
+    agentTarget: "context",
+    allowOther: true,
+    options: [
+      { label: "Computer Science", value: "Computer Science", emoji: "💻" },
+      { label: "Engineering", value: "Engineering", emoji: "⚙️" },
+      { label: "Business", value: "Business", emoji: "📊" },
+      { label: "Medicine", value: "Medicine", emoji: "🩺" },
+      { label: "Arts", value: "Arts", emoji: "🎨" },
+      { label: "Finance", value: "Finance", emoji: "💰" },
+    ],
+  },
+  {
+    id: 3,
+    text: "What is the biggest challenge you are currently facing?",
+    category: "background",
+    categoryLabel: "About You",
+    agentTarget: "context",
+    allowOther: true,
+    options: [
+      { label: "Studies", value: "Studies", emoji: "📚" },
+      { label: "Placements", value: "Placements", emoji: "🎯" },
+      { label: "Career Growth", value: "Career Growth", emoji: "📈" },
+      { label: "Relationships", value: "Relationships", emoji: "❤️" },
+      { label: "Mental Health", value: "Mental Health", emoji: "🧠" },
+      { label: "Family Issues", value: "Family Issues", emoji: "🏠" },
+      { label: "Financial Issues", value: "Financial Issues", emoji: "💵" },
+    ],
+  },
+  {
+    id: 4,
+    text: "How do you prefer to receive advice?",
+    category: "background",
+    categoryLabel: "About You",
+    agentTarget: "context",
+    allowOther: false,
+    options: [
+      { label: "Direct and Honest", value: "Direct and Honest", emoji: "🎯" },
+      { label: "Friendly and Casual", value: "Friendly and Casual", emoji: "🤝" },
+      { label: "Motivational", value: "Motivational", emoji: "🔥" },
+      { label: "Detailed Explanations", value: "Detailed Explanations", emoji: "📝" },
+      { label: "Mostly Listening, Less Advice", value: "Mostly Listening, Less Advice", emoji: "👂" },
+    ],
+  },
+  {
+    id: 5,
+    text: "What would you like me to help you with the most?",
+    category: "background",
+    categoryLabel: "About You",
+    agentTarget: "context",
+    allowOther: true,
+    options: [
+      { label: "Emotional Support", value: "Emotional Support", emoji: "🫂" },
+      { label: "Stress Management", value: "Stress Management", emoji: "🧘" },
+      { label: "Productivity", value: "Productivity", emoji: "⚡" },
+      { label: "Study Guidance", value: "Study Guidance", emoji: "📖" },
+      { label: "Career Guidance", value: "Career Guidance", emoji: "🚀" },
+      { label: "Building Confidence", value: "Building Confidence", emoji: "💪" },
+      { label: "Daily Check-ins", value: "Daily Check-ins", emoji: "📅" },
+    ],
+  },
+
   // ============================================
   // CATEGORY 1: Personality & Behavioral Understanding
   // ============================================
   {
-    id: 1,
+    id: 6,
     text: "After a tiring day, what do you usually do?",
     category: "personality",
     categoryLabel: "Personality & Behavior",
@@ -20,7 +101,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 2,
+    id: 7,
     text: "Which line sounds most like you?",
     category: "personality",
     categoryLabel: "Personality & Behavior",
@@ -35,7 +116,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 3,
+    id: 8,
     text: "What drains your energy the most?",
     category: "personality",
     categoryLabel: "Personality & Behavior",
@@ -50,7 +131,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 4,
+    id: 9,
     text: "How do you usually text when you're upset?",
     category: "personality",
     categoryLabel: "Personality & Behavior",
@@ -65,7 +146,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 5,
+    id: 10,
     text: "Your mind's default mode lately?",
     category: "personality",
     categoryLabel: "Personality & Behavior",
@@ -84,7 +165,7 @@ export const questions: Question[] = [
   // CATEGORY 2: Emotional State & Stress Analysis
   // ============================================
   {
-    id: 6,
+    id: 11,
     text: "What keeps your mind busy at night?",
     category: "emotion",
     categoryLabel: "Emotional State & Stress",
@@ -99,7 +180,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 7,
+    id: 12,
     text: "What do you do first when stressed?",
     category: "emotion",
     categoryLabel: "Emotional State & Stress",
@@ -114,7 +195,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 8,
+    id: 13,
     text: "What affects your mood the fastest?",
     category: "emotion",
     categoryLabel: "Emotional State & Stress",
@@ -129,7 +210,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 9,
+    id: 14,
     text: "How often do you feel mentally exhausted?",
     category: "emotion",
     categoryLabel: "Emotional State & Stress",
@@ -144,7 +225,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 10,
+    id: 15,
     text: "If your emotions were weather lately, they'd be...",
     category: "emotion",
     categoryLabel: "Emotional State & Stress",
@@ -163,7 +244,7 @@ export const questions: Question[] = [
   // CATEGORY 3: Hobbies & Comfort Zone
   // ============================================
   {
-    id: 11,
+    id: 16,
     text: "What helps you escape reality?",
     category: "hobbies",
     categoryLabel: "Hobbies & Comfort Zone",
@@ -178,7 +259,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 12,
+    id: 17,
     text: "What content do you connect with most?",
     category: "hobbies",
     categoryLabel: "Hobbies & Comfort Zone",
@@ -193,7 +274,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 13,
+    id: 18,
     text: "Where do you feel safest emotionally?",
     category: "hobbies",
     categoryLabel: "Hobbies & Comfort Zone",
@@ -208,7 +289,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 14,
+    id: 19,
     text: "Which hobby feels most 'you'?",
     category: "hobbies",
     categoryLabel: "Hobbies & Comfort Zone",
@@ -223,7 +304,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 15,
+    id: 20,
     text: "What usually improves your mood fastest?",
     category: "hobbies",
     categoryLabel: "Hobbies & Comfort Zone",
@@ -242,7 +323,7 @@ export const questions: Question[] = [
   // CATEGORY 4: Communication & Response Preference
   // ============================================
   {
-    id: 16,
+    id: 21,
     text: "How should this AI talk to you?",
     category: "communication",
     categoryLabel: "Communication & Preferences",
@@ -257,7 +338,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 17,
+    id: 22,
     text: "What type of replies annoy you most?",
     category: "communication",
     categoryLabel: "Communication & Preferences",
@@ -272,7 +353,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 18,
+    id: 23,
     text: "When emotionally low, what helps more?",
     category: "communication",
     categoryLabel: "Communication & Preferences",
@@ -287,7 +368,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 19,
+    id: 24,
     text: "Your social battery lately?",
     category: "communication",
     categoryLabel: "Communication & Preferences",
@@ -302,7 +383,7 @@ export const questions: Question[] = [
     ],
   },
   {
-    id: 20,
+    id: 25,
     text: "What do you wish people understood about you?",
     category: "communication",
     categoryLabel: "Communication & Preferences",
@@ -319,6 +400,13 @@ export const questions: Question[] = [
 ];
 
 export const categories = [
+  {
+    id: "background",
+    label: "About You",
+    emoji: "👤",
+    description: "Let's start with some basic background to help Esona understand your daily context.",
+    color: "blue",
+  },
   {
     id: "personality",
     label: "Personality & Behavior",

@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { categories } from '@/data/questions';
+import { categories, getCategoryForQuestion } from '@/data/questions';
 
 interface ProgressBarProps {
   currentQuestion: number;
@@ -54,9 +54,7 @@ export default function ProgressBar({
             { length: totalQuestions },
             (_, i) => i
           ).filter((i) => {
-            const qCategory =
-              i < 5 ? 'personality' : i < 10 ? 'emotion' : i < 15 ? 'hobbies' : 'communication';
-            return qCategory === category.id;
+            return getCategoryForQuestion(i) === category.id;
           });
           const isPast = categoryQuestions.every((qi) => qi < currentQuestion);
 

@@ -147,6 +147,7 @@ export default function OnboardingPage() {
   // Category transition screen
   if (showCategoryTransition) {
     const catMap: Record<string, string> = {
+      background: 'personality',
       personality: 'emotion',
       emotion: 'hobbies',
       hobbies: 'communication',

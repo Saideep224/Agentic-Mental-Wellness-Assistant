@@ -20,17 +20,22 @@ from app.services.profile_service import profile_service
 logger = logging.getLogger(__name__)
 
 ONBOARDING_QUESTIONS = {
-    1: "Hey there! I'm Esona, your AI wellness companion. I'd love to get to know you a bit so I can be the best buddy possible. First, what should I call you? 😊",
-    2: "Nice to meet you! How old are you?",
-    3: "Got it! And what do you do?\n- School Student\n- College Student\n- Working Professional\n- Other",
-    4: "Which year are you currently in?",
-    5: "What are your hobbies and interests? (like Gaming, Sports, Anime, Reading, Music, Coding, or anything else!)",
-    6: "What are your current goals?",
-    7: "What usually stresses you out?",
-    8: "What helps you feel better when stressed?",
-    9: "Who do you usually talk to when you need support?",
-    10: "How would you like me to talk to you? You can choose from:\n- Friendly Friend\n- Supportive Listener\n- Motivational Coach\n- Direct and Honest",
-    11: "How is your sleep generally?\n- Good\n- Average\n- Poor",
+    1: "What is your profession or current occupation?\n- School Student\n- College Student\n- Working Professional\n- Entrepreneur\n- Job Seeker\n- Other",
+    2: "What field are you studying or working in? (e.g. Computer Science, Engineering, Business, Medicine, Arts, Finance, etc.)",
+    3: "What is the biggest challenge you are currently facing? (e.g. Studies, Placements, Career Growth, Relationships, Mental Health, Family Issues, Financial Issues, etc.)",
+    4: "How do you prefer to receive advice? You can select from:\n- Direct and Honest\n- Friendly and Casual\n- Motivational\n- Detailed Explanations\n- Mostly Listening, Less Advice",
+    5: "What would you like me to help you with the most? (e.g. Emotional Support, Stress Management, Productivity, Study Guidance, Career Guidance, Building Confidence, Daily Check-ins)",
+    6: "Hey there! I'm Esona, your AI wellness companion. I'd love to get to know you a bit so I can be the best buddy possible. First, what should I call you? 😊",
+    7: "Nice to meet you! How old are you?",
+    8: "Got it! And what do you do?\n- School Student\n- College Student\n- Working Professional\n- Other",
+    9: "Which year are you currently in?",
+    10: "What are your hobbies and interests? (like Gaming, Sports, Anime, Reading, Music, Coding, or anything else!)",
+    11: "What are your current goals?",
+    12: "What usually stresses you out?",
+    13: "What helps you feel better when stressed?",
+    14: "Who do you usually talk to when you need support?",
+    15: "How would you like me to talk to you? You can choose from:\n- Friendly Friend\n- Supportive Listener\n- Motivational Coach\n- Direct and Honest",
+    16: "How is your sleep generally?\n- Good\n- Average\n- Poor",
 }
 
 ONBOARDING_PARSER_PROMPT = """You are an Onboarding Information Extractor. Your task is to extract the answer for a specific onboarding question from the user's message.
@@ -44,9 +49,13 @@ Instructions:
 2. Return a JSON object containing the parsed information.
 
 Expected output formats based on Type:
+- profession: {{"profession": "School Student" | "College Student" | "Working Professional" | "Entrepreneur" | "Job Seeker" | "Other"}}
+- field_of_work: {{"field_of_work": "extracted field of work or study"}}
+- current_challenge: {{"current_challenge": "extracted current challenge"}}
+- advice_preference: {{"advice_preference": "Direct and Honest" | "Friendly and Casual" | "Motivational" | "Detailed Explanations" | "Mostly Listening, Less Advice"}}
+- primary_support_need: {{"primary_support_need": "extracted support need"}}
 - name: {{"name": "extracted name or nickname"}}
 - age: {{"age": int or string}}
-- profession: {{"profession": "School Student" | "College Student" | "Working Professional" | "Other"}}
 - student_year: {{"student_year": "extracted year (e.g. 1st year, Sophomore, etc)"}}
 - interests: {{"interests": ["interest1", "interest2", ...], "hobbies": ["hobby1", "hobby2", ...]}} (extract hobbies and interests as separate lists if possible, or same lists)
 - goals: {{"goals": ["goal1", "goal2", ...]}}
@@ -75,17 +84,22 @@ class OnboardingService:
         and advances the onboarding stage. Returns True if successfully parsed.
         """
         question_types = {
-            1: "name",
-            2: "age",
-            3: "profession",
-            4: "student_year",
-            5: "interests",
-            6: "goals",
-            7: "triggers",
-            8: "coping",
-            9: "support",
-            10: "style",
-            11: "sleep"
+            1: "profession",
+            2: "field_of_work",
+            3: "current_challenge",
+            4: "advice_preference",
+            5: "primary_support_need",
+            6: "name",
+            7: "age",
+            8: "profession",
+            9: "student_year",
+            10: "interests",
+            11: "goals",
+            12: "triggers",
+            13: "coping",
+            14: "support",
+            15: "style",
+            16: "sleep"
         }
         
         q_type = question_types.get(stage)
@@ -114,31 +128,44 @@ class OnboardingService:
             profile_data = dict(profile.personality_profile or {})
             
             if stage == 1:
+                prof = parsed.get("profession", message.strip())
+                profile_data["profession"] = prof
+                await profile_service.update_profile(db, user.id, {"profession": prof})
+            elif stage == 2:
+                fow = parsed.get("field_of_work", message.strip())
+                profile_data["field_of_work"] = fow
+                await profile_service.update_profile(db, user.id, {"field_of_work": fow})
+            elif stage == 3:
+                challenge = parsed.get("current_challenge", message.strip())
+                profile_data["current_challenge"] = challenge
+                await profile_service.update_profile(db, user.id, {"current_challenge": challenge})
+            elif stage == 4:
+                pref = parsed.get("advice_preference", message.strip())
+                profile_data["advice_preference"] = pref
+                await profile_service.update_profile(db, user.id, {"advice_preference": pref})
+            elif stage == 5:
+                need = parsed.get("primary_support_need", message.strip())
+                profile_data["primary_support_need"] = need
+                await profile_service.update_profile(db, user.id, {"primary_support_need": need})
+            elif stage == 6:
                 name = parsed.get("name", message.strip())
                 user.name = name
                 profile_data["name"] = name
                 await profile_service.update_profile(db, user.id, {"name": name})
-            elif stage == 2:
+            elif stage == 7:
                 age = parsed.get("age", message.strip())
                 profile_data["age"] = age
                 await profile_service.update_profile(db, user.id, {"age": age})
-            elif stage == 3:
-                prof = parsed.get("profession", "Other")
+            elif stage == 8:
+                # Stage 8 is duplicate profession question, usually skipped.
+                prof = parsed.get("profession", message.strip())
                 profile_data["profession"] = prof
-                is_student = prof in ["School Student", "College Student"]
-                if not is_student:
-                    profile_data["student_year"] = "N/A"
-                    await profile_service.update_profile(db, user.id, {
-                        "profession": prof,
-                        "student_year": "N/A"
-                    })
-                else:
-                    await profile_service.update_profile(db, user.id, {"profession": prof})
-            elif stage == 4:
+                await profile_service.update_profile(db, user.id, {"profession": prof})
+            elif stage == 9:
                 year = parsed.get("student_year", message.strip())
                 profile_data["student_year"] = year
                 await profile_service.update_profile(db, user.id, {"student_year": year})
-            elif stage == 5:
+            elif stage == 10:
                 interests_list = parsed.get("interests", [message.strip()])
                 hobbies_list = parsed.get("hobbies", [message.strip()])
                 profile.interests = {"hobbies": hobbies_list + interests_list}
@@ -147,36 +174,39 @@ class OnboardingService:
                     "interests": interests_list,
                     "hobbies": hobbies_list
                 })
-            elif stage == 6:
+            elif stage == 11:
                 goals_list = parsed.get("goals", [message.strip()])
                 profile_data["goals"] = goals_list
                 await profile_service.update_profile(db, user.id, {"goals": goals_list})
-            elif stage == 7:
+            elif stage == 12:
                 triggers_list = parsed.get("stress_triggers", [message.strip()])
                 profile.stress_triggers = {"triggers": triggers_list}
                 await profile_service.update_profile(db, user.id, {"stress_triggers": triggers_list})
-            elif stage == 8:
+            elif stage == 13:
                 coping_list = parsed.get("coping_mechanisms", [message.strip()])
                 await profile_service.update_profile(db, user.id, {"coping_mechanisms": coping_list})
-            elif stage == 9:
+            elif stage == 14:
                 support = parsed.get("support_system", message.strip())
                 await profile_service.update_profile(db, user.id, {"support_system": support})
-            elif stage == 10:
+            elif stage == 15:
                 style = parsed.get("communication_style", "Friendly Friend")
                 profile.communication_style = {"preferred_style": style}
                 user.communication_style = style
                 await profile_service.update_profile(db, user.id, {"communication_style": style})
-            elif stage == 11:
+            elif stage == 16:
                 sleep = parsed.get("sleep_habits", "Average")
                 await profile_service.update_profile(db, user.id, {"sleep_habits": sleep})
             
             # Determine next stage
             is_student = profile_data.get("profession") in ["School Student", "College Student"]
-            if stage == 3 and not is_student:
-                next_stage = 5
+            if stage == 7:
+                # Skip duplicate profession question (stage 8) and route based on student status
+                next_stage = 9 if is_student else 10
+            elif stage == 8:
+                next_stage = 9 if is_student else 10
             else:
                 next_stage = stage + 1
-
+ 
             profile_data["onboarding_stage"] = next_stage
             profile.personality_profile = profile_data
             
@@ -193,8 +223,8 @@ class OnboardingService:
             db.add(user)
             await db.flush()
             
-            # If onboarding completed (finished stage 11 or skipped remaining to 12)
-            if next_stage > 11:
+            # If onboarding completed (finished stage 16)
+            if next_stage > 16:
                 await self.finalize_profile(db, user, profile)
                 
             return True
@@ -204,8 +234,10 @@ class OnboardingService:
             # Safe recovery fallback
             profile_data = dict(profile.personality_profile or {})
             is_student = profile_data.get("profession") in ["School Student", "College Student"]
-            if stage == 3 and not is_student:
-                next_stage = 5
+            if stage == 7:
+                next_stage = 9 if is_student else 10
+            elif stage == 8:
+                next_stage = 9 if is_student else 10
             else:
                 next_stage = stage + 1
             profile_data["onboarding_stage"] = next_stage

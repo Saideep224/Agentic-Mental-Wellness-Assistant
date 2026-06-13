@@ -41,6 +41,10 @@ class ProfileService:
             name=profile_data.get("name"),
             age=str(profile_data.get("age")) if profile_data.get("age") is not None else None,
             profession=profile_data.get("profession"),
+            field_of_work=profile_data.get("field_of_work"),
+            current_challenge=profile_data.get("current_challenge"),
+            advice_preference=profile_data.get("advice_preference"),
+            primary_support_need=profile_data.get("primary_support_need"),
             student_year=profile_data.get("student_year"),
             communication_style=profile_data.get("communication_style"),
             interests=profile_data.get("interests") or [],
@@ -67,7 +71,11 @@ class ProfileService:
             return await self.create_profile(db, user_id, profile_data)
 
         # Standard field mapping
-        string_fields = ["name", "age", "profession", "student_year", "communication_style", "support_system", "sleep_habits"]
+        string_fields = [
+            "name", "age", "profession", "field_of_work", "current_challenge", 
+            "advice_preference", "primary_support_need", "student_year", 
+            "communication_style", "support_system", "sleep_habits"
+        ]
         list_fields = ["interests", "hobbies", "goals", "stress_triggers", "coping_mechanisms"]
 
         for field in string_fields:
@@ -103,6 +111,14 @@ class ProfileService:
             lines.append(f"Age: {profile.age}")
         if profile.profession:
             lines.append(f"Profession: {profile.profession}")
+        if profile.field_of_work:
+            lines.append(f"Field of Work/Study: {profile.field_of_work}")
+        if profile.current_challenge:
+            lines.append(f"Current Challenge: {profile.current_challenge}")
+        if profile.advice_preference:
+            lines.append(f"Advice Preference: {profile.advice_preference}")
+        if profile.primary_support_need:
+            lines.append(f"Primary Support Need: {profile.primary_support_need}")
         if profile.student_year and profile.student_year.lower() != "n/a":
             lines.append(f"Student Year: {profile.student_year}")
         if profile.communication_style:

@@ -128,25 +128,34 @@ class PersonalizationTestCase(unittest.IsolatedAsyncioTestCase):
         ]
         mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        # Answer stage 3 (Profession) as College Student
+        # Answer stage 1 (Profession) as College Student
         success = await onboarding_service.parse_and_save_answer(
-            self.db, self.user, self.profile, 3, "I am a college student"
+            self.db, self.user, self.profile, 1, "I am a college student"
         )
         self.assertTrue(success)
         
-        # Verify onboarding stage is advanced to 4
+        # Verify onboarding stage is advanced to 2
         await self.db.refresh(self.profile)
-        self.assertEqual(self.profile.personality_profile["onboarding_stage"], 4)
+        self.assertEqual(self.profile.personality_profile["onboarding_stage"], 2)
 
         # Verify UserPersonalProfile was updated with profession
         personal_profile = await profile_service.get_profile(self.db, self.user_id)
         self.assertEqual(personal_profile.profession, "College Student")
-        # student_year should not be N/A yet
-        self.assertNotEqual(personal_profile.student_year, "N/A")
+
+        # Answer stage 7 (Age)
+        mock_response.choices = [MagicMock(message=MagicMock(content='{"age": "20"}'))]
+        success = await onboarding_service.parse_and_save_answer(
+            self.db, self.user, self.profile, 7, "I am 20 years old"
+        )
+        self.assertTrue(success)
+        
+        # Verify stage 7 (Age) redirects to 9 (Student Year) for students, skipping 8
+        await self.db.refresh(self.profile)
+        self.assertEqual(self.profile.personality_profile["onboarding_stage"], 9)
 
     @patch("app.services.onboarding_service.get_chat_client")
     async def test_onboarding_non_student_skip_flow(self, mock_get_client):
-        """Verify non-student onboarding skips stage 4 (student_year) and advances to stage 5."""
+        """Verify non-student onboarding skips stage 8 and student_year (stage 9) and advances to stage 10."""
         # Setup mock LLM response
         mock_response = MagicMock()
         mock_response.choices = [
@@ -154,20 +163,26 @@ class PersonalizationTestCase(unittest.IsolatedAsyncioTestCase):
         ]
         mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        # Answer stage 3 (Profession) as Working Professional
+        # Answer stage 1 (Profession) as Working Professional
         success = await onboarding_service.parse_and_save_answer(
-            self.db, self.user, self.profile, 3, "I am a software engineer"
+            self.db, self.user, self.profile, 1, "I am a software engineer"
         )
         self.assertTrue(success)
         
-        # Verify onboarding stage is advanced directly to 5 (skipping 4)
+        # Verify onboarding stage is advanced to 2
         await self.db.refresh(self.profile)
-        self.assertEqual(self.profile.personality_profile["onboarding_stage"], 5)
+        self.assertEqual(self.profile.personality_profile["onboarding_stage"], 2)
 
-        # Verify UserPersonalProfile was updated with profession and student_year set to N/A
-        personal_profile = await profile_service.get_profile(self.db, self.user_id)
-        self.assertEqual(personal_profile.profession, "Working Professional")
-        self.assertEqual(personal_profile.student_year, "N/A")
+        # Answer stage 7 (Age)
+        mock_response.choices = [MagicMock(message=MagicMock(content='{"age": "28"}'))]
+        success = await onboarding_service.parse_and_save_answer(
+            self.db, self.user, self.profile, 7, "I am 28"
+        )
+        self.assertTrue(success)
+        
+        # Verify stage 7 (Age) redirects directly to 10 (Interests) for non-students, skipping 8 and 9
+        await self.db.refresh(self.profile)
+        self.assertEqual(self.profile.personality_profile["onboarding_stage"], 10)
 
     def test_response_orchestrator_personalization_rules(self):
         """Verify build_final_prompt correctly formats the prompt and includes personalization rules."""
@@ -198,7 +213,7 @@ class PersonalizationTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Name: Sdr", prompt)
         self.assertIn("Profession: College Student", prompt)
         self.assertIn("PERSONALIZATION RULES:", prompt)
-        self.assertIn("communication style is Friendly Friend, use casual supportive language", prompt)
+        self.assertIn("If 'Friendly and Casual': keep it warm, relaxed, and talk like a close friend", prompt)
 
     def test_emotion_context_injection(self):
         """Verify build_final_prompt correctly formats and injects emotion context."""

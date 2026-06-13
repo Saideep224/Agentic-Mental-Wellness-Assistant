@@ -18,26 +18,31 @@ router = APIRouter(prefix="/api/onboarding", tags=["Onboarding"])
 
 
 QUESTION_TEXT_BY_ID = {
-    1: "After a tiring day, what do you usually do?",
-    2: "Which line sounds most like you?",
-    3: "What drains your energy the most?",
-    4: "How do you usually text when you're upset?",
-    5: "Your mind's default mode lately?",
-    6: "What keeps your mind busy at night?",
-    7: "What do you do first when stressed?",
-    8: "What affects your mood the fastest?",
-    9: "How often do you feel mentally exhausted?",
-    10: "If your emotions were weather lately, they'd be...",
-    11: "What helps you escape reality?",
-    12: "What content do you connect with most?",
-    13: "Where do you feel safest emotionally?",
-    14: "Which hobby feels most 'you'?",
-    15: "What usually improves your mood fastest?",
-    16: "How should this AI talk to you?",
-    17: "What type of replies annoy you most?",
-    18: "When emotionally low, what helps more?",
-    19: "Your social battery lately?",
-    20: "What do you wish people understood about you?",
+    1: "What is your profession or current occupation?",
+    2: "What field are you studying or working in?",
+    3: "What is the biggest challenge you are currently facing?",
+    4: "How do you prefer to receive advice?",
+    5: "What would you like me to help you with the most?",
+    6: "After a tiring day, what do you usually do?",
+    7: "Which line sounds most like you?",
+    8: "What drains your energy the most?",
+    9: "How do you usually text when you're upset?",
+    10: "Your mind's default mode lately?",
+    11: "What keeps your mind busy at night?",
+    12: "What do you do first when stressed?",
+    13: "What affects your mood the fastest?",
+    14: "How often do you feel mentally exhausted?",
+    15: "If your emotions were weather lately, they'd be...",
+    16: "What helps you escape reality?",
+    17: "What content do you connect with most?",
+    18: "Where do you feel safest emotionally?",
+    19: "Which hobby feels most 'you'?",
+    20: "What usually improves your mood fastest?",
+    21: "How should this AI talk to you?",
+    22: "What type of replies annoy you most?",
+    23: "When emotionally low, what helps more?",
+    24: "Your social battery lately?",
+    25: "What do you wish people understood about you?",
 }
 
 
@@ -123,6 +128,29 @@ async def save_onboarding_answer(
         db.add(db_ans)
 
     await db.flush()
+
+    # Live save to UserPersonalProfile if it is one of the first 5 background questions
+    val = None
+    if answer.custom_answer and answer.custom_answer.strip():
+        val = answer.custom_answer.strip()
+    elif answer.selected_answers:
+        val = answer.selected_answers[0]
+        if val == "other" and answer.custom_answer:
+            val = answer.custom_answer
+            
+    if val and answer.question_id in (1, 2, 3, 4, 5):
+        from app.services.profile_service import profile_service
+        profile_map = {
+            1: "profession",
+            2: "field_of_work",
+            3: "current_challenge",
+            4: "advice_preference",
+            5: "primary_support_need"
+        }
+        field_name = profile_map[answer.question_id]
+        await profile_service.update_profile(db, current_user.id, {field_name: val})
+        await db.flush()
+
     await db.commit()
     return {"message": "Answer saved live."}
 
@@ -135,14 +163,14 @@ async def submit_onboarding(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Accept 20 questions with selected answers, store them in the DB,
+    Accept 25 questions with selected answers, store them in the DB,
     and trigger the background process to analyze them and create the initial EmotionalProfile.
     """
-    # 1. Validation check (must be exactly 20 answers)
-    if len(body.answers) != 20:
+    # 1. Validation check (must be exactly 25 answers)
+    if len(body.answers) != 25:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Expected exactly 20 answers, got {len(body.answers)}",
+            detail=f"Expected exactly 25 answers, got {len(body.answers)}",
         )
 
     # 2. Upsert responses so edits update existing answers without duplicates.
@@ -179,6 +207,34 @@ async def submit_onboarding(
             "selected_answers": ans.selected_answers,
             "custom_answer": ans.custom_answer,
         })
+
+    # Extract background values for UserPersonalProfile
+    profile_updates = {}
+    for ans in body.answers:
+        val = None
+        if ans.custom_answer and ans.custom_answer.strip():
+            val = ans.custom_answer.strip()
+        elif ans.selected_answers:
+            val = ans.selected_answers[0]
+            if val == "other" and ans.custom_answer:
+                val = ans.custom_answer
+
+        if val:
+            if ans.question_id == 1:
+                profile_updates["profession"] = val
+            elif ans.question_id == 2:
+                profile_updates["field_of_work"] = val
+            elif ans.question_id == 3:
+                profile_updates["current_challenge"] = val
+            elif ans.question_id == 4:
+                profile_updates["advice_preference"] = val
+            elif ans.question_id == 5:
+                profile_updates["primary_support_need"] = val
+
+    if profile_updates:
+        from app.services.profile_service import profile_service
+        await profile_service.update_profile(db, current_user.id, profile_updates)
+        await db.flush()
 
     # Mark user onboarding as complete on User table (profiles)
     current_user.onboarding_completed = True

@@ -13,13 +13,20 @@ import { getToken, submitOnboarding, getOnboardingAnswers, upsertQuestionAnswers
 import { useAuth } from '@/providers/AuthProvider';
 
 const CATEGORIES = [
-  { id: 'personality', label: 'Personality & Behavior', emoji: '🧠', color: 'cyan', range: [1, 5] },
-  { id: 'emotion', label: 'Emotional State & Stress', emoji: '💭', color: 'purple', range: [6, 10] },
-  { id: 'hobbies', label: 'Hobbies & Comfort Zone', emoji: '🌿', color: 'emerald', range: [11, 15] },
-  { id: 'communication', label: 'Communication & Preferences', emoji: '💬', color: 'pink', range: [16, 20] },
+  { id: 'background', label: 'About You', emoji: '👤', color: 'blue', range: [1, 5] },
+  { id: 'personality', label: 'Personality & Behavior', emoji: '🧠', color: 'cyan', range: [6, 10] },
+  { id: 'emotion', label: 'Emotional State & Stress', emoji: '💭', color: 'purple', range: [11, 15] },
+  { id: 'hobbies', label: 'Hobbies & Comfort Zone', emoji: '🌿', color: 'emerald', range: [16, 20] },
+  { id: 'communication', label: 'Communication & Preferences', emoji: '💬', color: 'pink', range: [21, 25] },
 ];
 
 const COLOR_MAP: Record<string, { border: string; glow: string; bg: string; text: string }> = {
+  blue: {
+    border: 'rgba(59, 130, 246, 0.25)',
+    glow: '0 0 20px rgba(59, 130, 246, 0.1)',
+    bg: 'rgba(59, 130, 246, 0.04)',
+    text: 'rgb(59, 130, 246)',
+  },
   cyan: {
     border: 'rgba(56, 189, 248, 0.25)',
     glow: '0 0 20px rgba(56, 189, 248, 0.1)',

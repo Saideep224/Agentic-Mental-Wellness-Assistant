@@ -123,6 +123,10 @@ class ResponseOrchestrator:
 
         user_age = personality_profile.get("age") or "Not specified"
         user_profession = personality_profile.get("profession") or "Not specified"
+        user_field_of_work = personality_profile.get("field_of_work") or "Not specified"
+        user_current_challenge = personality_profile.get("current_challenge") or "Not specified"
+        user_advice_preference = personality_profile.get("advice_preference") or "Not specified"
+        user_primary_support_need = personality_profile.get("primary_support_need") or "Not specified"
         
         # Extract interests, goals, stress triggers
         interests_val = personality_profile.get("interests") or []
@@ -142,6 +146,10 @@ class ResponseOrchestrator:
         profile_details = (
             f"- Age: {user_age}\n"
             f"- Profession: {user_profession}\n"
+            f"- Field of Work/Study: {user_field_of_work}\n"
+            f"- Current Challenge: {user_current_challenge}\n"
+            f"- Advice Preference: {user_advice_preference}\n"
+            f"- Primary Support Need: {user_primary_support_need}\n"
             f"- Preferred Communication Style: {pref_style}\n"
             f"- Interests/Hobbies: {', '.join(interests_list) if interests_list else 'None specified'}\n"
             f"- Current Goals: {', '.join(goals_val) if goals_val else 'None specified'}\n"
@@ -199,9 +207,15 @@ CURRENT USER PROFILE DETAILS (LEGACY):
 =================================================
 PERSONALIZATION RULES:
 1. Use the User Profile details naturally and contextually. Avoid listing facts back to the user or sounding clinical or repeatedly mentioning profile details. Use them only when relevant.
-2. If the user is a student (School/College Student), understand and reference academic terms like exams, classes, and placements contextually. If they are a working professional, adapt to work-related stressors.
-3. If their communication style is Friendly Friend, use casual supportive language. If Supportive Listener, focus on empathy and validation without pushing solutions. If Motivational Coach, focus on goals and small steps. If Direct and Honest, be straightforward and practical.
-4. Adapt your support based on their listed stress triggers, coping mechanisms, support system, and sleep habits. For example, if they are stressed by exams, reference that naturally, and suggest their preferred coping mechanisms (e.g. listening to music, talking to support system) when appropriate.
+2. If the user is a student (School/College Student), understand and reference academic terms like exams, classes, and placements contextually. Tailor it to their Field of Work/Study (e.g. Computer Science, Engineering) if relevant.
+3. Personalize your support strategy based on their Current Challenge (e.g. Placements, Studies, Relationships, Financial Issues) and Primary Support Need (e.g. Emotional Support, Stress Management, Productivity, Daily Check-ins). If the user states a general concern ("I am worried"), understand it may be connected to their challenge (like Placements or Studies) and address it contextually.
+4. Adapt your advice style to their Advice Preference:
+   - If 'Direct and Honest': be straightforward, practical, and give honest feedback.
+   - If 'Friendly and Casual': keep it warm, relaxed, and talk like a close friend.
+   - If 'Motivational': focus on positive energy, action, and breaking down goals.
+   - If 'Detailed Explanations': provide deep context, clear logic, and explanations.
+   - If 'Mostly Listening, Less Advice': focus on active listening and validation, and do not offer unsolicited advice.
+5. Adapt your support based on their listed stress triggers, coping mechanisms, support system, and sleep habits. Suggest their preferred coping mechanisms naturally when appropriate.
 
 COMMUNICATION STYLE DIRECTION:
 {style_instructions}

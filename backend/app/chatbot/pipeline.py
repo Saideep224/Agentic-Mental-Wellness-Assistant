@@ -309,12 +309,43 @@ async def memory_agent_node(state: AgentState) -> dict:
         graph_relationships = [f"- {r.subject} -> {r.predicate} -> {r.object}" for r in rels]
     except Exception as kg_retrieve_err:
         logger.error(f"Failed to retrieve knowledge graph relations: {kg_retrieve_err}", exc_info=True)
-        
+
+    # Build Personal Comfort Kit when a negative emotion is detected
+    comfort_kit_dict = {}
+    detected_emotion = state.get("detected_emotion", "Neutral")
+    try:
+        from app.services.recommendation_service import recommendation_service
+        if detected_emotion.lower() in recommendation_service.NEGATIVE_EMOTIONS:
+            personality_profile = state.get("emotional_profile", {}).get("personality_profile", {})
+            kit = await recommendation_service.build_comfort_kit(
+                db=db,
+                user_id=user_id,
+                detected_emotion=detected_emotion,
+                graph_relationships=graph_relationships,
+                personality_profile=personality_profile,
+            )
+            comfort_kit_dict = {
+                "emotional_trigger": kit.emotional_trigger,
+                "interests": kit.interests,
+                "hobbies": kit.hobbies,
+                "coping_activities": kit.coping_activities,
+                "comfort_environment": kit.comfort_environment,
+                "activity_suggestions": kit.activity_suggestions,
+                "is_empty": kit.is_empty,
+            }
+    except Exception as rec_err:
+        logger.warning(f"[RecommendationService] Failed to build comfort kit: {rec_err}")
+
     finally:
         if close_db:
             await db.close()
 
-    return {"memories": retrieved_memories, "graph_relationships": graph_relationships, "emotional_patterns": patterns}
+    return {
+        "memories": retrieved_memories,
+        "graph_relationships": graph_relationships,
+        "emotional_patterns": patterns,
+        "comfort_kit": comfort_kit_dict,
+    }
 
 
 # ── 3. Response Agent ─────────────────────────────────────────
@@ -372,7 +403,8 @@ async def response_agent_node(state: AgentState) -> dict:
         profile_context=profile_context,
         detected_emotion=state.get("detected_emotion", "Neutral"),
         detected_emotion_confidence=state.get("detected_emotion_confidence", 1.0),
-        graph_relationships=state.get("graph_relationships", [])
+        graph_relationships=state.get("graph_relationships", []),
+        comfort_kit=state.get("comfort_kit", {}),
     )
 
     # Prompt Summary for Live Debug Panel
@@ -492,6 +524,7 @@ async def run_agent_graph(
         "context_analysis": {},
         "memories": [],
         "recommendations": [],
+        "comfort_kit": {},
         "response": "",
         "mood_score": 0.5,
         "detected_emotion": "neutral",

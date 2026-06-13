@@ -28,6 +28,7 @@ class AgentState(TypedDict, total=False):
     graph_relationships: list[str]
     emotional_patterns: dict
     recommendations: list[str]
+    comfort_kit: dict
     response: str
     mood_score: float
     detected_emotion: str

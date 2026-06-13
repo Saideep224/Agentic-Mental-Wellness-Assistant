@@ -77,7 +77,8 @@ class ResponseOrchestrator:
         profile_context: str = "",
         detected_emotion: str = "Neutral",
         detected_emotion_confidence: float = 1.0,
-        graph_relationships: List[str] = None
+        graph_relationships: List[str] = None,
+        comfort_kit: Dict[str, Any] = None,
     ) -> str:
         """
         Assemble the highly tailored system prompt for Gemini based on orchestrated data.
@@ -178,6 +179,24 @@ class ResponseOrchestrator:
         else:
             graph_str = "No structured graph relationships found."
 
+        # Format Personal Comfort Kit block (only injected for negative emotions)
+        comfort_kit_block = ""
+        if comfort_kit and not comfort_kit.get("is_empty", True):
+            try:
+                from app.services.recommendation_service import recommendation_service, ComfortKit
+                kit_obj = ComfortKit(
+                    emotional_trigger=comfort_kit.get("emotional_trigger", ""),
+                    interests=comfort_kit.get("interests", []),
+                    hobbies=comfort_kit.get("hobbies", []),
+                    coping_activities=comfort_kit.get("coping_activities", []),
+                    comfort_environment=comfort_kit.get("comfort_environment", ""),
+                    activity_suggestions=comfort_kit.get("activity_suggestions", []),
+                    is_empty=comfort_kit.get("is_empty", True),
+                )
+                comfort_kit_block = recommendation_service.format_kit_for_prompt(kit_obj)
+            except Exception:
+                comfort_kit_block = ""
+
         # Format emotion context block
         emotion_context_str = json.dumps({
             "emotion": detected_emotion.lower(),
@@ -196,6 +215,7 @@ EMOTION CONTEXT:
 KNOWLEDGE GRAPH RELATIONSHIPS:
 {graph_str}
 =================================================
+{comfort_kit_block}
 CURRENT USER PROFILE DETAILS (LEGACY):
 - Name: {user_name}
 {profile_details}

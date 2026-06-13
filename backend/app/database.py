@@ -69,6 +69,9 @@ if settings.is_postgres:
     connect_args["ssl"] = True
     engine_kwargs["pool_size"] = 10
     engine_kwargs["max_overflow"] = 20
+else:
+    # SQLite parameters for concurrent write resiliency
+    connect_args["timeout"] = 30
 
 # ── Engine ────────────────────────────────────────────────────
 engine = create_async_engine(
@@ -76,6 +79,21 @@ engine = create_async_engine(
     connect_args=connect_args,
     **engine_kwargs,
 )
+
+# ── SQLite WAL Mode & Synchronous Normal setup ────────────────
+from sqlalchemy import event
+
+@event.listens_for(engine.sync_engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    if not settings.is_postgres:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.execute("PRAGMA synchronous=NORMAL;")
+        except Exception as e:
+            logger.warning(f"Failed to set SQLite PRAGMA journal_mode/synchronous: {e}")
+        finally:
+            cursor.close()
 
 # ── Session factory ───────────────────────────────────────────
 async_session_maker = async_sessionmaker(

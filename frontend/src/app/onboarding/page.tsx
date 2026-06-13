@@ -48,7 +48,9 @@ export default function OnboardingPage() {
   // Check auth and onboarding status
   useEffect(() => {
     const token = getToken();
+    console.log('[LOG] [OnboardingPage StatusCheck] hasToken:', !!token);
     if (!token) {
+      console.log('[LOG] [OnboardingPage StatusCheck] Redirecting to /login due to missing token');
       router.push('/login');
       return;
     }
@@ -56,23 +58,32 @@ export default function OnboardingPage() {
     const checkStatus = async () => {
       // First check local storage
       const user = getStoredUser();
+      if (user) {
+        console.log('[LOG] [OnboardingPage StatusCheck] storedUser found:', user.email, 'onboardingCompleted:', user.onboardingCompleted);
+      } else {
+        console.log('[LOG] [OnboardingPage StatusCheck] no storedUser found');
+      }
       if (user && user.onboardingCompleted) {
+        console.log('[LOG] [OnboardingPage StatusCheck] Redirecting to /chat because onboarding is marked complete locally');
         router.push('/chat');
         return;
       }
 
       // Double-check with backend
       try {
+        console.log('[LOG] [OnboardingPage StatusCheck] Verifying onboarding status with backend...');
         const status = await getOnboardingStatus(token);
+        console.log('[LOG] [OnboardingPage StatusCheck] Backend onboarding status returned:', status);
         if (status.completed) {
           if (user) {
             user.onboardingCompleted = true;
             setStoredUser(user);
           }
+          console.log('[LOG] [OnboardingPage StatusCheck] Redirecting to /chat because backend status.completed is true');
           router.push('/chat');
         }
       } catch (err) {
-        console.error('Failed to check onboarding status:', err);
+        console.error('[LOG] [OnboardingPage StatusCheck] Failed to check onboarding status:', err);
       }
     };
 
@@ -81,8 +92,11 @@ export default function OnboardingPage() {
 
   // Redirect after completion
   useEffect(() => {
+    console.log('[LOG] [OnboardingPage CompletionEffect] isComplete:', isComplete);
     if (isComplete) {
+      console.log('[LOG] [OnboardingPage CompletionEffect] Setting timer for /chat redirect (4000ms)');
       const timer = setTimeout(() => {
+        console.log('[LOG] [OnboardingPage CompletionEffect] Timer fired. Redirecting to /chat');
         router.push('/chat');
       }, 4000);
       return () => clearTimeout(timer);

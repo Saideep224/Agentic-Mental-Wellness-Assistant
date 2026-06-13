@@ -122,29 +122,38 @@ export function useOnboarding() {
   }, [saveProgress]);
 
   const handleSubmit = useCallback(async (allResponses: OnboardingResponse[]) => {
+    console.log('[LOG] Onboarding completed clicked (handleSubmit started), responses count:', allResponses.length);
     setIsSubmitting(true);
     setError(null);
 
     try {
       const token = api.getToken();
       if (!token) {
+        console.warn('[LOG] Onboarding submit failed: no token found');
         setError('Not authenticated');
         setIsSubmitting(false);
         return;
       }
 
+      console.log('[LOG] Saving onboarding answers directly to Supabase...');
       await api.upsertQuestionAnswersToSupabase(
         allResponses.map((response) => ({
           ...response,
           questionText: questions.find((question) => question.id === response.questionId)?.text || '',
         }))
       );
+      console.log('[LOG] Profile & answers successfully saved in Supabase');
+
+      console.log('[LOG] Submitting onboarding answers to backend...');
       await api.submitOnboarding(allResponses, token);
+      console.log('[LOG] Backend onboarding submit request succeeded');
 
       // Update onboarding_completed in Supabase profiles table & user metadata
       try {
+        console.log('[LOG] Fetching Supabase user for metadata update...');
         const { data: { user: supabaseUser } } = await supabase.auth.getUser();
         if (supabaseUser) {
+          console.log('[LOG] Updating onboarding_completed to true in Supabase profiles table for:', supabaseUser.id);
           // Update profiles table
           const { error: updateErr } = await supabase
             .from('profiles')
@@ -172,16 +181,20 @@ export function useOnboarding() {
 
       // Clear onboarding progress from local storage
       if (typeof window !== 'undefined') {
+        console.log('[LOG] Clearing onboarding progress from localStorage...');
         localStorage.removeItem('esona_onboarding_index');
         localStorage.removeItem('esona_onboarding_responses');
       }
 
       // Update stored user and trigger reactiveness
+      console.log('[LOG] Refreshing user details in Auth context...');
       await refreshUser();
+      console.log('[LOG] refreshUser successfully finished in handleSubmit');
 
+      console.log('[LOG] Setting isComplete to true (triggering success screen)');
       setIsComplete(true);
     } catch (err: any) {
-      console.error('Onboarding submission failed:', err);
+      console.error('[LOG] Onboarding submission failed with exception:', err);
       const errMsg = err instanceof Error ? err.message : '';
       const isUserNotFound = 
         errMsg.includes('user_not_found') || 
@@ -190,15 +203,17 @@ export function useOnboarding() {
         errMsg.includes('403');
 
       if (isUserNotFound) {
-        console.warn('[Onboarding] User not found or invalid session. Clearing auth and redirecting...');
+        console.warn('[LOG] User not found or invalid session (403/user_not_found). Clearing auth and redirecting...');
         api.clearAuth();
         if (typeof window !== 'undefined') {
+          console.log('[LOG] Redirecting to /login due to stale session');
           window.location.href = '/login';
         }
         return;
       }
 
       if (errMsg.includes('Onboarding already completed')) {
+        console.log('[LOG] Onboarding already completed. Grabbing fresh user and marking complete...');
         // Update stored user and mark complete gracefully
         await refreshUser();
         setIsComplete(true);

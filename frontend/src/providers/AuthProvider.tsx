@@ -92,9 +92,24 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           setTokenState(null);
           setUser(null);
         }
-      } catch (err) {
-        console.warn('[AuthProvider] Session restoration error:', err);
-        await handleInvalidSession();
+      } catch (err: any) {
+        console.warn('[LOG] [AuthProvider initAuth] Session restoration error:', err);
+        const errMsg = err?.message || String(err);
+        const isAuthError = 
+          errMsg.includes('401') || 
+          errMsg.includes('403') || 
+          errMsg.includes('user_not_found') || 
+          errMsg.includes('sub claim') || 
+          errMsg.includes('does not exist') ||
+          errMsg.includes('unauthorized') ||
+          errMsg.includes('not authenticated');
+          
+        if (isAuthError) {
+          console.warn('[LOG] [AuthProvider initAuth] Explicit auth error. Clearing session...');
+          await handleInvalidSession();
+        } else {
+          console.warn('[LOG] [AuthProvider initAuth] Transient or server error. Retaining local session.');
+        }
       } finally {
         setIsLoading(false);
       }
@@ -104,21 +119,39 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
     // Set up auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[AuthProvider] onAuthStateChange event:', event);
+      console.log('[LOG] [onAuthStateChange] event:', event, 'hasSession:', !!session);
       if (session) {
         const jwtToken = session.access_token;
         setTokenState(jwtToken);
         localStorage.setItem('esona_token', jwtToken);
+        console.log('[LOG] [onAuthStateChange] Stored new token. Syncing profile via getMe...');
         
         try {
           const freshUser = await getMe(jwtToken);
+          console.log('[LOG] [onAuthStateChange] getMe success for:', freshUser.email, 'onboardingCompleted:', freshUser.onboardingCompleted);
           setUser(freshUser);
           localStorage.setItem('esona_user', JSON.stringify(freshUser));
-        } catch (err) {
-          console.error('[AuthProvider] Failed to sync profile on event:', err);
-          await handleInvalidSession();
+        } catch (err: any) {
+          console.error('[LOG] [onAuthStateChange] Failed to sync profile on event:', err);
+          const errMsg = err?.message || String(err);
+          const isAuthError = 
+            errMsg.includes('401') || 
+            errMsg.includes('403') || 
+            errMsg.includes('user_not_found') || 
+            errMsg.includes('sub claim') || 
+            errMsg.includes('does not exist') ||
+            errMsg.includes('unauthorized') ||
+            errMsg.includes('not authenticated');
+            
+          if (isAuthError) {
+            console.warn('[LOG] [onAuthStateChange] Explicit auth error. Clearing session...');
+            await handleInvalidSession();
+          } else {
+            console.warn('[LOG] [onAuthStateChange] Transient or server error. Retaining local session.');
+          }
         }
       } else {
+        console.log('[LOG] [onAuthStateChange] Session is null. Clearing auth state...');
         setTokenState(null);
         setUser(null);
         localStorage.removeItem('esona_token');
@@ -137,8 +170,14 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       const storedToken = localStorage.getItem('esona_token') || token;
       const storedUser = getStoredUser() || user;
 
+      console.log('[LOG] [AuthProvider Checks] pathname:', pathname, 'hasStoredToken:', !!storedToken, 'hasStoredUser:', !!storedUser);
+      if (storedUser) {
+        console.log('[LOG] [AuthProvider Checks] storedUser details -> email:', storedUser.email, 'onboardingCompleted:', storedUser.onboardingCompleted);
+      }
+
       if (!storedToken || !storedUser) {
         if (protectedRoutes.some(route => pathname.startsWith(route)) && pathname !== '/login') {
+          console.log('[LOG] [AuthProvider Checks] Redirecting to /login because storedToken or storedUser is missing');
           router.push('/login');
         }
       } else {
@@ -146,14 +185,17 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         
         if (pathname === '/' || pathname === '/login') {
           if (!hasCompletedOnboarding) {
+            console.log('[LOG] [AuthProvider Checks] Redirecting to /onboarding');
             router.push('/onboarding');
           } else {
+            console.log('[LOG] [AuthProvider Checks] Redirecting to /chat');
             router.push('/chat');
           }
         } else if (!hasCompletedOnboarding && (pathname.startsWith('/chat') || pathname.startsWith('/dashboard'))) {
-          console.log('[AuthProvider] Redirecting to onboarding...');
+          console.log('[LOG] [AuthProvider Checks] Redirecting to /onboarding because onboarding is incomplete');
           router.push('/onboarding');
         } else if (hasCompletedOnboarding && pathname === '/onboarding') {
+          console.log('[LOG] [AuthProvider Checks] Redirecting to /chat because onboarding is complete');
           router.push('/chat');
         }
       }
@@ -202,14 +244,19 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshUser = async () => {
+    console.log('[LOG] [refreshUser] triggered');
     const currentToken = token || localStorage.getItem('esona_token');
-    if (!currentToken) return;
+    if (!currentToken) {
+      console.warn('[LOG] [refreshUser] failed: currentToken is null');
+      return;
+    }
     try {
       const freshUser = await getMe(currentToken);
+      console.log('[LOG] [refreshUser] getMe success for:', freshUser.email, 'onboardingCompleted:', freshUser.onboardingCompleted);
       setUser(freshUser);
       localStorage.setItem('esona_user', JSON.stringify(freshUser));
     } catch (err) {
-      console.error('[AuthProvider] Failed to refresh user:', err);
+      console.error('[LOG] [refreshUser] Failed to refresh user:', err);
     }
   };
 

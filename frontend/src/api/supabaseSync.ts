@@ -122,15 +122,22 @@ async function ensureSupabaseProfile(user: NonNullable<Awaited<ReturnType<typeof
 export async function upsertQuestionAnswersToSupabase(
   responses: QuestionAnswerSaveInput[]
 ): Promise<void> {
+  console.log('[LOG] upsertQuestionAnswersToSupabase called, responses count:', responses.length);
   try {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError) {
-      console.error('[Supabase] Auth user lookup failed:', userError);
+      console.error('[LOG] [SupabaseSync] Auth user lookup failed:', userError);
       throw formatSupabaseError('Unable to verify your login session', userError);
     }
-    if (!user) throw new Error('You are not signed in. Please log in again before saving answers.');
+    if (!user) {
+      console.warn('[LOG] [SupabaseSync] No user session found');
+      throw new Error('You are not signed in. Please log in again before saving answers.');
+    }
+    console.log('[LOG] [SupabaseSync] User found in Supabase Auth:', user.id, user.email);
 
+    console.log('[LOG] [SupabaseSync] Ensuring profile exists in Supabase database...');
     await ensureSupabaseProfile(user);
+    console.log('[LOG] [SupabaseSync] ensureSupabaseProfile completed successfully');
 
     const rows = responses.map((response) => ({
       user_id: user.id,
@@ -142,20 +149,25 @@ export async function upsertQuestionAnswersToSupabase(
       updated_at: new Date().toISOString(),
     }));
 
+    console.log('[LOG] [SupabaseSync] Upserting user_question_answers in Supabase...');
     const { error } = await supabase
       .from('user_question_answers')
       .upsert(rows, { onConflict: 'user_id,question_id' });
 
     if (error) {
-      console.error('[Supabase] Knowing Me answer upsert failed:', {
+      console.error('[LOG] [SupabaseSync] Knowing Me answer upsert failed:', {
         error,
         attemptedRows: rows,
         userId: user.id,
       });
       throw formatSupabaseError('Failed to save your answers', error);
     }
+    console.log('[LOG] [SupabaseSync] user_question_answers upsert succeeded');
 
     const personalityProfile = derivePersonalityProfile(responses);
+    console.log('[LOG] [SupabaseSync] Derived personality profile:', personalityProfile);
+
+    console.log('[LOG] [SupabaseSync] Updating personality_profile and onboarding_completed in profiles table...');
     const { error: profileError } = await supabase
       .from('profiles')
       .update({
@@ -166,11 +178,13 @@ export async function upsertQuestionAnswersToSupabase(
       .eq('user_id', user.id);
 
     if (profileError) {
-      console.error('[Supabase] Personality profile update failed:', profileError);
+      console.error('[LOG] [SupabaseSync] Personality profile update failed:', profileError);
       throw formatSupabaseError('Answers saved, but profile personalization failed', profileError);
     }
+    console.log('[LOG] [SupabaseSync] Profiles update (personality profile + onboarding completed) succeeded');
   } catch (err: any) {
     const errMsg = err instanceof Error ? err.message : String(err);
+    console.error('[LOG] [SupabaseSync] Exception caught in upsertQuestionAnswersToSupabase:', errMsg);
     const isUserNotFound = 
       errMsg.includes('user_not_found') || 
       errMsg.includes('sub claim') || 
@@ -178,10 +192,11 @@ export async function upsertQuestionAnswersToSupabase(
       errMsg.includes('403');
     
     if (isUserNotFound) {
-      console.warn('[SupabaseSync] User not found or invalid session. Clearing auth and redirecting...', errMsg);
+      console.warn('[LOG] [SupabaseSync] User not found or invalid session. Clearing auth and redirecting...', errMsg);
       if (typeof window !== 'undefined') {
         const { clearAuth } = await import('./client');
         clearAuth();
+        console.log('[LOG] [SupabaseSync] Redirecting to /login due to 403/stale session');
         window.location.href = '/login';
       }
     }

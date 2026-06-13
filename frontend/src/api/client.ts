@@ -259,7 +259,7 @@ export async function apiPatch<T>(endpoint: string, body?: unknown, token?: stri
   return response.json();
 }
 
-export async function apiDelete(endpoint: string, token?: string | null): Promise<void> {
+export async function apiDelete<T = void>(endpoint: string, token?: string | null): Promise<T> {
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -286,6 +286,13 @@ export async function apiDelete(endpoint: string, token?: string | null): Promis
     const message = await parseError(response, errorData);
     throw new Error(message);
   }
+
+  // Return parsed JSON if content exists, otherwise undefined
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return response.json() as Promise<T>;
+  }
+  return undefined as unknown as T;
 }
 
 // ============================================

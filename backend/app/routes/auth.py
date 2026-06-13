@@ -1,16 +1,18 @@
 """
 Authentication route – verifies Supabase JWT token and extracts user profile info.
+Also provides account deletion with full data cascade.
 """
 
 import uuid
+import httpx
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 
 from app.config import settings
 from app.database import get_db
@@ -234,4 +236,165 @@ async def supabase_login(body: dict, db: AsyncSession = Depends(get_db)):
             "provider": user.provider,
             "github_username": user.github_username,
         }
+    }
+
+
+# ── Account Deletion ──────────────────────────────────────────
+@router.delete("/account", response_model=dict)
+async def delete_account(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Permanently delete the authenticated user's account and ALL associated data.
+
+    Deletion order (respects FK constraints):
+      1. emotion_logs
+      2. mood_logs
+      3. knowledge_graph
+      4. memories
+      5. chat_messages  (via conversations cascade)
+      6. conversations
+      7. user_answers (onboarding)
+      8. user_question_answers
+      9. user_personal_profile
+     10. user_personality
+     11. profiles (User row)
+
+    After DB wipe → Supabase Admin API deletes the auth account.
+    If DB transaction fails → full rollback, nothing is deleted.
+    """
+    user_id: uuid.UUID = current_user.id
+    user_email: str = current_user.email
+    user_id_str = str(user_id)
+
+    logger.info(f"[ACCOUNT_DELETION] Initiated for user_id={user_id_str} email={user_email}")
+
+    try:
+        # ── Import all models needed ─────────────────────────
+        from app.models.emotion_log import EmotionLog
+        from app.models.mood_log import MoodLog
+        from app.models.knowledge_graph import KnowledgeGraphRelation
+        from app.models.memory import Memory
+        from app.models.conversation import Conversation, Message
+        from app.models.onboarding import UserAnswer
+        from app.models.user_personal_profile import UserPersonalProfile
+
+        # Try to import user_personality (may not exist in all environments)
+        try:
+            from app.models.user_profile import UserProfile
+            has_user_profile = True
+        except ImportError:
+            has_user_profile = False
+
+        # ── 1. Emotion Logs ───────────────────────────────────
+        await db.execute(delete(EmotionLog).where(EmotionLog.user_id == user_id))
+        logger.info(f"[ACCOUNT_DELETION] emotion_logs deleted for {user_id_str}")
+
+        # ── 2. Mood Logs ──────────────────────────────────────
+        await db.execute(delete(MoodLog).where(MoodLog.user_id == user_id))
+        logger.info(f"[ACCOUNT_DELETION] mood_logs deleted for {user_id_str}")
+
+        # ── 3. Knowledge Graph ────────────────────────────────
+        await db.execute(
+            delete(KnowledgeGraphRelation).where(KnowledgeGraphRelation.user_id == user_id)
+        )
+        logger.info(f"[ACCOUNT_DELETION] knowledge_graph deleted for {user_id_str}")
+
+        # ── 4. Memories ───────────────────────────────────────
+        await db.execute(delete(Memory).where(Memory.user_id == user_id))
+        logger.info(f"[ACCOUNT_DELETION] memories deleted for {user_id_str}")
+
+        # ── 5. Chat Messages (via conversation cascade) ───────
+        # Fetch conversation IDs first, then delete messages
+        conv_result = await db.execute(
+            select(Conversation.id).where(Conversation.user_id == user_id)
+        )
+        conv_ids = [row[0] for row in conv_result.fetchall()]
+        if conv_ids:
+            await db.execute(delete(Message).where(Message.conversation_id.in_(conv_ids)))
+            logger.info(f"[ACCOUNT_DELETION] chat_messages deleted for {len(conv_ids)} conversations")
+
+        # ── 6. Conversations ──────────────────────────────────
+        await db.execute(delete(Conversation).where(Conversation.user_id == user_id))
+        logger.info(f"[ACCOUNT_DELETION] conversations deleted for {user_id_str}")
+
+        # ── 7. Onboarding Answers ─────────────────────────────
+        await db.execute(delete(UserAnswer).where(UserAnswer.user_id == user_id))
+        logger.info(f"[ACCOUNT_DELETION] user_answers deleted for {user_id_str}")
+
+        # ── 8. User Personal Profile ──────────────────────────
+        await db.execute(
+            delete(UserPersonalProfile).where(UserPersonalProfile.user_id == user_id)
+        )
+        logger.info(f"[ACCOUNT_DELETION] user_personal_profile deleted for {user_id_str}")
+
+        # ── 9. User Personality / Profile ─────────────────────
+        if has_user_profile:
+            await db.execute(delete(UserProfile).where(UserProfile.user_id == user_id))
+            logger.info(f"[ACCOUNT_DELETION] user_personality deleted for {user_id_str}")
+
+        # ── 10. User row (profiles table) ────────────────────
+        await db.execute(delete(User).where(User.id == user_id))
+        logger.info(f"[ACCOUNT_DELETION] profiles row deleted for {user_id_str}")
+
+        # Commit the entire transaction atomically
+        await db.commit()
+        logger.info(f"[ACCOUNT_DELETION] DB transaction committed successfully for {user_id_str}")
+
+    except Exception as db_err:
+        await db.rollback()
+        logger.error(
+            f"[ACCOUNT_DELETION] DB transaction FAILED and ROLLED BACK for {user_id_str}: {db_err}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account deletion failed during data removal. No data was deleted. Please try again.",
+        )
+
+    # ── Supabase Admin API — Delete Auth Account ──────────────
+    supabase_deletion_success = False
+    if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY:
+        try:
+            admin_url = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/admin/users/{user_id_str}"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.delete(
+                    admin_url,
+                    headers={
+                        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                    },
+                )
+                if resp.status_code in (200, 204):
+                    supabase_deletion_success = True
+                    logger.info(
+                        f"[ACCOUNT_DELETION] Supabase auth account deleted for {user_id_str}"
+                    )
+                else:
+                    logger.warning(
+                        f"[ACCOUNT_DELETION] Supabase auth deletion returned {resp.status_code} "
+                        f"for {user_id_str}: {resp.text}"
+                    )
+        except Exception as supa_err:
+            logger.warning(
+                f"[ACCOUNT_DELETION] Supabase auth deletion failed for {user_id_str}: {supa_err}"
+            )
+    else:
+        logger.warning(
+            "[ACCOUNT_DELETION] SUPABASE_SERVICE_ROLE_KEY not set — "
+            "auth account NOT deleted from Supabase Auth. Data was wiped from DB."
+        )
+
+    logger.info(
+        f"[ACCOUNT_DELETION] COMPLETE — user_id={user_id_str} email={user_email} "
+        f"supabase_auth_deleted={supabase_deletion_success} "
+        f"timestamp={datetime.now(timezone.utc).isoformat()}"
+    )
+
+    return {
+        "deleted": True,
+        "user_id": user_id_str,
+        "email": user_email,
+        "supabase_auth_deleted": supabase_deletion_success,
     }

@@ -387,20 +387,22 @@ export function useOnboarding() {
   }, [saveCurrentStepProgress, logout]);
 
   const saveAndContinueLater = useCallback(async () => {
+    console.log('[LOG] Save & Continue Later clicked. Saving step progress...');
     setIsSubmitting(true);
     try {
       await saveCurrentStepProgress();
       if (typeof window !== 'undefined') {
+        console.log('[LOG] Clearing local onboarding temporary variables and redirecting to /chat');
         localStorage.removeItem('esona_onboarding_index');
         localStorage.removeItem('esona_onboarding_responses');
+        window.location.href = '/chat';
       }
-      await logout();
     } catch (err) {
-      console.error('[Onboarding] Save & Continue Later failed:', err);
+      console.error('[LOG] Onboarding Save & Continue Later failed:', err);
     } finally {
       setIsSubmitting(false);
     }
-  }, [saveCurrentStepProgress, logout]);
+  }, [saveCurrentStepProgress]);
 
 
   return {

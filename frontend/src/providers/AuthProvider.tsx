@@ -191,9 +191,6 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
             console.log('[LOG] [AuthProvider Checks] Redirecting to /chat');
             router.push('/chat');
           }
-        } else if (!hasCompletedOnboarding && (pathname.startsWith('/chat') || pathname.startsWith('/dashboard'))) {
-          console.log('[LOG] [AuthProvider Checks] Redirecting to /onboarding because onboarding is incomplete');
-          router.push('/onboarding');
         } else if (hasCompletedOnboarding && pathname === '/onboarding') {
           console.log('[LOG] [AuthProvider Checks] Redirecting to /chat because onboarding is complete');
           router.push('/chat');

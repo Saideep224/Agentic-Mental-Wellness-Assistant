@@ -38,6 +38,21 @@ export default function DeleteAccountModal({ userEmail, onClose }: DeleteAccount
       const token = getToken();
       if (!token) throw new Error('No auth token found. Please refresh and try again.');
 
+      // ── SUPABASE DB CLEANUP (Wipes profiles and cascades related rows) ──
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        console.log('[DeleteAccountModal] Wiping user records from Supabase database...');
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .delete()
+          .eq('user_id', user.id);
+        if (profileError) {
+          console.warn('[DeleteAccountModal] Supabase profiles deletion failed, attempting delete by id:', profileError);
+          // Fallback delete by id
+          await supabase.from('profiles').delete().eq('id', user.id);
+        }
+      }
+
       await deleteAccount(token);
       setDeleted(true);
 

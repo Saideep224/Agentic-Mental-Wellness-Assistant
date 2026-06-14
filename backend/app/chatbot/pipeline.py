@@ -365,7 +365,9 @@ async def response_agent_node(state: AgentState) -> dict:
     profile_context = ""
     if db and user_id:
         from app.services.profile_service import profile_service
-        profile_context = await profile_service.build_profile_context(db, user_id)
+        legacy_context = await profile_service.build_profile_context(db, user_id)
+        personalization_block = await profile_service.build_personalization_prompt_block(db, user_id)
+        profile_context = f"{legacy_context}\n{personalization_block}"
 
     # If crisis is detected by the Safety Agent, override response strategy
     safety_data = state.get("safety_agent", {})

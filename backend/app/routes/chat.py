@@ -1181,7 +1181,9 @@ async def generate_first_message(
     interests_str = json.dumps(profile.get("interests", {}))
     
     from app.services.profile_service import profile_service
-    profile_context = await profile_service.build_profile_context(db, current_user.id)
+    legacy_context = await profile_service.build_profile_context(db, current_user.id)
+    personalization_block = await profile_service.build_personalization_prompt_block(db, current_user.id)
+    profile_context = f"{legacy_context}\n{personalization_block}"
     
     # Recent Mood logs
     mood_result = await db.execute(
@@ -1240,7 +1242,10 @@ BEHAVIOR & GREETING VARIATION RULES:
    - "Supportive Check-in": If recent mood logs show high stress/anxiety/sadness, check in on how they are feeling now.
    - "Continuation Check-in": If memories exist, reference a topic they discussed recently (e.g. studies, exams, sleep, a friend) naturally.
    - "Warm Opening": If there are no recent stress triggers or memories, greet them warmly, reference one of their interests, and ask how their day is going.
-4. You MUST split your response into 2 to 3 separate human-like thoughts using the delimiter " ||| " (with spaces around it).
+4. COZY CHAT START: Since the user has completed onboarding, greet them using their name and some of their profile/onboarding context naturally.
+   - For example: "Hey Sai 👋 I remember you're a college student. How's everything going today?" or "Hey Bob! How has work been lately?"
+   - Do NOT ask any onboarding or personalization questions in this initial greeting. Keep it warm and welcoming.
+5. You MUST split your response into 2 to 3 separate human-like thoughts using the delimiter " ||| " (with spaces around it).
 
 First Message:"""
 

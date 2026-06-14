@@ -235,3 +235,51 @@ class PersonalizationTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIn("EMOTION CONTEXT:", prompt)
         self.assertIn('"emotion": "anxiety"', prompt)
         self.assertIn('"confidence": 0.91', prompt)
+
+    async def test_missing_field_detection(self):
+        """Verify get_personalization_data consolidates information from all sources and identifies missing fields."""
+        # 1. Setup mock data: UserPersonalProfile has profession and student_year
+        profile_data = {
+            "name": "Sai",
+            "profession": "College Student",
+            "student_year": "2nd year",
+        }
+        await profile_service.create_profile(self.db, self.user_id, profile_data)
+        
+        # 2. Add some raw onboarding answers
+        from app.models.onboarding import UserAnswer
+        ans1 = UserAnswer(
+            user_id=self.user_id,
+            question_id=2,
+            question_text="What field are you studying?",
+            category="field_of_work",
+            selected_answers=[],
+            custom_answer="Computer Science"
+        )
+        self.db.add(ans1)
+        await self.db.commit()
+
+        # 3. Retrieve personalization data
+        p_data = await profile_service.get_personalization_data(self.db, self.user_id)
+        existing = p_data["existing"]
+        missing = p_data["missing"]
+
+        # Validate that populated values are correctly consolidated
+        self.assertEqual(existing.get("name"), "Sai")
+        self.assertEqual(existing.get("profession"), "College Student")
+        self.assertEqual(existing.get("student_year"), "2nd year")
+        self.assertEqual(existing.get("field_of_work"), "Computer Science")
+
+        # Validate that empty/missing fields are detected
+        self.assertIn("goals", missing)
+        self.assertIn("sleep_habits", missing)
+        self.assertNotIn("profession", missing)
+        self.assertNotIn("field_of_work", missing)
+
+        # 4. Validate personalization prompt block generation
+        block = await profile_service.build_personalization_prompt_block(self.db, self.user_id)
+        self.assertIn("Name: Sai", block)
+        self.assertIn("Profession: College Student", block)
+        self.assertIn("Field Of Work: Computer Science", block)
+        self.assertIn("goals (current goals)", block)
+        self.assertIn("CRITICAL PERSONALIZATION QUESTIONS RULES:", block)

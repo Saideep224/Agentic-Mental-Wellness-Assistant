@@ -140,6 +140,273 @@ class ProfileService:
 
         return "\n".join(lines)
 
+    async def get_personalization_data(self, db: AsyncSession, user_id: Union[uuid.UUID, str]) -> Dict[str, Any]:
+        """
+        Retrieve and consolidate personalization data from:
+        1. Onboarding answers (user_question_answers table / UserAnswer model)
+        2. Profile data (user_profile table / UserPersonalProfile model)
+        3. Personality data (user_personality table / UserProfile model)
+        
+        Performs Missing Field Detection to determine which fields are populated vs missing.
+        """
+        if isinstance(user_id, str):
+            user_id = uuid.UUID(user_id)
+
+        from app.models.user_personal_profile import UserPersonalProfile
+        from app.models.user_profile import UserProfile
+        from app.models.onboarding import UserAnswer
+        from app.models.user import User
+
+        # Fetch all sources
+        personal_profile = await self.get_profile(db, user_id)
+        
+        up_res = await db.execute(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )
+        user_personality = up_res.scalar_one_or_none()
+        
+        ua_res = await db.execute(
+            select(UserAnswer).where(UserAnswer.user_id == user_id)
+        )
+        onboarding_answers = ua_res.scalars().all()
+        
+        u_res = await db.execute(
+            select(User).where(User.id == user_id)
+        )
+        user_record = u_res.scalar_one_or_none()
+
+        data = {
+            "name": None,
+            "age": None,
+            "profession": None,
+            "field_of_work": None,
+            "current_challenge": None,
+            "advice_preference": None,
+            "primary_support_need": None,
+            "student_year": None,
+            "interests": [],
+            "goals": [],
+            "stress_triggers": [],
+            "coping_mechanisms": [],
+            "support_system": None,
+            "communication_style": None,
+            "sleep_habits": None,
+        }
+
+        # Helper to check if a value is empty/null/unspecified
+        def is_val_empty(val) -> bool:
+            if val is None:
+                return True
+            if isinstance(val, str):
+                v_clean = val.strip().lower()
+                return v_clean in ("", "not specified", "n/a", "none specified", "unknown", "none")
+            if isinstance(val, list):
+                return len(val) == 0
+            if isinstance(val, dict):
+                return len(val) == 0
+            return False
+
+        # 1. Populate from UserPersonalProfile (highest structured profile source)
+        if personal_profile:
+            if not is_val_empty(personal_profile.name): data["name"] = personal_profile.name
+            if not is_val_empty(personal_profile.age): data["age"] = personal_profile.age
+            if not is_val_empty(personal_profile.profession): data["profession"] = personal_profile.profession
+            if not is_val_empty(personal_profile.field_of_work): data["field_of_work"] = personal_profile.field_of_work
+            if not is_val_empty(personal_profile.current_challenge): data["current_challenge"] = personal_profile.current_challenge
+            if not is_val_empty(personal_profile.advice_preference): data["advice_preference"] = personal_profile.advice_preference
+            if not is_val_empty(personal_profile.primary_support_need): data["primary_support_need"] = personal_profile.primary_support_need
+            if not is_val_empty(personal_profile.student_year): data["student_year"] = personal_profile.student_year
+            if not is_val_empty(personal_profile.interests): data["interests"] = list(personal_profile.interests)
+            if not is_val_empty(personal_profile.hobbies):
+                for h in personal_profile.hobbies:
+                    if h not in data["interests"]:
+                        data["interests"].append(h)
+            if not is_val_empty(personal_profile.goals): data["goals"] = list(personal_profile.goals)
+            if not is_val_empty(personal_profile.stress_triggers): data["stress_triggers"] = list(personal_profile.stress_triggers)
+            if not is_val_empty(personal_profile.coping_mechanisms): data["coping_mechanisms"] = list(personal_profile.coping_mechanisms)
+            if not is_val_empty(personal_profile.support_system): data["support_system"] = personal_profile.support_system
+            if not is_val_empty(personal_profile.communication_style): data["communication_style"] = personal_profile.communication_style
+            if not is_val_empty(personal_profile.sleep_habits): data["sleep_habits"] = personal_profile.sleep_habits
+
+        # 2. Fallback to User record (for name)
+        if is_val_empty(data["name"]) and user_record and user_record.name:
+            data["name"] = user_record.name
+
+        # 3. Fallback to UserProfile (personality data)
+        if user_personality:
+            pers_profile = user_personality.personality_profile or {}
+            
+            if is_val_empty(data["communication_style"]):
+                if user_personality.communication_style and isinstance(user_personality.communication_style, dict):
+                    data["communication_style"] = user_personality.communication_style.get("preferred_style")
+                if is_val_empty(data["communication_style"]) and pers_profile.get("communication_style"):
+                    data["communication_style"] = pers_profile.get("communication_style")
+            
+            if is_val_empty(data["interests"]):
+                if user_personality.interests and isinstance(user_personality.interests, dict):
+                    data["interests"] = user_personality.interests.get("hobbies") or user_personality.interests.get("items") or []
+                if is_val_empty(data["interests"]) and pers_profile.get("interests"):
+                    data["interests"] = pers_profile.get("interests")
+
+            for key in ["profession", "field_of_work", "current_challenge", "advice_preference", "primary_support_need", "age", "student_year"]:
+                if is_val_empty(data[key]) and pers_profile.get(key):
+                    data[key] = pers_profile.get(key)
+                    
+            if is_val_empty(data["goals"]) and pers_profile.get("goals"):
+                data["goals"] = pers_profile.get("goals")
+            if is_val_empty(data["stress_triggers"]) and pers_profile.get("stress_triggers"):
+                data["stress_triggers"] = pers_profile.get("stress_triggers")
+
+        # 4. Fallback to Onboarding Answers
+        def get_answer_val(ans: UserAnswer):
+            if ans.selected_answers:
+                return ans.selected_answers
+            return ans.custom_answer or ""
+
+        for ans in onboarding_answers:
+            q_id = ans.question_id
+            val = get_answer_val(ans)
+            if not val or is_val_empty(val):
+                continue
+                
+            is_list_field = q_id in [10, 11, 12, 13]
+            if isinstance(val, list) and not is_list_field:
+                val = val[0] if val else ""
+            elif isinstance(val, str) and is_list_field:
+                val = [v.strip() for v in val.split(",") if v.strip()]
+
+            if q_id in [1, 8] and is_val_empty(data["profession"]):
+                data["profession"] = val
+            elif q_id == 2 and is_val_empty(data["field_of_work"]):
+                data["field_of_work"] = val
+            elif q_id == 3 and is_val_empty(data["current_challenge"]):
+                data["current_challenge"] = val
+            elif q_id == 4 and is_val_empty(data["advice_preference"]):
+                data["advice_preference"] = val
+            elif q_id == 5 and is_val_empty(data["primary_support_need"]):
+                data["primary_support_need"] = val
+            elif q_id == 6 and is_val_empty(data["name"]):
+                data["name"] = val
+            elif q_id == 7 and is_val_empty(data["age"]):
+                data["age"] = str(val)
+            elif q_id == 9 and is_val_empty(data["student_year"]):
+                data["student_year"] = val
+            elif q_id == 10 and is_val_empty(data["interests"]):
+                data["interests"] = val
+            elif q_id == 11 and is_val_empty(data["goals"]):
+                data["goals"] = val
+            elif q_id == 12 and is_val_empty(data["stress_triggers"]):
+                data["stress_triggers"] = val
+            elif q_id == 13 and is_val_empty(data["coping_mechanisms"]):
+                data["coping_mechanisms"] = val
+            elif q_id == 14 and is_val_empty(data["support_system"]):
+                data["support_system"] = val
+            elif q_id == 15 and is_val_empty(data["communication_style"]):
+                data["communication_style"] = val
+            elif q_id == 16 and is_val_empty(data["sleep_habits"]):
+                data["sleep_habits"] = val
+
+        # Clean list fields to ensure list type
+        for list_key in ["interests", "goals", "stress_triggers", "coping_mechanisms"]:
+            if not isinstance(data[list_key], list):
+                if data[list_key]:
+                    data[list_key] = [data[list_key]]
+                else:
+                    data[list_key] = []
+
+        # Split into existing vs missing
+        existing = {}
+        missing = []
+        for k, v in data.items():
+            if is_val_empty(v):
+                missing.append(k)
+            else:
+                existing[k] = v
+
+        return {
+            "existing": existing,
+            "missing": missing,
+            "raw": data
+        }
+
+    async def build_personalization_prompt_block(self, db: AsyncSession, user_id: Union[uuid.UUID, str]) -> str:
+        """
+        Builds a structured prompt context block representing known (existing) personalization fields
+        and empty (missing) fields, with instructions on how to use/ask them.
+        """
+        if isinstance(user_id, str):
+            user_id = uuid.UUID(user_id)
+
+        p_data = await self.get_personalization_data(db, user_id)
+        existing = p_data["existing"]
+        missing = p_data["missing"]
+        
+        # Format existing fields
+        existing_lines = []
+        for field, val in existing.items():
+            if isinstance(val, list):
+                val_str = ", ".join(val)
+            else:
+                val_str = str(val)
+            field_name = field.replace("_", " ").title()
+            existing_lines.append(f"- {field_name}: {val_str}")
+        existing_str = "\n".join(existing_lines) if existing_lines else "None recorded."
+
+        # Format missing fields descriptions
+        missing_descriptions = {
+            "name": "name or nickname",
+            "age": "age",
+            "profession": "profession/occupation (e.g. college student, developer)",
+            "field_of_work": "field of work or study (e.g. Computer Science, medicine)",
+            "current_challenge": "biggest challenge they are currently facing",
+            "advice_preference": "advice style preference (e.g. direct and honest, casual, mostly listening)",
+            "primary_support_need": "what they need support with the most",
+            "student_year": "student year (if they are a student)",
+            "interests": "interests and hobbies",
+            "goals": "current goals",
+            "stress_triggers": "what usually stresses them out",
+            "coping_mechanisms": "what helps them feel better when stressed",
+            "support_system": "who they usually talk to for support",
+            "communication_style": "preferred communication style",
+            "sleep_habits": "sleep quality/habits",
+        }
+
+        missing_lines = []
+        profession_val = existing.get("profession", "")
+        is_student = "student" in str(profession_val).lower()
+        
+        for m in missing:
+            if m == "student_year" and not is_student and profession_val:
+                continue
+            desc = missing_descriptions.get(m, m)
+            missing_lines.append(f"- {m} ({desc})")
+        missing_str = "\n".join(missing_lines) if missing_lines else "None (all fields are populated!)."
+
+        block = (
+            "\n=================================================\n"
+            "PERSONALIZATION CONTEXT & MISSING FIELD ROUTING:\n"
+            "Below is the user's personalization data collected from onboarding, profile, and memories.\n"
+            "\n"
+            "EXISTING INFORMATION (DO NOT ASK AGAIN under any circumstances):\n"
+            f"{existing_str}\n"
+            "\n"
+            "MISSING INFORMATION (Only fields you are allowed to ask about naturally, if relevant):\n"
+            f"{missing_str}\n"
+            "\n"
+            "CRITICAL PERSONALIZATION QUESTIONS RULES:\n"
+            "1. Check the 'EXISTING INFORMATION' list. If a field's value already exists, you are STRICTLY FORBIDDEN from asking about it again. Treat it as known. Use it naturally and conversationally.\n"
+            "2. If you need to build rapport or if the conversation naturally leads to it, you can ask about a field listed under 'MISSING INFORMATION'. Only ask one question at a time, and never force it.\n"
+            "3. DO NOT use dry, robotic templates to ask questions. Keep it highly conversational, natural, and human-like.\n"
+            "   - FORBIDDEN style: 'What is your profession?', 'What field are you studying?', 'What is your age?', 'What are your goals?'\n"
+            "   - ALLOWED natural style examples:\n"
+            "     * 'By the way, what are you studying these days?'\n"
+            "     * 'What kind of work do you do?'\n"
+            "     * 'What's been keeping you busy lately?'\n"
+            "     * 'I remember you're a college student. What field are you studying?' (referencing known info to ask missing field)\n"
+            "=================================================\n"
+        )
+        return block
+
 
 # Export standard singleton
 profile_service = ProfileService()

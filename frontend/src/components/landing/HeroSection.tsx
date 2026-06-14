@@ -1,9 +1,29 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
+import InteractiveTorch from './InteractiveTorch';
 
 export default function HeroSection() {
+  const [torchState, setTorchState] = useState<'unlit' | 'lighting' | 'revealing_text' | 'revealed_cta'>('unlit');
+
+  const handleLightTorch = () => {
+    if (torchState !== 'unlit') return;
+    
+    setTorchState('lighting');
+    
+    // Wait for torch glow to expand
+    setTimeout(() => {
+      setTorchState('revealing_text');
+      
+      // Wait for text to finish reading
+      setTimeout(() => {
+        setTorchState('revealed_cta');
+      }, 1500);
+    }, 1000);
+  };
+
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-24 sm:pt-0 overflow-hidden">
       {/* Atmospheric glow behind hero content */}
@@ -21,8 +41,14 @@ export default function HeroSection() {
           initial={{ opacity: 0, y: 30, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.8, ease: 'easeOut' as const }}
-          className="text-7xl sm:text-8xl md:text-9xl font-bold mb-3 glow-text"
-          style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
+          className="text-7xl sm:text-8xl md:text-9xl font-bold mb-3"
+          style={{ 
+            fontFamily: 'var(--font-space-grotesk), sans-serif',
+            background: 'linear-gradient(90deg, #FFFFFF 0%, #BFDFFF 50%, #8BC5FF 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text'
+          }}
         >
           Esona
         </motion.h1>
@@ -33,7 +59,7 @@ export default function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.2, ease: 'easeOut' as const }}
           className="text-xl sm:text-2xl mb-8 tracking-wide"
-          style={{ color: 'rgba(148, 207, 255, 0.9)', textShadow: '0 2px 15px rgba(0, 0, 0, 0.4), 0 0 30px rgba(56, 189, 248, 0.12)', fontFamily: 'var(--font-space-grotesk), sans-serif' }}
+          style={{ color: '#AFC7E8', fontWeight: 500, fontFamily: 'var(--font-space-grotesk), sans-serif', textShadow: '0 2px 15px rgba(0, 0, 0, 0.4)' }}
         >
           The Sound of Understanding
         </motion.p>
@@ -43,35 +69,87 @@ export default function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.4, ease: 'easeOut' as const }}
-          className="text-base sm:text-lg mb-10 max-w-xl mx-auto leading-relaxed"
-          style={{ color: 'rgba(226, 232, 240, 0.85)', textShadow: '0 2px 20px rgba(0, 0, 0, 0.5), 0 0 40px rgba(56, 189, 248, 0.15)' }}
+          className="text-base sm:text-lg max-w-xl mx-auto leading-relaxed"
+          style={{ color: '#D6E2F2', textShadow: '0 2px 20px rgba(0, 0, 0, 0.5)' }}
         >
           An emotionally intelligent AI companion that remembers, understands, and grows with you.
         </motion.p>
 
-        {/* CTA Button */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.6, ease: 'easeOut' as const }}
+        {/* Interactive Area */}
+        <motion.div 
+          className="mt-12 flex flex-col items-center min-h-[280px]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1, delay: 0.8 }}
         >
-          <Link
-            href="/login"
-            className="inline-flex items-center gap-2 px-8 py-4 text-lg font-semibold rounded-2xl transition-all duration-300"
-            style={{
-              background: 'var(--gradient-primary)',
-              color: '#FFFFFF',
-              boxShadow: 'var(--glow-primary), 0 4px 20px rgba(0, 0, 0, 0.3)',
-            }}
-          >
-            <span>Begin Your Journey</span>
-            <motion.span
-              animate={{ x: [0, 4, 0] }}
-              transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
-            >
-              →
-            </motion.span>
-          </Link>
+          {/* Torch */}
+          <div className="mb-4">
+            <InteractiveTorch onLight={handleLightTorch} />
+          </div>
+
+          {/* Reveal Sequence */}
+          <div className="h-16 relative w-full mb-6 flex flex-col items-center justify-center">
+            <AnimatePresence mode="wait">
+              {torchState === 'unlit' && (
+                <motion.p
+                  key="unlit"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 0.6 }}
+                  exit={{ opacity: 0, transition: { duration: 0.3 } }}
+                  className="text-sm tracking-widest uppercase"
+                  style={{ color: '#8B9BB8' }}
+                >
+                  Click to light the way
+                </motion.p>
+              )}
+
+              {(torchState === 'revealing_text' || torchState === 'revealed_cta') && (
+                <motion.div
+                  key="revealed_text"
+                  initial={{ opacity: 0, filter: 'blur(4px)', y: 10 }}
+                  animate={{ opacity: 1, filter: 'blur(0px)', y: 0 }}
+                  transition={{ duration: 1 }}
+                  className="text-center"
+                >
+                  <p className="text-xl font-medium" style={{ color: '#FFD166', fontFamily: 'var(--font-space-grotesk), sans-serif', textShadow: '0 0 10px rgba(255, 209, 102, 0.5)' }}>
+                    Welcome back.
+                  </p>
+                  <p className="text-base mt-1" style={{ color: '#E2E8F0', fontFamily: 'var(--font-inter), sans-serif' }}>
+                    The journey continues.
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* CTA Button */}
+          <AnimatePresence>
+            {torchState === 'revealed_cta' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, ease: 'easeOut' }}
+              >
+                <Link
+                  href="/login"
+                  className="inline-flex items-center gap-2 px-8 py-4 text-lg font-semibold rounded-2xl transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_24px_rgba(59,201,255,0.4)]"
+                  style={{
+                    background: 'linear-gradient(90deg, #3BC9FF, #6C8CFF)',
+                    color: '#FFFFFF',
+                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+                  }}
+                >
+                  <span>Begin Your Journey</span>
+                  <motion.span
+                    animate={{ x: [0, 4, 0] }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    →
+                  </motion.span>
+                </Link>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       </div>
     </section>

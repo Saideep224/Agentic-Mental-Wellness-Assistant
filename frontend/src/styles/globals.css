@@ -1,42 +1,45 @@
 @import "tailwindcss";
 
 /* ============================================= */
-/* ESONA DESIGN SYSTEM - Cloud Theme             */
+/* ESONA DESIGN SYSTEM — Cinematic Video Theme   */
 /* ============================================= */
 
 :root {
-  /* Background Colors — Sky-inspired */
-  --bg-primary: #0b1120;
-  --bg-secondary: #0f172a;
-  --bg-tertiary: #1a2540;
+  /* Background Colors — near-black cinematic base */
+  --bg-primary: #040614;
+  --bg-secondary: #080d20;
+  --bg-tertiary: #0d1430;
 
   /* Surface Colors */
-  --surface-glass: rgba(15, 23, 42, 0.55);
+  --surface-glass: rgba(8, 12, 30, 0.55);
 
-  /* Accent Colors — Sky & Cloud palette */
-  --accent-cyan: #38bdf8;
-  --accent-blue: #3b82f6;
-  --accent-purple: #a78bfa;
-  --accent-pink: #f472b6;
-  --accent-emerald: #34d399;
-  --accent-sky: #7dd3fc;
+  /* Accent Colors — Cinematic warm/cool contrast palette */
+  --accent-cyan: #22d3ee;          /* electric teal */
+  --accent-blue: #6366f1;          /* indigo */
+  --accent-purple: #c084fc;        /* soft violet */
+  --accent-pink: #f472b6;          /* blush pink */
+  --accent-emerald: #34d399;       /* mint */
+  --accent-sky: #7dd3fc;           /* pale sky */
+  --accent-gold: #fbbf24;          /* warm amber */
+  --accent-rose: #fb7185;          /* deep rose */
 
-  /* Text Colors */
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
+  /* Text Colors — crisp against dark video */
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
   --text-muted: #64748b;
 
-  /* Glass Effects — Frosted cloud glass */
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-bg: rgba(15, 23, 42, 0.6);
+  /* Glass Effects — deeper tint for video readability */
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(8, 12, 30, 0.65);
 
-  /* Glow Effects — Cloud-inspired */
-  --glow-cyan: 0 0 20px rgba(56, 189, 248, 0.3);
-  --glow-purple: 0 0 20px rgba(167, 139, 250, 0.3);
-  --glow-blue: 0 0 20px rgba(59, 130, 246, 0.3);
-  --glow-pink: 0 0 20px rgba(244, 114, 182, 0.3);
-  --glow-emerald: 0 0 20px rgba(52, 211, 153, 0.3);
-  --glow-sky: 0 0 25px rgba(125, 211, 252, 0.25);
+  /* Glow Effects — vivid against dark cinematic bg */
+  --glow-cyan: 0 0 24px rgba(34, 211, 238, 0.35);
+  --glow-purple: 0 0 24px rgba(192, 132, 252, 0.35);
+  --glow-blue: 0 0 24px rgba(99, 102, 241, 0.35);
+  --glow-pink: 0 0 24px rgba(244, 114, 182, 0.35);
+  --glow-emerald: 0 0 24px rgba(52, 211, 153, 0.35);
+  --glow-gold: 0 0 24px rgba(251, 191, 36, 0.3);
+  --glow-sky: 0 0 28px rgba(125, 211, 252, 0.28);
 }
 
 /* ============================================= */
@@ -48,20 +51,8 @@ html {
 }
 
 body {
-  background-color: var(--bg-primary);
-  background-image:
-    linear-gradient(
-      180deg,
-      rgba(11, 17, 32, 0.35) 0%,
-      rgba(11, 17, 32, 0.55) 30%,
-      rgba(11, 17, 32, 0.75) 60%,
-      rgba(11, 17, 32, 0.92) 100%
-    ),
-    url('/cloud-hero.png');
-  background-size: cover;
-  background-position: center center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
+  /* Transparent — video shows through via VideoBackground component */
+  background-color: transparent;
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -70,12 +61,12 @@ body {
 
 /* Selection Color */
 ::selection {
-  background-color: rgba(56, 189, 248, 0.3);
+  background-color: rgba(34, 211, 238, 0.28);
   color: var(--text-primary);
 }
 
 ::-moz-selection {
-  background-color: rgba(56, 189, 248, 0.3);
+  background-color: rgba(34, 211, 238, 0.28);
   color: var(--text-primary);
 }
 
@@ -89,22 +80,22 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary);
+  background: rgba(4, 6, 20, 0.4);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(56, 189, 248, 0.3);
+  background: rgba(34, 211, 238, 0.28);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(56, 189, 248, 0.5);
+  background: rgba(34, 211, 238, 0.5);
 }
 
 /* Firefox scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(56, 189, 248, 0.3) var(--bg-primary);
+  scrollbar-color: rgba(34, 211, 238, 0.28) rgba(4, 6, 20, 0.4);
 }
 
 /* ============================================= */
@@ -113,10 +104,11 @@ body {
 
 .glass-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--glass-border);
   border-radius: 1rem;
+  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.05);
 }
 
 .glass-border {
@@ -124,9 +116,9 @@ body {
 }
 
 .glass-input {
-  background: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(8, 12, 30, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--glass-border);
   border-radius: 0.75rem;
   color: var(--text-primary);
@@ -148,14 +140,14 @@ body {
 /* ============================================= */
 
 .glow-text {
-  background: linear-gradient(135deg, #7dd3fc, #38bdf8, #a78bfa);
+  background: linear-gradient(135deg, #22d3ee, #c084fc, #f472b6);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .glow-text-cyan {
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;

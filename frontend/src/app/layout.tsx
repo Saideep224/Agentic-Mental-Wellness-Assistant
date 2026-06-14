@@ -5,7 +5,7 @@ import '@/styles/globals.css';
 import AuthProvider from '@/providers/AuthProvider';
 import ThemeProvider from '@/providers/ThemeProvider';
 import FloatingParticles from '@/components/ambient/FloatingParticles';
-import CloudAnimation from '@/components/ambient/CloudAnimation';
+import VideoBackground from '@/components/ambient/VideoBackground';
 
 
 
@@ -46,8 +46,8 @@ export default function RootLayout({
         <AuthProvider>
           <ThemeProvider>
             {/* Ambient background */}
+            <VideoBackground />
             <FloatingParticles />
-            <CloudAnimation />
 
             {/* Main content */}
             <div className="relative z-10 min-h-screen">{children}</div>

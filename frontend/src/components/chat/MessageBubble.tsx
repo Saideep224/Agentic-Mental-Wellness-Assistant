@@ -91,7 +91,7 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
             <div
               className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold"
               style={{
-                background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-purple))',
+                background: 'var(--gradient-primary)',
                 color: 'var(--bg-primary)',
               }}
             >

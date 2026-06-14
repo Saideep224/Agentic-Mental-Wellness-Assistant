@@ -84,7 +84,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             {/* Header */}
             <div>
               <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2" style={{ fontFamily: 'var(--font-outfit), sans-serif' }}>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2" style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
                   <UserIcon size={20} className="text-sky-400" />
                   Your Profile
                 </h2>

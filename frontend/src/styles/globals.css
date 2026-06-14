@@ -11,28 +11,38 @@
   --bg-tertiary: #0d1430;
 
   /* Surface Colors */
-  --surface-glass: rgba(8, 12, 30, 0.55);
+  --surface-glass: rgba(10, 15, 40, 0.55);
 
-  /* Accent Colors — Cinematic warm/cool contrast palette */
-  --accent-cyan: #22d3ee;          /* electric teal */
-  --accent-blue: #6366f1;          /* indigo */
-  --accent-purple: #c084fc;        /* soft violet */
-  --accent-pink: #f472b6;          /* blush pink */
-  --accent-emerald: #34d399;       /* mint */
-  --accent-sky: #7dd3fc;           /* pale sky */
-  --accent-gold: #fbbf24;          /* warm amber */
-  --accent-rose: #fb7185;          /* deep rose */
+  /* Primary Gradient */
+  --gradient-primary: linear-gradient(90deg, #66D9FF 0%, #7B8CFF 50%, #D77DFF 100%);
 
-  /* Text Colors — crisp against dark video */
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #64748b;
+  /* Emotion Colors */
+  --color-joy: #4ADE80;
+  --color-stress: #F59E0B;
+  --color-anxiety: #FB923C;
+  --color-sadness: #60A5FA;
+  --color-crisis: #EF4444;
 
-  /* Glass Effects — deeper tint for video readability */
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-bg: rgba(8, 12, 30, 0.65);
+  /* Accent Colors */
+  --accent-cyan: #22d3ee;
+  --accent-blue: #6366f1;
+  --accent-purple: #c084fc;
+  --accent-pink: #f472b6;
+  --accent-emerald: #34d399;
+  --accent-sky: #7dd3fc;
+  --accent-gold: #fbbf24;
+  --accent-rose: #fb7185;
 
-  /* Glow Effects — vivid against dark cinematic bg */
+  /* Text Colors */
+  --text-primary: #F8FAFC;
+  --text-secondary: #B6C2D9;
+  --text-muted: #8B9BB8;
+
+  /* Glass Effects */
+  --glass-border: rgba(123, 140, 255, 0.20);
+  --glass-bg: rgba(10, 15, 40, 0.55);
+
+  /* Glow Effects */
   --glow-cyan: 0 0 24px rgba(34, 211, 238, 0.35);
   --glow-purple: 0 0 24px rgba(192, 132, 252, 0.35);
   --glow-blue: 0 0 24px rgba(99, 102, 241, 0.35);
@@ -40,6 +50,7 @@
   --glow-emerald: 0 0 24px rgba(52, 211, 153, 0.35);
   --glow-gold: 0 0 24px rgba(251, 191, 36, 0.3);
   --glow-sky: 0 0 28px rgba(125, 211, 252, 0.28);
+  --glow-primary: 0 0 24px rgba(123, 140, 255, 0.35);
 }
 
 /* ============================================= */
@@ -104,10 +115,10 @@ body {
 
 .glass-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
-  border-radius: 1rem;
+  border-radius: 20px;
   box-shadow: 0 4px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.05);
 }
 
@@ -116,11 +127,11 @@ body {
 }
 
 .glass-input {
-  background: rgba(8, 12, 30, 0.55);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
-  border-radius: 0.75rem;
+  border-radius: 20px;
   color: var(--text-primary);
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
@@ -158,18 +169,18 @@ body {
 }
 
 .gradient-btn {
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
-  color: var(--bg-primary);
+  background: var(--gradient-primary);
+  color: #FFFFFF;
   font-weight: 600;
   border: none;
-  border-radius: 0.75rem;
+  border-radius: 20px;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.3s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .gradient-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--glow-cyan);
+  transform: scale(1.02);
+  box-shadow: var(--glow-primary);
 }
 
 .gradient-btn:active {

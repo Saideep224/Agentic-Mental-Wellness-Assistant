@@ -231,12 +231,6 @@ export default function LoginPage() {
               glowIntensity="high"
               className="mb-3 logo-float"
             />
-            <h1
-              className="text-4xl font-bold glow-text mb-1"
-              style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
-            >
-              Esona
-            </h1>
           </Link>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
             {mode === 'login' ? 'Welcome back. We missed you. ✨' : 'Begin your journey with Esona. 🌙'}
@@ -315,7 +309,7 @@ export default function LoginPage() {
         <div className="glass-card p-8">
           {/* Mode Toggle Header */}
           <div className="text-center mb-6">
-            <h2 className="text-xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-outfit), sans-serif' }}>
+            <h2 className="text-xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
               {mode === 'login' ? 'Log in to your account' : 'Create your account'}
             </h2>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>

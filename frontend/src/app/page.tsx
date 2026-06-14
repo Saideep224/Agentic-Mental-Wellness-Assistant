@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Navbar from '@/components/layout/Navbar';
 import HeroSection from '@/components/landing/HeroSection';
 import FeatureCards from '@/components/landing/FeatureCards';
 import CTASection from '@/components/landing/CTASection';
@@ -41,7 +40,6 @@ export default function LandingPage() {
 
   return (
     <main className="relative">
-      <Navbar />
       <HeroSection />
       <FeatureCards />
       <CTASection />

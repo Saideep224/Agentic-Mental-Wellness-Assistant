@@ -61,7 +61,7 @@ export default function PersonalityInsights({ insights }: PersonalityInsightsPro
         className="text-lg font-semibold mb-1"
         style={{
           color: 'var(--text-primary)',
-          fontFamily: 'var(--font-outfit), sans-serif',
+          fontFamily: 'var(--font-space-grotesk), sans-serif',
         }}
       >
         Personality Insights

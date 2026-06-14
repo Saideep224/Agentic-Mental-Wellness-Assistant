@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.pool import NullPool
 
 from app.database import Base, SafeUUID
 from app.models import User, Conversation, Message, UserProfile, Memory, EmotionLog, MoodLog
@@ -27,7 +28,7 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         # Initialize test engine and tables
-        self.engine = create_async_engine(TEST_DB_URL, echo=False)
+        self.engine = create_async_engine(TEST_DB_URL, echo=False, poolclass=NullPool)
         self.session_maker = async_sessionmaker(self.engine, expire_on_commit=False, class_=AsyncSession)
 
         async with self.engine.begin() as conn:
@@ -299,6 +300,138 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         await self.db.commit()
         await self.db.refresh(self.user)
         self.assertEqual(self.user.onboarding_step, 5)
+
+    @patch("app.services.emotion_service.get_chat_client")
+    @patch("app.chatbot.pipeline.generate_chat_completion_with_fallback")
+    @patch("app.memory.memory_manager.MemoryManager._get_embedding")
+    async def test_emotion_validation_and_crisis_override(self, mock_embedding, mock_generate, mock_get_client):
+        """Verify the emotion classification pipeline behaves correctly for validation inputs."""
+        import json
+        mock_embedding.return_value = [0.1, 0.2, 0.3]
+        
+        # 1. Test "I am happy"
+        # Mock emotion service LLM response
+        mock_response_happy = MagicMock()
+        mock_response_happy.choices = [
+            MagicMock(message=MagicMock(content='{"detected_emotion": "Happy", "confidence_score": 0.95}'))
+        ]
+        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_happy)
+
+        # Mock cognitive analyzer return for Happy
+        mock_generate.return_value = json.dumps({
+            "message_type": "emotional",
+            "personality_agent": {},
+            "emotion_agent": {
+                "primary_emotion": "happy",
+                "stress": 0.1,
+                "anxiety": 0.1,
+                "sadness": 0.05,
+                "burnout": 0.1,
+                "emotional_intensity": 6
+            },
+            "behavior_agent": {},
+            "growth_agent": {},
+            "context_analysis": {},
+            "recommendations": [],
+            "memory_extraction": {"is_meaningful": False}
+        })
+        
+        from app.chatbot.pipeline import run_agent_graph
+        res_happy = await run_agent_graph(
+            user_message="I am happy",
+            user_id=str(self.user_id),
+            conversation_history=[],
+            emotional_profile={},
+            db=self.db
+        )
+        self.assertEqual(res_happy["detected_emotion"].lower(), "happy")
+        await self.db.rollback()
+
+        # 2. Test "I am anxious about exams"
+        # Mock emotion service LLM response
+        mock_response_anxious = MagicMock()
+        mock_response_anxious.choices = [
+            MagicMock(message=MagicMock(content='{"detected_emotion": "Anxiety", "confidence_score": 0.95}'))
+        ]
+        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_anxious)
+
+        mock_generate.return_value = json.dumps({
+            "message_type": "emotional",
+            "personality_agent": {},
+            "emotion_agent": {
+                "primary_emotion": "anxiety",
+                "stress": 0.4,
+                "anxiety": 0.8,
+                "sadness": 0.1,
+                "burnout": 0.2,
+                "emotional_intensity": 7
+            },
+            "behavior_agent": {},
+            "growth_agent": {},
+            "context_analysis": {},
+            "recommendations": [],
+            "memory_extraction": {"is_meaningful": False}
+        })
+        
+        res_anxious = await run_agent_graph(
+            user_message="I am anxious about exams",
+            user_id=str(self.user_id),
+            conversation_history=[],
+            emotional_profile={},
+            db=self.db
+        )
+        self.assertEqual(res_anxious["detected_emotion"].lower(), "anxiety")
+        await self.db.rollback()
+
+        # 3. Test "I feel depressed"
+        # Mock emotion service LLM response
+        mock_response_sad = MagicMock()
+        mock_response_sad.choices = [
+            MagicMock(message=MagicMock(content='{"detected_emotion": "Sadness", "confidence_score": 0.95}'))
+        ]
+        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_sad)
+
+        mock_generate.return_value = json.dumps({
+            "message_type": "emotional",
+            "personality_agent": {},
+            "emotion_agent": {
+                "primary_emotion": "sadness",
+                "stress": 0.3,
+                "anxiety": 0.2,
+                "sadness": 0.8,
+                "burnout": 0.5,
+                "emotional_intensity": 8
+            },
+            "behavior_agent": {},
+            "growth_agent": {},
+            "context_analysis": {},
+            "recommendations": [],
+            "memory_extraction": {"is_meaningful": False}
+        })
+        
+        res_depressed = await run_agent_graph(
+            user_message="I feel depressed",
+            user_id=str(self.user_id),
+            conversation_history=[],
+            emotional_profile={},
+            db=self.db
+        )
+        self.assertEqual(res_depressed["detected_emotion"].lower(), "sadness")
+        await self.db.rollback()
+
+        # 4. Test "I want to die" (Crisis Override should run and bypass LLM classification check)
+        res_crisis = await run_agent_graph(
+            user_message="I want to die",
+            user_id=str(self.user_id),
+            conversation_history=[],
+            emotional_profile={},
+            db=self.db
+        )
+        self.assertEqual(res_crisis["detected_emotion"], "Crisis")
+        self.assertEqual(res_crisis["detected_emotion_confidence"], 0.95)
+        self.assertEqual(res_crisis["mood_score"], 0.05)
+        self.assertEqual(res_crisis["safety_agent"]["crisis_detected"], True)
+        await self.db.rollback()
 
 
 if __name__ == "__main__":

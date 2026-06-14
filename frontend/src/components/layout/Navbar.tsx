@@ -57,7 +57,7 @@ export default function Navbar() {
             <EsonaLogo size={32} showParticles={false} glowIntensity="low" />
             <span
               className="text-xl font-bold glow-text"
-              style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+              style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
             >
               Esona
             </span>

@@ -32,7 +32,7 @@ export default function EmotionalProfileCard({ profile }: EmotionalProfileCardPr
         className="text-lg font-semibold mb-1"
         style={{
           color: 'var(--text-primary)',
-          fontFamily: 'var(--font-outfit), sans-serif',
+          fontFamily: 'var(--font-space-grotesk), sans-serif',
         }}
       >
         Emotional Profile

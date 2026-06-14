@@ -91,7 +91,7 @@ export default function UserAvatar({
           style={{
             background: getCalmingGradient(firstLetter),
             ...textStyle,
-            fontFamily: 'var(--font-outfit), sans-serif',
+            fontFamily: 'var(--font-space-grotesk), sans-serif',
           }}
         >
           {firstLetter === '?' ? (

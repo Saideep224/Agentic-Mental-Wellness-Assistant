@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -39,6 +39,8 @@ import { skipOnboarding } from '@/api/onboarding';
 
 export default function ChatPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -122,6 +124,40 @@ export default function ChatPage() {
   const { messages, isLoading, isStreaming, streamPlaceholder, sendMessage } = useChat({
     conversationId: activeConversationId,
   });
+
+  // Focus the chat input after assistant response finishes loading
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // Check pathname and modals to prevent stealing focus
+    const isFocusAllowed = () => {
+      if (pathname !== '/chat') return false;
+
+      // Do not steal focus if a modal is open
+      const hasModal = !!document.querySelector('.fixed.z-50') || 
+                       !!document.querySelector('[role="dialog"]') ||
+                       !!document.querySelector('.modal');
+      if (hasModal) return false;
+
+      // Do not steal focus if user is editing something else
+      const activeEl = document.activeElement;
+      if (
+        activeEl && 
+        (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') && 
+        activeEl !== inputRef.current
+      ) {
+        return false;
+      }
+
+      return true;
+    };
+
+    if (isFocusAllowed() && !isLoading) {
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
+    }
+  }, [messages, isLoading, pathname]);
 
   // Auth check
   useEffect(() => {
@@ -472,7 +508,7 @@ export default function ChatPage() {
                   {/* Greeting */}
                   <h2
                     className="text-2xl font-bold mb-2 glow-text"
-                    style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+                    style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
                   >
                     Hi{user?.name ? `, ${user.name}` : ''}! I'm Esona 💙
                   </h2>
@@ -555,7 +591,7 @@ export default function ChatPage() {
           </div>
 
           {/* Input */}
-          <ChatInput onSend={handleSend} disabled={isLoading} />
+          <ChatInput ref={inputRef} onSend={handleSend} disabled={isLoading} />
         </div>
 
         {/* Live Agent Debug Panel */}

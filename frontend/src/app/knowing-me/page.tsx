@@ -254,7 +254,7 @@ export default function KnowingMePage() {
               className="text-2xl sm:text-3xl font-bold"
               style={{
                 color: 'var(--text-primary)',
-                fontFamily: 'var(--font-outfit), sans-serif',
+                fontFamily: 'var(--font-space-grotesk), sans-serif',
               }}
             >
               Knowing Me
@@ -287,7 +287,7 @@ export default function KnowingMePage() {
               transition={{ duration: 0.8, ease: 'easeOut' }}
               className="h-full rounded-full"
               style={{
-                background: 'linear-gradient(90deg, var(--accent-cyan), var(--accent-purple))',
+                background: 'var(--gradient-primary)',
                 boxShadow: '0 0 10px rgba(56, 189, 248, 0.4)',
               }}
             />
@@ -390,7 +390,7 @@ export default function KnowingMePage() {
                       <div>
                         <h3
                           className="text-base font-bold"
-                          style={{ color: colorSet.text, fontFamily: 'var(--font-outfit), sans-serif' }}
+                          style={{ color: colorSet.text, fontFamily: 'var(--font-space-grotesk), sans-serif' }}
                         >
                           {cat.label}
                         </h3>

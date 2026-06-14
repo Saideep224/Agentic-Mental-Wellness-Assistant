@@ -35,7 +35,7 @@ export default function GrowthInsightsCard({ insights, totalLogs = 0, totalMemor
         transition={{ duration: 0.5, delay: 0.4 }}
         className="glass-card p-6 lg:col-span-2"
       >
-        <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
+        <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
           📊 Personal Growth Insights
         </h3>
         <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
@@ -60,7 +60,7 @@ export default function GrowthInsightsCard({ insights, totalLogs = 0, totalMemor
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
+          <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
             📊 Personal Growth Insights
           </h3>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>

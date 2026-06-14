@@ -8,6 +8,7 @@ import uuid
 import unittest
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.pool import NullPool
 
 from app.database import Base
 
@@ -22,7 +23,7 @@ class RecommendationServiceTestCase(unittest.IsolatedAsyncioTestCase):
         self.svc = recommendation_service
         self.ComfortKit = ComfortKit
 
-        self.engine = create_async_engine(TEST_DB_URL, echo=False)
+        self.engine = create_async_engine(TEST_DB_URL, echo=False, poolclass=NullPool)
         self.session_maker = async_sessionmaker(
             self.engine, expire_on_commit=False, class_=AsyncSession
         )

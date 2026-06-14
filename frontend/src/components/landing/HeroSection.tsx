@@ -22,7 +22,7 @@ export default function HeroSection() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.8, ease: 'easeOut' as const }}
           className="text-7xl sm:text-8xl md:text-9xl font-bold mb-3 glow-text"
-          style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+          style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
         >
           Esona
         </motion.h1>
@@ -33,9 +33,9 @@ export default function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.2, ease: 'easeOut' as const }}
           className="text-xl sm:text-2xl mb-8 tracking-wide"
-          style={{ color: 'rgba(148, 207, 255, 0.9)', textShadow: '0 2px 15px rgba(0, 0, 0, 0.4), 0 0 30px rgba(56, 189, 248, 0.12)', fontFamily: 'var(--font-outfit), sans-serif' }}
+          style={{ color: 'rgba(148, 207, 255, 0.9)', textShadow: '0 2px 15px rgba(0, 0, 0, 0.4), 0 0 30px rgba(56, 189, 248, 0.12)', fontFamily: 'var(--font-space-grotesk), sans-serif' }}
         >
-          your supporting buddie
+          The Sound of Understanding
         </motion.p>
 
         {/* Tagline */}
@@ -46,7 +46,7 @@ export default function HeroSection() {
           className="text-base sm:text-lg mb-10 max-w-xl mx-auto leading-relaxed"
           style={{ color: 'rgba(226, 232, 240, 0.85)', textShadow: '0 2px 20px rgba(0, 0, 0, 0.5), 0 0 40px rgba(56, 189, 248, 0.15)' }}
         >
-          An emotionally adaptive AI that truly understands you — your moods, your words, your silence.
+          An emotionally intelligent AI companion that remembers, understands, and grows with you.
         </motion.p>
 
         {/* CTA Button */}
@@ -59,9 +59,9 @@ export default function HeroSection() {
             href="/login"
             className="inline-flex items-center gap-2 px-8 py-4 text-lg font-semibold rounded-2xl transition-all duration-300"
             style={{
-              background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))',
-              color: 'var(--bg-primary)',
-              boxShadow: '0 0 30px rgba(56, 189, 248, 0.3), 0 4px 20px rgba(0, 0, 0, 0.3)',
+              background: 'var(--gradient-primary)',
+              color: '#FFFFFF',
+              boxShadow: 'var(--glow-primary), 0 4px 20px rgba(0, 0, 0, 0.3)',
             }}
           >
             <span>Begin Your Journey</span>

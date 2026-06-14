@@ -143,7 +143,7 @@ export default function OnboardingPage() {
             />
             <h2
               className="text-3xl font-bold mb-3 glow-text"
-              style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+              style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
             >
               Analyzing your answers...
             </h2>
@@ -163,7 +163,7 @@ export default function OnboardingPage() {
               transition={{ duration: 3.5, ease: 'easeInOut' }}
               className="h-full"
               style={{
-                background: 'linear-gradient(90deg, var(--accent-cyan), var(--accent-purple))',
+                background: 'var(--gradient-primary)',
                 boxShadow: '0 0 10px rgba(56, 189, 248, 0.5)',
               }}
             />
@@ -217,7 +217,7 @@ export default function OnboardingPage() {
       <div className="text-center mt-4 mb-4">
         <h1
           className="text-2xl sm:text-3xl font-bold text-white flex items-center justify-center gap-2 mb-2"
-          style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+          style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
         >
           🧠 Help Esona understand you better
         </h1>
@@ -355,7 +355,7 @@ export default function OnboardingPage() {
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
               background: canGoNext
-                ? 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))'
+                ? 'var(--gradient-primary)'
                 : 'rgba(255, 255, 255, 0.03)',
               color: canGoNext ? 'var(--bg-primary)' : 'var(--text-muted)',
               boxShadow: canGoNext ? 'var(--glow-cyan)' : 'none',
@@ -431,7 +431,7 @@ export default function OnboardingPage() {
               {/* Title */}
               <h3
                 className="text-xl font-bold text-center mb-3 text-white"
-                style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+                style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
               >
                 Skip All Questions?
               </h3>
@@ -449,7 +449,7 @@ export default function OnboardingPage() {
                   onClick={() => setShowSkipModal(false)}
                   className="w-full py-3 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer"
                   style={{
-                    background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))',
+                    background: 'var(--gradient-primary)',
                     color: 'var(--bg-primary)',
                     boxShadow: '0 0 20px rgba(56, 189, 248, 0.25)',
                   }}

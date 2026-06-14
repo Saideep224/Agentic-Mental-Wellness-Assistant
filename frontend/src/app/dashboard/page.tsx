@@ -32,7 +32,7 @@ function PersonalityCard({ profile }: { profile: any }) {
       transition={{ duration: 0.5, delay: 0.15 }}
       className="glass-card p-6"
     >
-      <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
+      <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
         ✨ Personality Card
       </h3>
       <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
@@ -69,7 +69,7 @@ function InterestsSection({ profile }: { profile: any }) {
       transition={{ duration: 0.5, delay: 0.2 }}
       className="glass-card p-6"
     >
-      <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
+      <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
         🎯 Interests Section
       </h3>
       <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
@@ -121,7 +121,7 @@ function MotivationStyleCard({ profile }: { profile: any }) {
       transition={{ duration: 0.5, delay: 0.22 }}
       className="glass-card p-6"
     >
-      <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
+      <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
         🔥 Motivation Style
       </h3>
       <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
@@ -175,7 +175,7 @@ function PersonalizedSuggestionsCard({ profile }: { profile: any }) {
       transition={{ duration: 0.5, delay: 0.3 }}
       className="glass-card p-6"
     >
-      <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
+      <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
         💡 Personalized Suggestions
       </h3>
       <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
@@ -206,7 +206,7 @@ function GrowthTrackerCard({ profile }: { profile: any }) {
       transition={{ duration: 0.5, delay: 0.25 }}
       className="glass-card p-6"
     >
-      <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
+      <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
         Emotional Growth Tracker 🌱
       </h3>
       <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
@@ -388,7 +388,7 @@ function YourAnswersCard({ profile, onUpdate }: { profile: any; onUpdate: () => 
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div>
-          <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
+          <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
             📝 Your Answers
           </h3>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -659,7 +659,7 @@ export default function DashboardPage() {
                 className="text-2xl sm:text-3xl font-bold"
                 style={{
                   color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-outfit), sans-serif',
+                  fontFamily: 'var(--font-space-grotesk), sans-serif',
                 }}
               >
                 {getPersonalizedGreeting()}
@@ -754,7 +754,7 @@ export default function DashboardPage() {
                     <div>
                       <h3
                         className="text-base font-semibold text-white group-hover:text-pink-300 transition-colors"
-                        style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+                        style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
                       >
                         Knowing Me
                       </h3>
@@ -833,7 +833,7 @@ export default function DashboardPage() {
                     </div>
                     <h3
                       className="text-xl font-bold text-white mb-2"
-                      style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+                      style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
                     >
                       Unlock Your Emotional Insights
                     </h3>
@@ -845,7 +845,7 @@ export default function DashboardPage() {
                     href="/knowing-me"
                     className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300"
                     style={{
-                      background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))',
+                      background: 'var(--gradient-primary)',
                       color: 'var(--bg-primary)',
                       boxShadow: '0 0 20px rgba(56, 189, 248, 0.25)',
                     }}
@@ -882,7 +882,7 @@ export default function DashboardPage() {
               <div>
                 <h3
                   className="text-base font-semibold text-white mb-1"
-                  style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+                  style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
                 >
                   🔐 Account &amp; Privacy
                 </h3>

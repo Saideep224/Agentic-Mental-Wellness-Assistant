@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import select
+from sqlalchemy.pool import NullPool
 
 from app.database import Base
 from app.models import User
@@ -25,7 +26,7 @@ class KnowledgeGraphTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         # Initialize test engine and tables
-        self.engine = create_async_engine(TEST_DB_URL, echo=False)
+        self.engine = create_async_engine(TEST_DB_URL, echo=False, poolclass=NullPool)
         self.session_maker = async_sessionmaker(self.engine, expire_on_commit=False, class_=AsyncSession)
 
         async with self.engine.begin() as conn:

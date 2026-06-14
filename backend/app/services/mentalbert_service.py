@@ -72,21 +72,27 @@ class MentalBERTService:
         # Fallback: rule-based simulation to get accurate scores
         text_lower = text.lower()
         
+        # Check crisis override keywords
+        crisis_keywords = ["want to die", "kill myself", "end my life", "suicide"]
+        if any(keyword in text_lower for keyword in crisis_keywords):
+            # 0: happy, 1: neutral, 2: stress, 3: anxiety, 4: sadness, 5: frustration, 6: loneliness
+            scores = [0.0, 0.05, 0.15, 0.0, 0.75, 0.0, 0.05]
         # Mapping: 0: happy, 1: neutral, 2: stress, 3: anxiety, 4: sadness, 5: frustration, 6: loneliness
-        scores = [0.1, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2]
-        
-        if any(w in text_lower for w in ["happy", "good", "great", "smile", "excited", "glad", "relief"]):
-            scores = [0.8, 0.1, 0.05, 0.05, 0.0, 0.0, 0.0]
-        elif any(w in text_lower for w in ["anxious", "anxiety", "worry", "worried", "panic", "scared"]):
-            scores = [0.0, 0.1, 0.3, 0.8, 0.2, 0.1, 0.1]
-        elif any(w in text_lower for w in ["stress", "stressed", "overwhelm", "exhausted", "burnout", "tired"]):
-            scores = [0.0, 0.1, 0.8, 0.3, 0.2, 0.1, 0.1]
-        elif any(w in text_lower for w in ["sad", "sadness", "cry", "hurt", "pain", "down", "unhappy"]):
-            scores = [0.0, 0.1, 0.2, 0.2, 0.8, 0.1, 0.2]
-        elif any(w in text_lower for w in ["lonely", "loneliness", "alone", "isolated"]):
-            scores = [0.0, 0.1, 0.1, 0.2, 0.3, 0.1, 0.8]
-        elif any(w in text_lower for w in ["angry", "frustrated", "annoyed", "mad", "hate"]):
-            scores = [0.0, 0.1, 0.2, 0.1, 0.1, 0.8, 0.1]
+        else:
+            scores = [0.1, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2]
+            
+            if any(w in text_lower for w in ["happy", "good", "great", "smile", "excited", "glad", "relief"]):
+                scores = [0.8, 0.1, 0.05, 0.05, 0.0, 0.0, 0.0]
+            elif any(w in text_lower for w in ["anxious", "anxiety", "worry", "worried", "panic", "scared"]):
+                scores = [0.0, 0.1, 0.3, 0.8, 0.2, 0.1, 0.1]
+            elif any(w in text_lower for w in ["stress", "stressed", "overwhelm", "exhausted", "burnout", "tired"]):
+                scores = [0.0, 0.1, 0.8, 0.3, 0.2, 0.1, 0.1]
+            elif any(w in text_lower for w in ["sad", "sadness", "cry", "hurt", "pain", "down", "unhappy", "depressed", "depression"]):
+                scores = [0.0, 0.1, 0.2, 0.2, 0.8, 0.1, 0.2]
+            elif any(w in text_lower for w in ["lonely", "loneliness", "alone", "isolated"]):
+                scores = [0.0, 0.1, 0.1, 0.2, 0.3, 0.1, 0.8]
+            elif any(w in text_lower for w in ["angry", "frustrated", "annoyed", "mad", "hate"]):
+                scores = [0.0, 0.1, 0.2, 0.1, 0.1, 0.8, 0.1]
 
         # Normalize scores to sum to 1.0
         total = sum(scores)

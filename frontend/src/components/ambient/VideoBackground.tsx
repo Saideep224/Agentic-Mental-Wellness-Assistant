@@ -39,8 +39,7 @@ export default function VideoBackground() {
         style={{
           position: 'absolute',
           inset: 0,
-          background:
-            'linear-gradient(180deg, rgba(4,6,20,0.62) 0%, rgba(4,6,20,0.50) 40%, rgba(4,6,20,0.68) 80%, rgba(4,6,20,0.88) 100%)',
+          background: 'rgba(4, 8, 25, 0.72)',
         }}
       />
 

@@ -37,7 +37,7 @@ export default function ProgressBar({
         <motion.div
           className="h-full rounded-full"
           style={{
-            background: 'linear-gradient(90deg, var(--accent-cyan), var(--accent-purple))',
+            background: 'var(--gradient-primary)',
             boxShadow: '0 0 10px rgba(34, 211, 238, 0.3)',
           }}
           initial={{ width: 0 }}

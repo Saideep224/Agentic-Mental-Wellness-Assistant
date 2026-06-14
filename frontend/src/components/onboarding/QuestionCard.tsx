@@ -40,7 +40,7 @@ export default function QuestionCard({ question, direction }: QuestionCardProps)
         className="text-2xl sm:text-3xl font-semibold leading-snug"
         style={{
           color: 'var(--text-primary)',
-          fontFamily: 'var(--font-outfit), sans-serif',
+          fontFamily: 'var(--font-space-grotesk), sans-serif',
         }}
       >
         {question.text}

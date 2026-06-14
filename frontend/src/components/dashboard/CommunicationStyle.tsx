@@ -38,7 +38,7 @@ export default function CommunicationStyle({ preferences }: CommunicationStylePr
         className="text-lg font-semibold mb-1"
         style={{
           color: 'var(--text-primary)',
-          fontFamily: 'var(--font-outfit), sans-serif',
+          fontFamily: 'var(--font-space-grotesk), sans-serif',
         }}
       >
         Communication Guide

@@ -81,15 +81,14 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     detected_emotion = "Neutral"
     confidence_score = 1.0
     if user_id:
+        from app.database import async_session_maker
+        close_temp_db = False
+        temp_db = db
+        if temp_db is None:
+            temp_db = async_session_maker()
+            close_temp_db = True
         try:
             from app.services.emotion_service import emotion_service
-            from app.database import async_session_maker
-            close_temp_db = False
-            temp_db = db
-            if temp_db is None:
-                temp_db = async_session_maker()
-                close_temp_db = True
-            
             emotion_res = await emotion_service.classify_emotion_mentalbert(temp_db, user_id, user_message)
             detected_emotion = emotion_res.get("detected_emotion", "Neutral")
             confidence_score = emotion_res.get("confidence_score", 1.0)
@@ -115,9 +114,11 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
 
             if close_temp_db:
                 await temp_db.commit()
-                await temp_db.close()
         except Exception as emo_err:
             logger.error(f"Failed to run MentalBERT classification in pipeline: {emo_err}", exc_info=True)
+        finally:
+            if close_temp_db:
+                await temp_db.close()
 
     recent_context = ""
     if history:
@@ -197,24 +198,29 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
 
     # Execute logical agents to format their states
     p_data = personality_agent.analyze(analysis)
+    
     from app.services.mentalbert_service import mentalbert_service
-    emotion_scores = mentalbert_service.predict(user_message)
-    e_data = emotion_agent.analyze(emotion_scores)
+    if mentalbert_service.initialized:
+        emotion_scores = mentalbert_service.predict(user_message)
+        e_data = emotion_agent.analyze(emotion_scores)
+        detected_emotion = e_data.get("primary_emotion", "Neutral").capitalize()
+        probs_list = []
+        try:
+            import torch
+            if torch.is_tensor(emotion_scores):
+                probs_list = emotion_scores.tolist()[0]
+        except Exception:
+            pass
+        if not probs_list and isinstance(emotion_scores, list):
+            probs_list = emotion_scores
+        confidence_score = max(probs_list) if probs_list else 1.0
+    else:
+        # Fall back to high-quality LLM-based agent analysis
+        e_data = emotion_agent.analyze(analysis)
+        # detected_emotion and confidence_score remain synced with emotion_service results
+        
     b_data = behavior_agent.analyze(analysis)
     g_data = growth_agent.analyze(analysis)
-    
-    # Sync detected_emotion and confidence_score with direct MentalBERT outputs
-    detected_emotion = e_data.get("primary_emotion", "Neutral").capitalize()
-    probs_list = []
-    try:
-        import torch
-        if torch.is_tensor(emotion_scores):
-            probs_list = emotion_scores.tolist()[0]
-    except Exception:
-        pass
-    if not probs_list and isinstance(emotion_scores, list):
-        probs_list = emotion_scores
-    confidence_score = max(probs_list) if probs_list else 1.0
 
     # Run new Intent and Safety Agents
     i_data = intent_agent.analyze(analysis)
@@ -227,6 +233,30 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     burnout_val = e_data.get("burnout", 0.3)
     mood_score = round(1.0 - (stress_val * 0.2 + anxiety_val * 0.3 + sadness_val * 0.3 + burnout_val * 0.2), 2)
     mood_score = max(0.05, min(0.95, mood_score))
+
+    # Apply Crisis Override if crisis keywords are present
+    msg_lower = user_message.lower()
+    crisis_keywords = ["want to die", "kill myself", "end my life", "suicide"]
+    if any(keyword in msg_lower for keyword in crisis_keywords):
+        detected_emotion = "Crisis"
+        confidence_score = 0.95
+        mood_score = 0.05
+        
+        # Override agent data
+        e_data["primary_emotion"] = "crisis"
+        e_data["sadness"] = 0.95
+        e_data["stress"] = 0.95
+        e_data["emotional_intensity"] = 10
+        
+        # Override local variables for compatibility
+        stress_val = 0.95
+        sadness_val = 0.95
+        
+        s_data = {
+            "is_safe": False,
+            "crisis_detected": True,
+            "safety_action": "crisis_protocol"
+        }
 
     # Populate backward-compatible keys
     emotion_dimensions = {
@@ -511,10 +541,9 @@ async def response_agent_node(state: AgentState) -> dict:
 
 # ── Build the compiled graph ──────────────────────────────────
 async def preprocessing_node(state: AgentState) -> dict:
-    """Run cognitive analysis and memory retrieval concurrently to optimize speed."""
-    cog_task = asyncio.create_task(cognitive_analyzer_agent(state))
-    mem_task = asyncio.create_task(memory_agent_node(state))
-    cog_res, mem_res = await asyncio.gather(cog_task, mem_task)
+    """Run cognitive analysis and memory retrieval sequentially to prevent SQLAlchemy session concurrency issues."""
+    cog_res = await cognitive_analyzer_agent(state)
+    mem_res = await memory_agent_node(state)
     return {**cog_res, **mem_res}
 
 def build_graph() -> StateGraph:

@@ -22,7 +22,7 @@ export default function StressPatternChart({ data, title = "Stress Patterns" }: 
         <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4 text-2xl" style={{ background: 'rgba(167, 139, 250, 0.1)', color: 'var(--accent-purple)' }}>
           📊
         </div>
-        <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-outfit), sans-serif' }}>
+        <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
           {title}
         </h3>
         <p className="text-sm max-w-sm" style={{ color: 'var(--text-muted)' }}>
@@ -42,7 +42,7 @@ export default function StressPatternChart({ data, title = "Stress Patterns" }: 
         className="text-lg font-semibold mb-1"
         style={{
           color: 'var(--text-primary)',
-          fontFamily: 'var(--font-outfit), sans-serif',
+          fontFamily: 'var(--font-space-grotesk), sans-serif',
         }}
       >
         {title}

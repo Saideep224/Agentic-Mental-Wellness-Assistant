@@ -97,6 +97,17 @@ class EmotionService:
         if not message or len(message.strip()) < 1:
             return {"detected_emotion": "Neutral", "confidence_score": 1.0}
 
+        # Crisis Override Check
+        msg_lower = message.lower()
+        crisis_keywords = ["want to die", "kill myself", "end my life", "suicide"]
+        if any(keyword in msg_lower for keyword in crisis_keywords):
+            logger.warning(f"[Crisis Override] Crisis detected in message: '{message}'. Overriding to Crisis classification.")
+            await self._save_emotion_log(db, user_id, message, "Crisis", 0.95)
+            return {
+                "detected_emotion": "Crisis",
+                "confidence_score": 0.95
+            }
+
         # 1. Attempt local classification if configured
         if settings.USE_LOCAL_EMOTION_MODEL:
             classifier = get_local_classifier()

@@ -24,7 +24,7 @@ export default function CTASection() {
           className="text-2xl sm:text-3xl font-light leading-relaxed mb-4"
           style={{
             color: 'var(--text-secondary)',
-            fontFamily: 'var(--font-outfit), sans-serif',
+            fontFamily: 'var(--font-space-grotesk), sans-serif',
           }}
         >
           You don&apos;t have to figure it all out alone.

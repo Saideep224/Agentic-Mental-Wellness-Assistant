@@ -124,7 +124,7 @@ export default function DeleteAccountModal({ userEmail, onClose }: DeleteAccount
                 >
                   <ShieldOff size={28} className="text-red-400" />
                 </div>
-                <h3 className="text-xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-outfit), sans-serif' }}>
+                <h3 className="text-xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}>
                   Account Deleted
                 </h3>
                 <p className="text-sm text-slate-400">
@@ -149,7 +149,7 @@ export default function DeleteAccountModal({ userEmail, onClose }: DeleteAccount
                     <div>
                       <h2
                         className="text-lg font-bold text-white leading-tight"
-                        style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+                        style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
                       >
                         Delete Account
                       </h2>

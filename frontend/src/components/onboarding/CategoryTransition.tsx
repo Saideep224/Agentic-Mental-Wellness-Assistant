@@ -57,7 +57,7 @@ export default function CategoryTransition({ category, onContinue }: CategoryTra
         className="text-3xl sm:text-4xl font-bold mb-4"
         style={{
           color: accentColor,
-          fontFamily: 'var(--font-outfit), sans-serif',
+          fontFamily: 'var(--font-space-grotesk), sans-serif',
           textShadow: glow,
         }}
       >

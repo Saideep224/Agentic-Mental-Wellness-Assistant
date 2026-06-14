@@ -68,7 +68,7 @@ export default function FeatureCards() {
         >
           <h2
             className="text-3xl sm:text-4xl font-bold mb-4 glow-text"
-            style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
+            style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
           >
             More than a chatbot
           </h2>
@@ -114,7 +114,7 @@ export default function FeatureCards() {
                 className="text-xl font-semibold mb-3"
                 style={{
                   color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-outfit), sans-serif',
+                  fontFamily: 'var(--font-space-grotesk), sans-serif',
                 }}
               >
                 {feature.title}

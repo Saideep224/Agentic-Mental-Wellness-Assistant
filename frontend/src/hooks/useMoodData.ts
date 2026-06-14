@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { MoodDataPoint, EmotionalProfile, StressPattern, PersonalityInsight, CommunicationPreference } from '@/types';
+import type { GrowthInsightsData } from '@/api/dashboard';
 import * as api from '@/api';
 
 export function useMoodData() {
@@ -9,6 +10,7 @@ export function useMoodData() {
   const [emotionalProfile, setEmotionalProfile] = useState<EmotionalProfile | null>(null);
   const [stressPatterns, setStressPatterns] = useState<StressPattern[]>([]);
   const [insights, setInsights] = useState<PersonalityInsight[]>([]);
+  const [growthInsights, setGrowthInsights] = useState<GrowthInsightsData | null>(null);
   const [communicationPrefs, setCommunicationPrefs] = useState<CommunicationPreference | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,11 +26,12 @@ export function useMoodData() {
     setError(null);
 
     try {
-      const [moods, profile, stress, personalityInsights] = await Promise.allSettled([
+      const [moods, profile, stress, personalityInsights, growth] = await Promise.allSettled([
         api.getMoodTrends(token),
         api.getEmotionalProfile(token),
         api.getStressPatterns(token),
         api.getInsights(token),
+        api.getGrowthInsights(token),
       ]);
 
       if (moods.status === 'fulfilled') {
@@ -116,6 +119,10 @@ export function useMoodData() {
       if (personalityInsights.status === 'fulfilled') {
         setInsights(personalityInsights.value);
       }
+
+      if (growth.status === 'fulfilled') {
+        setGrowthInsights(growth.value);
+      }
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
       setError('Unable to load your dashboard data. Please try again.');
@@ -133,6 +140,7 @@ export function useMoodData() {
     emotionalProfile,
     stressPatterns,
     insights,
+    growthInsights,
     communicationPrefs,
     isLoading,
     error,

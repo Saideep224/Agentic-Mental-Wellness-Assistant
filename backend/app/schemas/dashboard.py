@@ -3,7 +3,7 @@ Dashboard / analytics response schemas.
 """
 
 from datetime import date, datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_serializer
 
@@ -74,3 +74,25 @@ class InsightsResponse(BaseModel):
     personality_summary: str
     emotional_tendencies: list[str]
     growth_areas: list[str]
+
+
+class GrowthInsightItem(BaseModel):
+    """A single personal growth observation derived from analytics."""
+    icon: str
+    category: str
+    observation: str
+    timeframe: str
+    count: Optional[int] = None
+    trend: str = Field(
+        default="stable",
+        description="'rising', 'falling', or 'stable'",
+    )
+
+
+class GrowthInsightsResponse(BaseModel):
+    """Collection of personal growth observations for the dashboard."""
+    insights: list[GrowthInsightItem]
+    generated_at: str
+    total_logs: int = 0
+    total_memories: int = 0
+    has_data: bool = False

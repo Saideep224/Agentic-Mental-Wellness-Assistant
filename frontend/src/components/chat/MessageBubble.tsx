@@ -9,8 +9,72 @@ interface MessageBubbleProps {
   message: Message;
 }
 
+const getEmotionDisplay = (emotion: string | undefined, emotionScore?: number, moodScore?: number) => {
+  if (!emotion) return null;
+  const emotionKey = emotion.toLowerCase().trim();
+  let emoji = '😐';
+  let label = 'Neutral';
+
+  switch (emotionKey) {
+    case 'happy':
+    case 'happiness':
+    case 'joy':
+      emoji = '😊';
+      label = 'Happy';
+      break;
+    case 'sad':
+    case 'sadness':
+    case 'grief':
+      emoji = '😢';
+      label = 'Sadness';
+      break;
+    case 'stress':
+    case 'stressed':
+    case 'burnout':
+      emoji = '😫';
+      label = 'Stress';
+      break;
+    case 'anxiety':
+    case 'anxious':
+    case 'panic':
+      emoji = '😟';
+      label = 'Anxiety';
+      break;
+    case 'frustration':
+    case 'frustrated':
+    case 'angry':
+    case 'annoyed':
+      emoji = '😤';
+      label = 'Frustration';
+      break;
+    case 'loneliness':
+    case 'lonely':
+    case 'alone':
+      emoji = '😔';
+      label = 'Loneliness';
+      break;
+    case 'neutral':
+      emoji = '😐';
+      label = 'Neutral';
+      break;
+    default:
+      emoji = '💭';
+      label = emotion.charAt(0).toUpperCase() + emotion.slice(1);
+      break;
+  }
+
+  const score = emotionScore !== undefined && emotionScore !== null 
+    ? emotionScore 
+    : (moodScore !== undefined && moodScore !== null ? moodScore : null);
+
+  const percentage = score !== null ? ` (${Math.round(score * 100)}%)` : '';
+  
+  return { emoji, label, percentage };
+};
+
 export default function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
+  const emotionDisplay = getEmotionDisplay(message.emotionDetected, message.emotionScore, message.moodScore);
 
   return (
     <motion.div
@@ -71,10 +135,30 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
 
         {/* Timestamp & emotion */}
         <div
-          className={`flex items-center gap-2 mt-1.5 px-1 ${
-            isUser ? 'justify-end' : 'justify-start'
+          className={`flex flex-col gap-1 mt-1.5 px-1 ${
+            isUser ? 'items-end' : 'items-start'
           }`}
         >
+          {emotionDisplay && (
+            <div
+              className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full mb-0.5"
+              style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                color: 'var(--text-muted)',
+                backdropFilter: 'blur(4px)',
+              }}
+            >
+              <span className="opacity-75">Detected Emotion:</span>
+              <span className="font-semibold text-[var(--text-primary)] flex items-center gap-1">
+                <span>{emotionDisplay.emoji}</span>
+                <span>{emotionDisplay.label}</span>
+                {emotionDisplay.percentage && (
+                  <span className="opacity-75 font-normal text-[10px]">{emotionDisplay.percentage}</span>
+                )}
+              </span>
+            </div>
+          )}
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {formatMessageTime(message.timestamp)}
           </span>

@@ -342,17 +342,38 @@ export function useChat({ conversationId }: UseChatOptions) {
                     const finalMessageId = data.message_id || activeBubbleId;
                     
                     setMessages((prev) => {
-                      return prev.map((msg) =>
-                        msg.id === activeBubbleId
-                          ? {
-                              ...msg,
-                              id: finalMessageId,
-                              emotionDetected: data.emotion_detected,
-                              moodScore: data.mood_score,
-                              agentAnalysis: data.agent_analysis,
-                            }
-                          : msg
-                      );
+                      let lastUserIdx = -1;
+                      for (let i = prev.length - 1; i >= 0; i--) {
+                        if (prev[i].role === 'user') {
+                          lastUserIdx = i;
+                          break;
+                        }
+                      }
+                      return prev.map((msg, idx) => {
+                        if (msg.id === activeBubbleId) {
+                          return {
+                            ...msg,
+                            id: finalMessageId,
+                            emotionDetected: data.emotion_detected,
+                            moodScore: data.mood_score,
+                            emotionScore: data.emotion_score,
+                            stressScore: data.stress_score,
+                            anxietyScore: data.anxiety_score,
+                            agentAnalysis: data.agent_analysis,
+                          };
+                        }
+                        if (idx === lastUserIdx) {
+                          return {
+                            ...msg,
+                            emotionDetected: data.emotion_detected,
+                            moodScore: data.mood_score,
+                            emotionScore: data.emotion_score,
+                            stressScore: data.stress_score,
+                            anxietyScore: data.anxiety_score,
+                          };
+                        }
+                        return msg;
+                      });
                     });
                     cleanUpConnection();
                   }

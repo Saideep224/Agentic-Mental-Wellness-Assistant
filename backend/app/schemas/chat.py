@@ -26,7 +26,11 @@ class MessageResponse(BaseModel):
     content: str
     emotion_detected: str | None = None
     mood_score: float | None = None
+    emotion_score: float | None = None
+    stress_score: float | None = None
+    anxiety_score: float | None = None
     agent_analysis: dict[str, Any] | None = None
+    emotional_context: dict[str, Any] | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -48,6 +48,26 @@ Output ONLY a valid JSON object matching this schema:
   } | null
 }"""
 
+MEMORY_REFLECTION_PROMPT = """You are the Memory Reflection Agent for Esona.
+Your task is to analyze all the user's recorded memories and consolidate them into a single, structured summary of the user's current life context, personality, and concerns.
+
+Consolidate the memories into a clean, bulleted list of facts grouped under:
+- What the user is interested in / hobbies.
+- Where they are studying or working.
+- What they are currently concerned about or working on (e.g. internships, projects).
+- What often stresses them out or triggers their anxiety.
+
+Do NOT include specific one-off venting messages unless they represent a pattern. Keep it concise, factual, and direct.
+Example format:
+User is:
+- Interested in AI and coding
+- Studying Computer Science at SRM AP
+- Concerned about internship placement and GPA
+- Often stressed by upcoming exam deadlines and public speaking
+
+Output ONLY the bulleted list.
+"""
+
 
 class MemoryService:
     """
@@ -207,6 +227,148 @@ class MemoryService:
         except Exception as e:
             logger.error(f"Failed to retrieve memories: {e}", exc_info=True)
             return []
+
+    async def prune_expired_memories(self, db: AsyncSession, user_id: str) -> int:
+        """
+        Prunes (deletes) expired temporary memories for a user based on importance_score / decay_priority.
+        Rules:
+        - decay_priority = 1 or importance_score < 4 (very low/temporary): Delete if older than 3 days.
+        - decay_priority = 2 or importance_score < 6 (low/medium): Delete if older than 14 days.
+        - decay_priority = 3 or importance_score < 8 (medium/high): Delete if older than 30 days.
+        - decay_priority >= 4 or importance_score >= 8 (core/permanent): Never delete.
+        Returns the number of deleted memories.
+        """
+        try:
+            import uuid
+            from datetime import datetime, timezone, timedelta
+            user_uuid = uuid.UUID(str(user_id)) if isinstance(user_id, (str, uuid.UUID)) else user_id
+
+            # Retrieve all memories for the user
+            result = await db.execute(
+                select(Memory).where(Memory.user_id == user_uuid)
+            )
+            memories = result.scalars().all()
+            now = datetime.now(timezone.utc)
+            deleted_count = 0
+
+            for mem in memories:
+                # Resolve importance and decay priority
+                patterns = mem.behavior_patterns or {}
+                imp = mem.importance_score if mem.importance_score is not None else float(patterns.get("importance_level", 5.0))
+                decay = patterns.get("decay_priority")
+                if decay is None:
+                    # Infer decay from importance
+                    if imp >= 8:
+                        decay = 5
+                    elif imp >= 6:
+                        decay = 3
+                    elif imp >= 4:
+                        decay = 2
+                    else:
+                        decay = 1
+
+                # Calculate age
+                age = now - mem.created_at.replace(tzinfo=timezone.utc) if mem.created_at.tzinfo is None else now - mem.created_at
+
+                # Pruning rules
+                should_delete = False
+                if decay == 1 or imp < 4:
+                    if age > timedelta(days=3):
+                        should_delete = True
+                elif decay == 2 or imp < 6:
+                    if age > timedelta(days=14):
+                        should_delete = True
+                elif decay == 3 or imp < 8:
+                    if age > timedelta(days=30):
+                        should_delete = True
+
+                if should_delete:
+                    await db.delete(mem)
+                    deleted_count += 1
+
+            if deleted_count > 0:
+                await db.flush()
+                logger.info(f"Pruned {deleted_count} expired memories for user {user_id}")
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Failed to prune expired memories for user {user_id}: {e}", exc_info=True)
+            return 0
+
+    async def reflect_and_consolidate_memories(self, db: AsyncSession, user_id: str) -> Optional[Memory]:
+        """
+        Gathers all stored memories for a user, calls the LLM to consolidate them into a structured
+        reflection summary of their life context, personality, and concerns, deletes any older reflection
+        memory, and saves the new one.
+        """
+        try:
+            import uuid
+            user_uuid = uuid.UUID(str(user_id)) if isinstance(user_id, (str, uuid.UUID)) else user_id
+
+            # 1. Retrieve all stored memories (excluding previous reflections to avoid self-reinforcing loops)
+            result = await db.execute(
+                select(Memory).where(
+                    Memory.user_id == user_uuid,
+                    Memory.memory_type != "reflection"
+                )
+            )
+            memories = result.scalars().all()
+            
+            # Skip if there are fewer than 5 memories (not enough context to reflect on)
+            if len(memories) < 5:
+                logger.info(f"Skipping memory reflection for user {user_id}: only {len(memories)} memories present (min 5).")
+                return None
+
+            # 2. Format memories for prompt
+            formatted_memories = []
+            for m in memories:
+                formatted_memories.append(f"- {m.memory_summary}")
+            memories_text = "\n".join(formatted_memories)
+
+            # 3. Call LLM to consolidate
+            client = get_chat_client()
+            response = await client.chat.completions.create(
+                model=settings.llm_model,
+                messages=[
+                    {"role": "system", "content": MEMORY_REFLECTION_PROMPT},
+                    {"role": "user", "content": f"User's memories:\n{memories_text}"}
+                ],
+                temperature=0.3,
+            )
+            reflection_content = response.choices[0].message.content.strip()
+
+            if not reflection_content or len(reflection_content) < 10:
+                logger.warning(f"Consolidated memory reflection was too short or empty. Skipping.")
+                return None
+
+            # 4. Delete existing reflections to keep only the newest one
+            delete_res = await db.execute(
+                select(Memory).where(
+                    Memory.user_id == user_uuid,
+                    Memory.memory_type == "reflection"
+                )
+            )
+            old_reflections = delete_res.scalars().all()
+            for old in old_reflections:
+                await db.delete(old)
+            if old_reflections:
+                await db.flush()
+                logger.info(f"Deleted {len(old_reflections)} older memory reflection(s) for user {user_id}")
+
+            # 5. Save the new reflection summary
+            new_reflection = await self.save_memory(
+                db=db,
+                user_id=str(user_id),
+                memory_summary=reflection_content,
+                behavior_patterns={"source": "reflection", "decay_priority": 5},
+                memory_type="reflection",
+                importance_score=9.0
+            )
+            logger.info(f"Successfully consolidated memories into reflection summary for user {user_id}")
+            return new_reflection
+
+        except Exception as e:
+            logger.error(f"Failed to consolidate and reflect memories for user {user_id}: {e}", exc_info=True)
+            return None
 
     # --- Reusable aliases matching camelCase requirements ---
     async def analyzeMemoryImportance(

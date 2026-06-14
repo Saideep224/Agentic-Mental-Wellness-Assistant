@@ -79,6 +79,8 @@ class ResponseOrchestrator:
         detected_emotion_confidence: float = 1.0,
         graph_relationships: List[str] = None,
         comfort_kit: Dict[str, Any] = None,
+        emotion_timeline: List[str] = None,
+        growth_insight: str = None,
     ) -> str:
         """
         Assemble the highly tailored system prompt for Gemini based on orchestrated data.
@@ -203,12 +205,34 @@ class ResponseOrchestrator:
             "confidence": round(detected_emotion_confidence, 2)
         }, indent=2)
 
+        timeline_str = "No emotion history for the last 7 days."
+        if emotion_timeline:
+            capitalized_timeline = [e.capitalize() for e in emotion_timeline]
+            timeline_str = " -> ".join(capitalized_timeline)
+
+        # Format Personal Growth Observation block (injected every ~15 messages)
+        growth_insight_block = ""
+        if growth_insight:
+            growth_insight_block = (
+                "\n================================================="
+                "\nPERSONAL GROWTH OBSERVATION:"
+                f"\nBased on recent data, here is something you have noticed about the user:"
+                f"\n  '{growth_insight}'"
+                "\nIf it fits naturally in the conversation (e.g. user brings up the topic,"
+                " or you are checking in), you may gently reference this observation once."
+                " Keep it casual and human — NOT clinical. Do NOT force it if it doesn't fit."
+                "\n================================================="
+            )
+
         system_prompt = f"""You are Esona, a deeply supportive, emotionally intelligent AI wellness companion for students.
 Your job is NOT to be a therapist, counselor, or advice engine. Your job is to feel like a real, emotionally-aware friend texting the user. The user should forget they are talking to an AI.
 
 =================================================
 EMOTION CONTEXT:
 {emotion_context_str}
+
+RECENT EMOTION TIMELINE (LAST 7 DAYS):
+{timeline_str}
 =================================================
 {profile_context}
 =================================================
@@ -216,6 +240,7 @@ KNOWLEDGE GRAPH RELATIONSHIPS:
 {graph_str}
 =================================================
 {comfort_kit_block}
+{growth_insight_block}
 CURRENT USER PROFILE DETAILS (LEGACY):
 - Name: {user_name}
 {profile_details}
@@ -238,6 +263,7 @@ PERSONALIZATION RULES:
 5. Adapt your support based on their listed stress triggers, coping mechanisms, support system, and sleep habits. Suggest their preferred coping mechanisms naturally when appropriate.
 6. Check the PERSONALIZATION CONTEXT & MISSING FIELD ROUTING block to see which fields are already populated (under EXISTING INFORMATION). You are STRICTLY FORBIDDEN from asking about any of these fields again under any circumstances. Treat them as already fully known and use them naturally.
 7. Only ask questions for missing fields (listed under MISSING INFORMATION) if the conversation naturally leads there, and ask at most one question. ALWAYS use a natural conversational human style. Never ask robotic questions like "What is your profession?" or "What are you studying?". Instead use natural phrasing (e.g., "By the way, what are you studying these days?", "What kind of work do you do?", "What's been keeping you busy lately?").
+8. Emotion Timeline Trend Checking: Review the RECENT EMOTION TIMELINE (LAST 7 DAYS). If you notice a recurring emotional trend (e.g., anxiety or stress appearing multiple times), casually and gently call out this pattern to the user if it is natural to do so. For example: "I've noticed exam-related anxiety has appeared several times this week." Or "It seems like you've been carrying a lot of stress these past few days." Speak casually and supportively like a friend, not like a therapist diagnosing them.
 
 
 COMMUNICATION STYLE DIRECTION:

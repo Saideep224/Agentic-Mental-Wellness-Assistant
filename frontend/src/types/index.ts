@@ -47,6 +47,9 @@ export interface Message {
   timestamp: Date;
   emotionDetected?: string;
   moodScore?: number;
+  emotionScore?: number;
+  stressScore?: number;
+  anxietyScore?: number;
   agentAnalysis?: Record<string, any>;
   isPlaceholder?: boolean;
 }

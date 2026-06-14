@@ -99,6 +99,9 @@ class Message(Base):
         self.emotion = value
 
     mood_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    emotion_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stress_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    anxiety_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     agent_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     emotional_context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

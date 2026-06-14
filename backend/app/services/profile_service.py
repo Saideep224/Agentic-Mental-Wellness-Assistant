@@ -2,15 +2,51 @@
 Profile Service – manages the personalized UserPersonalProfile CRUD and context generation.
 """
 
+import json
 import logging
 import uuid
 from typing import Dict, Any, Optional, Union, List
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.user_personal_profile import UserPersonalProfile
+from app.utils.llm import get_chat_client
 
 logger = logging.getLogger(__name__)
+
+PROFILE_FACT_EXTRACTION_PROMPT = """You are a Profile Fact Extraction Agent.
+Analyze the user's message and extract any personal details or facts about the user.
+Extract ONLY facts that are explicitly mentioned. Do not assume or extrapolate.
+
+We track the following profile fields:
+1. name (user's name/nickname)
+2. university (the university or school they attend, e.g. SRM AP, Stanford)
+3. profession (their occupation, e.g. student, software engineer)
+4. field_of_work (their field of study or industry, e.g. Computer Science, Finance)
+5. interests (hobbies, interests, passions as a list)
+6. goals (what they are working on, aspirations, projects as a list)
+7. stress_triggers (what causes them stress, anxiety, or worry as a list)
+8. coping_mechanisms (what helps them deal with stress as a list)
+9. sleep_habits (quality of sleep, e.g. good, average, poor)
+
+Output format:
+Return ONLY a valid JSON object. If no facts are found for a field, set it to null (or empty list for list fields).
+If absolutely no facts are mentioned, all fields should be null/empty.
+
+Example JSON output:
+{
+  "name": "Sai",
+  "university": "SRM AP",
+  "profession": "College Student",
+  "field_of_work": "Computer Science",
+  "interests": ["Anime", "Video Editing"],
+  "goals": ["pass the midterm exam", "find an internship"],
+  "stress_triggers": ["final exams", "placements"],
+  "coping_mechanisms": ["lo-fi music", "walking"],
+  "sleep_habits": "poor"
+}
+"""
 
 
 class ProfileService:
@@ -42,6 +78,7 @@ class ProfileService:
             age=str(profile_data.get("age")) if profile_data.get("age") is not None else None,
             profession=profile_data.get("profession"),
             field_of_work=profile_data.get("field_of_work"),
+            university=profile_data.get("university"),
             current_challenge=profile_data.get("current_challenge"),
             advice_preference=profile_data.get("advice_preference"),
             primary_support_need=profile_data.get("primary_support_need"),
@@ -72,7 +109,7 @@ class ProfileService:
 
         # Standard field mapping
         string_fields = [
-            "name", "age", "profession", "field_of_work", "current_challenge", 
+            "name", "age", "profession", "field_of_work", "university", "current_challenge", 
             "advice_preference", "primary_support_need", "student_year", 
             "communication_style", "support_system", "sleep_habits"
         ]
@@ -113,6 +150,8 @@ class ProfileService:
             lines.append(f"Profession: {profile.profession}")
         if profile.field_of_work:
             lines.append(f"Field of Work/Study: {profile.field_of_work}")
+        if profile.university:
+            lines.append(f"University: {profile.university}")
         if profile.current_challenge:
             lines.append(f"Current Challenge: {profile.current_challenge}")
         if profile.advice_preference:
@@ -180,6 +219,7 @@ class ProfileService:
             "age": None,
             "profession": None,
             "field_of_work": None,
+            "university": None,
             "current_challenge": None,
             "advice_preference": None,
             "primary_support_need": None,
@@ -212,6 +252,7 @@ class ProfileService:
             if not is_val_empty(personal_profile.age): data["age"] = personal_profile.age
             if not is_val_empty(personal_profile.profession): data["profession"] = personal_profile.profession
             if not is_val_empty(personal_profile.field_of_work): data["field_of_work"] = personal_profile.field_of_work
+            if not is_val_empty(personal_profile.university): data["university"] = personal_profile.university
             if not is_val_empty(personal_profile.current_challenge): data["current_challenge"] = personal_profile.current_challenge
             if not is_val_empty(personal_profile.advice_preference): data["advice_preference"] = personal_profile.advice_preference
             if not is_val_empty(personal_profile.primary_support_need): data["primary_support_need"] = personal_profile.primary_support_need
@@ -358,6 +399,7 @@ class ProfileService:
             "age": "age",
             "profession": "profession/occupation (e.g. college student, developer)",
             "field_of_work": "field of work or study (e.g. Computer Science, medicine)",
+            "university": "university or school they attend (e.g. SRM AP)",
             "current_challenge": "biggest challenge they are currently facing",
             "advice_preference": "advice style preference (e.g. direct and honest, casual, mostly listening)",
             "primary_support_need": "what they need support with the most",
@@ -406,6 +448,82 @@ class ProfileService:
             "=================================================\n"
         )
         return block
+
+    async def extract_and_update_profile_facts(
+        self, db: AsyncSession, user_id: Union[uuid.UUID, str], user_message: str
+    ) -> Optional[UserPersonalProfile]:
+        """
+        Analyze the user's message using an LLM to extract any explicitly mentioned personal facts,
+        and dynamically update/merge them in the user's profile in the database.
+        """
+        if not user_message or len(user_message.strip()) < 3:
+            return None
+
+        if isinstance(user_id, str):
+            user_id = uuid.UUID(user_id)
+
+        try:
+            client = get_chat_client()
+            response = await client.chat.completions.create(
+                model=settings.llm_model,
+                messages=[
+                    {"role": "system", "content": PROFILE_FACT_EXTRACTION_PROMPT},
+                    {"role": "user", "content": f"User message: {user_message}"}
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            raw = response.choices[0].message.content.strip()
+            extracted = json.loads(raw)
+            logger.info(f"[Fact Extraction] Extracted facts: {extracted}")
+
+            # Check if any non-null/non-empty facts were extracted
+            has_facts = False
+            for k, v in extracted.items():
+                if v is not None and v != [] and v != "":
+                    has_facts = True
+                    break
+
+            if not has_facts:
+                return None
+
+            # Retrieve profile or create it if missing
+            profile = await self.get_profile(db, user_id)
+            if not profile:
+                profile = UserPersonalProfile(user_id=user_id)
+                db.add(profile)
+                await db.flush()
+
+            # Merge single-value fields
+            single_fields = ["name", "university", "profession", "field_of_work", "sleep_habits"]
+            for field in single_fields:
+                val = extracted.get(field)
+                if val is not None and val != "":
+                    setattr(profile, field, str(val))
+
+            # Merge list fields avoiding duplicates
+            list_fields = ["interests", "goals", "stress_triggers", "coping_mechanisms"]
+            for field in list_fields:
+                new_vals = extracted.get(field) or []
+                if isinstance(new_vals, str):
+                    new_vals = [new_vals]
+                if new_vals:
+                    current_list = list(getattr(profile, field) or [])
+                    # Add new values if not already present
+                    for val in new_vals:
+                        val_str = str(val).strip()
+                        if val_str and val_str not in current_list:
+                            current_list.append(val_str)
+                    setattr(profile, field, current_list)
+
+            db.add(profile)
+            await db.flush()
+            logger.info(f"[Fact Extraction] Profile updated successfully for user {user_id}")
+            return profile
+
+        except Exception as e:
+            logger.error(f"Failed to extract and update profile facts: {e}", exc_info=True)
+            return None
 
 
 # Export standard singleton

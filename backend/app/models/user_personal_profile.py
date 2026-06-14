@@ -31,6 +31,7 @@ class UserPersonalProfile(Base):
     age: Mapped[str | None] = mapped_column(String(50), nullable=True)
     profession: Mapped[str | None] = mapped_column(String(255), nullable=True)
     field_of_work: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    university: Mapped[str | None] = mapped_column(String(255), nullable=True)
     current_challenge: Mapped[str | None] = mapped_column(String(255), nullable=True)
     advice_preference: Mapped[str | None] = mapped_column(String(255), nullable=True)
     primary_support_need: Mapped[str | None] = mapped_column(String(255), nullable=True)

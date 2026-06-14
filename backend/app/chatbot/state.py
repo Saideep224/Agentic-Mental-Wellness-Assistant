@@ -33,6 +33,7 @@ class AgentState(TypedDict, total=False):
     mood_score: float
     detected_emotion: str
     detected_emotion_confidence: float
+    emotion_timeline: list[str]
 
     # Multi-Agent keys
     personality_agent: dict

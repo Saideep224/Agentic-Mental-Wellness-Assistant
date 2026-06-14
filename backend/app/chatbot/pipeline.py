@@ -94,11 +94,19 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             detected_emotion = emotion_res.get("detected_emotion", "Neutral")
             confidence_score = emotion_res.get("confidence_score", 1.0)
             
+            # Run Profile Fact Extraction and update db
+            try:
+                from app.services.profile_service import profile_service
+                await profile_service.extract_and_update_profile_facts(temp_db, user_id, user_message)
+            except Exception as fact_err:
+                logger.error(f"Failed to extract and update profile facts: {fact_err}", exc_info=True)
+            
             # Run Knowledge Graph Extraction
             try:
                 from app.services.knowledge_graph_service import knowledge_graph_service
                 import uuid
-                extracted_rels = await knowledge_graph_service.extract_relationships(user_message)
+                user_name = profile.get("user_name", "User") or "User"
+                extracted_rels = await knowledge_graph_service.extract_relationships(user_message, user_name=user_name)
                 if extracted_rels:
                     user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
                     await knowledge_graph_service.store_relationships(temp_db, user_uuid, extracted_rels)
@@ -189,30 +197,24 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
 
     # Execute logical agents to format their states
     p_data = personality_agent.analyze(analysis)
-    e_data = emotion_agent.analyze(analysis)
+    from app.services.mentalbert_service import mentalbert_service
+    emotion_scores = mentalbert_service.predict(user_message)
+    e_data = emotion_agent.analyze(emotion_scores)
     b_data = behavior_agent.analyze(analysis)
     g_data = growth_agent.analyze(analysis)
     
-    # Force alignment between MentalBERT classification and emotion agent's primary_emotion
-    e_data["primary_emotion"] = detected_emotion.lower()
-    
-    # Adjust emotional dimensions based on MentalBERT result
-    if detected_emotion == "Stress":
-        e_data["stress"] = max(e_data.get("stress", 0.3), 0.75)
-    elif detected_emotion == "Anxiety":
-        e_data["anxiety"] = max(e_data.get("anxiety", 0.3), 0.80)
-    elif detected_emotion == "Sadness":
-        e_data["sadness"] = max(e_data.get("sadness", 0.3), 0.80)
-    elif detected_emotion == "Loneliness":
-        e_data["sadness"] = max(e_data.get("sadness", 0.3), 0.75)
-        e_data["anxiety"] = max(e_data.get("anxiety", 0.3), 0.60)
-    elif detected_emotion == "Frustration":
-        e_data["stress"] = max(e_data.get("stress", 0.3), 0.70)
-    elif detected_emotion == "Happy":
-        e_data["stress"] = min(e_data.get("stress", 0.3), 0.20)
-        e_data["anxiety"] = min(e_data.get("anxiety", 0.3), 0.20)
-        e_data["sadness"] = min(e_data.get("sadness", 0.3), 0.10)
-        e_data["burnout"] = min(e_data.get("burnout", 0.3), 0.20)
+    # Sync detected_emotion and confidence_score with direct MentalBERT outputs
+    detected_emotion = e_data.get("primary_emotion", "Neutral").capitalize()
+    probs_list = []
+    try:
+        import torch
+        if torch.is_tensor(emotion_scores):
+            probs_list = emotion_scores.tolist()[0]
+    except Exception:
+        pass
+    if not probs_list and isinstance(emotion_scores, list):
+        probs_list = emotion_scores
+    confidence_score = max(probs_list) if probs_list else 1.0
 
     # Run new Intent and Safety Agents
     i_data = intent_agent.analyze(analysis)
@@ -280,14 +282,21 @@ async def memory_agent_node(state: AgentState) -> dict:
         close_db = True
 
     try:
-        # Retrieve memories and patterns using the memory agent (limit top 3 to optimize tokens) with an 800ms timeout
+        # Retrieve memories and patterns using the memory agent (limit top 5 to optimize tokens) with an 800ms timeout
         result = await asyncio.wait_for(
-            memory_agent.retrieve_context(db, user_id, user_message, limit=3),
+            memory_agent.retrieve_context(db, user_id, user_message, limit=5),
             timeout=0.8
         )
         retrieved_memories = result.get("memories", [])
         patterns = result.get("emotional_patterns", {})
         
+        # Prune expired memories
+        try:
+            from app.services.memory_service import memory_service
+            await memory_service.prune_expired_memories(db, user_id)
+        except Exception as prune_err:
+            logger.warning(f"[MEMORY] Memory pruning failed: {prune_err}")
+
         # Populate in-memory cache
         _memory_cache[str(user_id)] = (retrieved_memories, patterns)
     except Exception as e:
@@ -390,6 +399,30 @@ async def response_agent_node(state: AgentState) -> dict:
     current_time_ist = datetime.now(ist_tz)
     current_time_str = current_time_ist.strftime('%A, %B %d, %Y %I:%M %p (IST)')
 
+    # Fetch emotion timeline for the last 7 days
+    emotion_timeline = []
+    if db and user_id:
+        try:
+            from app.services.mood_tracker import MoodTracker
+            import uuid
+            user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+            mt = MoodTracker(db)
+            emotion_timeline = await mt.retrieve_emotion_timeline(user_uuid, days=7)
+        except Exception as timeline_err:
+            logger.warning(f"Failed to retrieve emotion timeline: {timeline_err}")
+
+    # Fetch a single growth insight every 15 user messages for natural chat injection
+    growth_insight: str | None = None
+    try:
+        total_msgs = len([m for m in history if m.get("role") == "user"])
+        if db and user_id and total_msgs > 0 and total_msgs % 15 == 0:
+            from app.services.growth_insights_service import growth_insights_service
+            growth_insight = await growth_insights_service.get_top_insight_for_chat(db, user_id)
+            if growth_insight:
+                logger.info(f"[GrowthInsights] Injecting insight at message {total_msgs}: {growth_insight[:60]}...")
+    except Exception as gi_err:
+        logger.warning(f"Failed to fetch growth insight for chat injection: {gi_err}")
+
     # Compile Final Orchestrated System Prompt
     system_prompt = response_orchestrator.build_final_prompt(
         user_name=user_name,
@@ -407,6 +440,8 @@ async def response_agent_node(state: AgentState) -> dict:
         detected_emotion_confidence=state.get("detected_emotion_confidence", 1.0),
         graph_relationships=state.get("graph_relationships", []),
         comfort_kit=state.get("comfort_kit", {}),
+        emotion_timeline=emotion_timeline,
+        growth_insight=growth_insight,
     )
 
     # Prompt Summary for Live Debug Panel

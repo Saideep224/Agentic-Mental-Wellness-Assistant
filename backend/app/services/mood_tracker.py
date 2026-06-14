@@ -11,6 +11,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Message, Conversation
+from app.models.mood_log import MoodLog
 
 logger = logging.getLogger(__name__)
 
@@ -63,3 +64,35 @@ class MoodTracker:
         
         # High volatility threshold
         return avg_diff > 0.3
+
+    async def retrieve_emotion_timeline(self, user_id: Any, days: int = 7) -> List[str]:
+        """
+        Retrieve a chronological list of primary emotion labels logged in the mood_logs table for the last N days.
+        """
+        from datetime import datetime, timedelta, timezone
+        
+        # Normalize user_id to uuid.UUID if it's a string
+        if isinstance(user_id, str):
+            try:
+                user_uuid = uuid.UUID(user_id)
+            except ValueError:
+                logger.error(f"Invalid UUID string provided: {user_id}")
+                return []
+        else:
+            user_uuid = user_id
+
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        try:
+            result = await self.db.execute(
+                select(MoodLog.detected_emotion)
+                .where(
+                    MoodLog.user_id == user_uuid,
+                    MoodLog.created_at >= since,
+                )
+                .order_by(MoodLog.created_at.asc())
+            )
+            return list(result.scalars().all())
+        except Exception as e:
+            logger.error(f"Error retrieving emotion timeline for user {user_id}: {e}", exc_info=True)
+            return []
+

@@ -541,6 +541,19 @@ async def send_message(
             agent_analysis = {}
             result = {}
         
+        confidence_score = result.get("detected_emotion_confidence", 1.0)
+        e_data = result.get("emotion_agent", {})
+        stress_score = e_data.get("stress", 0.0)
+        anxiety_score = e_data.get("anxiety", 0.0)
+        
+        # Update user's message with emotion classification details
+        user_msg.emotion = detected_emotion
+        user_msg.emotion_score = confidence_score
+        user_msg.stress_score = stress_score
+        user_msg.anxiety_score = anxiety_score
+        user_msg.emotional_context = {"emotion": detected_emotion, "confidence": confidence_score}
+        db.add(user_msg)
+        
         # Log memory retrieval details
         retrieved_memories = result.get("memories", [])
         logger.info(f"[MEMORY] Retrieved {len(retrieved_memories)} relevant memories for user.")
@@ -595,7 +608,11 @@ async def send_message(
                 emotion_detected=detected_emotion,
                 mood_score=mood_score,
                 agent_analysis=agent_analysis,
-                emotional_context=agent_analysis.get("emotion_analysis", {}),
+                emotion=detected_emotion,
+                emotion_score=confidence_score,
+                stress_score=stress_score,
+                anxiety_score=anxiety_score,
+                emotional_context={"emotion": detected_emotion, "confidence": confidence_score},
             )
             db.add(assistant_msg)
 
@@ -629,6 +646,16 @@ async def send_message(
                 except Exception as sum_err:
                     logger.error(f"[SUMMARIZATION ERROR] Summarization trigger failed: {sum_err}", exc_info=True)
 
+            # Trigger memory reflection every 10 user messages
+            try:
+                num_user = sum(1 for m in history if m.get("role") == "user")
+                if num_user > 0 and num_user % 10 == 0:
+                    logger.info(f"[DB CONTEXT] Triggering memory reflection for user {current_user.id} (user messages: {num_user})...")
+                    from app.services.memory_service import memory_service
+                    await memory_service.reflect_and_consolidate_memories(db, current_user.id)
+            except Exception as ref_err:
+                logger.error(f"[REFLECTION ERROR] Reflection failed: {ref_err}", exc_info=True)
+
             # Commit assistant message + mood logs
             await db.commit()
             try:
@@ -661,6 +688,9 @@ async def send_message(
             "response": full_response,
             "emotionDetected": detected_emotion,
             "moodScore": mood_score,
+            "emotionScore": confidence_score,
+            "stressScore": stress_score,
+            "anxietyScore": anxiety_score,
             "agentAnalysis": agent_analysis,
         }
 
@@ -709,6 +739,33 @@ async def generate_and_persist_sse_response(
             mood_score = 0.5
             agent_analysis = {}
             result = {}
+            
+        confidence_score = result.get("detected_emotion_confidence", 1.0)
+        e_data = result.get("emotion_agent", {})
+        stress_score = e_data.get("stress", 0.0)
+        anxiety_score = e_data.get("anxiety", 0.0)
+        
+        # Update user's message with emotion details
+        try:
+            user_msg_res = await db.execute(
+                select(Message)
+                .where(
+                    Message.conversation_id == conversation_id,
+                    Message.role == MessageRole.user
+                )
+                .order_by(Message.created_at.desc())
+                .limit(1)
+            )
+            user_msg = user_msg_res.scalar_one_or_none()
+            if user_msg:
+                user_msg.emotion = detected_emotion
+                user_msg.emotion_score = confidence_score
+                user_msg.stress_score = stress_score
+                user_msg.anxiety_score = anxiety_score
+                user_msg.emotional_context = {"emotion": detected_emotion, "confidence": confidence_score}
+                db.add(user_msg)
+        except Exception as update_user_msg_err:
+            logger.warning(f"Failed to update user message with emotion details: {update_user_msg_err}")
 
         # 2. Get/recreate conversation
         conversation = None
@@ -756,7 +813,11 @@ async def generate_and_persist_sse_response(
             emotion_detected=detected_emotion,
             mood_score=mood_score,
             agent_analysis=agent_analysis,
-            emotional_context=agent_analysis.get("emotion_analysis", {}),
+            emotion=detected_emotion,
+            emotion_score=confidence_score,
+            stress_score=stress_score,
+            anxiety_score=anxiety_score,
+            emotional_context={"emotion": detected_emotion, "confidence": confidence_score},
         )
         db.add(assistant_msg)
 
@@ -834,10 +895,24 @@ async def generate_and_persist_sse_response(
             except Exception as sum_err:
                 logger.error(f"[SSE SUMMARIZATION ERROR] Summarization trigger failed: {sum_err}", exc_info=True)
 
+        # 8. Memory reflection trigger
+        try:
+            num_user = sum(1 for m in history if m.get("role") == "user")
+            if num_user > 0 and num_user % 10 == 0:
+                logger.info(f"[SSE REFLECTION] Triggering memory reflection for user {current_user_id} (user messages: {num_user})...")
+                from app.services.memory_service import memory_service
+                await memory_service.reflect_and_consolidate_memories(db, current_user_id)
+                await db.commit()
+        except Exception as ref_err:
+            logger.error(f"[SSE REFLECTION ERROR] Reflection failed: {ref_err}", exc_info=True)
+
         return {
             "full_response": full_response,
             "detected_emotion": detected_emotion,
             "mood_score": mood_score,
+            "emotion_score": confidence_score,
+            "stress_score": stress_score,
+            "anxiety_score": anxiety_score,
             "agent_analysis": agent_analysis,
             "message_id": str(assistant_msg.id) if hasattr(assistant_msg, "id") else str(uuid.uuid4()),
         }
@@ -1039,6 +1114,9 @@ async def stream_message_sse(
                 mood_score = persisted["mood_score"]
                 agent_analysis = persisted["agent_analysis"]
                 msg_id = persisted["message_id"]
+                emotion_score = persisted.get("emotion_score", 1.0)
+                stress_score = persisted.get("stress_score", 0.0)
+                anxiety_score = persisted.get("anxiety_score", 0.0)
  
                 # Yield actual chunks
                 logger.info(f"[SSE STREAM] Yielding response text chunks...")
@@ -1065,6 +1143,9 @@ async def stream_message_sse(
                         "conversation_id": str(conversation_id_resolved),
                         "emotion_detected": detected_emotion,
                         "mood_score": mood_score,
+                        "emotion_score": emotion_score,
+                        "stress_score": stress_score,
+                        "anxiety_score": anxiety_score,
                         "agent_analysis": agent_analysis,
                     }),
                 }

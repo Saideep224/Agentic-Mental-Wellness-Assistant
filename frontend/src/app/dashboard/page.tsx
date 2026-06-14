@@ -11,6 +11,7 @@ import StressPatternChart from '@/components/dashboard/StressPatternChart';
 import EmotionalProfileCard from '@/components/dashboard/EmotionalProfileCard';
 import PersonalityInsights from '@/components/dashboard/PersonalityInsights';
 import DeleteAccountModal from '@/components/dashboard/DeleteAccountModal';
+import GrowthInsightsCard from '@/components/dashboard/GrowthInsightsCard';
 import { useMoodData } from '@/hooks/useMoodData';
 import { getToken, getStoredUser, submitOnboarding } from '@/api';
 import { questions } from '@/data/questions';
@@ -571,6 +572,7 @@ export default function DashboardPage() {
     emotionalProfile,
     stressPatterns,
     insights,
+    growthInsights,
     communicationPrefs,
     isLoading,
     refresh,
@@ -792,6 +794,13 @@ export default function DashboardPage() {
                   <PersonalizedSuggestionsCard profile={emotionalProfile} />
                   
                   <PersonalityInsights insights={insights} />
+
+                  {/* Personal Growth Insights — full width */}
+                  <GrowthInsightsCard
+                    insights={growthInsights?.insights ?? []}
+                    totalLogs={growthInsights?.total_logs}
+                    totalMemories={growthInsights?.total_memories}
+                  />
                 </>
               ) : (
                 /* CTA when no onboarding answers */

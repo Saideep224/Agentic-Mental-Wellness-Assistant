@@ -21,7 +21,7 @@ class MemoryAgent:
     def __init__(self) -> None:
         self.mm = MemoryManager()
 
-    async def retrieve_context(self, db: AsyncSession, user_id: str, query: str, limit: int = 3) -> Dict[str, Any]:
+    async def retrieve_context(self, db: AsyncSession, user_id: str, query: str, limit: int = 5) -> Dict[str, Any]:
         """
         Recall relevant memories and pull emotional patterns for LLM context enrichment.
         """

@@ -124,9 +124,31 @@ async def get_db() -> AsyncSession:  # type: ignore[misc]
 
 
 async def create_tables() -> None:
-    """Create all tables (used during app startup / dev)."""
+    """Create all tables (used during app startup / dev) and run migrations."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+    from sqlalchemy import text
+    try:
+        async with engine.begin() as conn:
+            if settings.is_postgres:
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS emotion_score double precision;"))
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS stress_score double precision;"))
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS anxiety_score double precision;"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS university text;"))
+            else:
+                for col in ["emotion_score", "stress_score", "anxiety_score"]:
+                    try:
+                        await conn.execute(text(f"ALTER TABLE chat_messages ADD COLUMN {col} FLOAT;"))
+                    except Exception:
+                        pass
+                try:
+                    await conn.execute(text("ALTER TABLE user_profile ADD COLUMN university VARCHAR(255);"))
+                except Exception:
+                    pass
+        logger.info("[Migration] Database columns checked/added successfully.")
+    except Exception as migration_err:
+        logger.error(f"[Migration Warning] Failed to run database alter migrations: {migration_err}")
 
 
 # ── In-Memory Session Caches for Fallback Resilience ─────────

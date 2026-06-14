@@ -54,3 +54,25 @@ export async function getInsights(token: string): Promise<PersonalityInsight[]> 
   }
   return [];
 }
+
+export interface GrowthInsightItem {
+  icon: string;
+  category: string;
+  observation: string;
+  timeframe: string;
+  count: number | null;
+  trend: 'rising' | 'falling' | 'stable';
+}
+
+export interface GrowthInsightsData {
+  insights: GrowthInsightItem[];
+  generated_at: string;
+  total_logs: number;
+  total_memories: number;
+  has_data: boolean;
+}
+
+export async function getGrowthInsights(token: string): Promise<GrowthInsightsData> {
+  const data = await apiGet<GrowthInsightsData>('/api/dashboard/growth-insights', token);
+  return data ?? { insights: [], generated_at: '', total_logs: 0, total_memories: 0, has_data: false };
+}

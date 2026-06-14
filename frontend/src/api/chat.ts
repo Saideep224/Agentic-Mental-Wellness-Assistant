@@ -57,6 +57,9 @@ export async function getConversationMessages(conversationId: string, token: str
     timestamp: m.created_at ? new Date(m.created_at) : new Date(),
     emotionDetected: m.emotion_detected ?? m.emotionDetected,
     moodScore: m.mood_score ?? m.moodScore,
+    emotionScore: m.emotion_score ?? m.emotionScore,
+    stressScore: m.stress_score ?? m.stressScore,
+    anxietyScore: m.anxiety_score ?? m.anxietyScore,
     agentAnalysis: m.agent_analysis ?? m.agentAnalysis,
   }));
 }

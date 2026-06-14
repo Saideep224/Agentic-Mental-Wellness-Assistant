@@ -22,8 +22,11 @@ from app.schemas.dashboard import (
     StressPatternsResponse,
     InsightItem,
     InsightsResponse,
+    GrowthInsightItem,
+    GrowthInsightsResponse,
 )
 from app.memory.memory_manager import MemoryManager
+from app.services.growth_insights_service import growth_insights_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
@@ -340,3 +343,47 @@ async def get_insights(
         emotional_tendencies=emotional_tendencies,
         growth_areas=growth_areas,
     )
+
+
+@router.get("/growth-insights", response_model=GrowthInsightsResponse)
+async def get_growth_insights(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Personal Growth Insights – aggregates emotion frequencies, memory topic patterns,
+    positive-mood correlations, and knowledge-graph triples into human-readable observations.
+    Derived entirely from existing data; no new LLM calls are made.
+    """
+    try:
+        result = await growth_insights_service.generate_insights(
+            db=db,
+            user_id=str(current_user.id),
+            days=30,
+        )
+
+        return GrowthInsightsResponse(
+            insights=[
+                GrowthInsightItem(
+                    icon=item.icon,
+                    category=item.category,
+                    observation=item.observation,
+                    timeframe=item.timeframe,
+                    count=item.count,
+                    trend=item.trend,
+                )
+                for item in result.insights
+            ],
+            generated_at=result.generated_at,
+            total_logs=result.total_logs,
+            total_memories=result.total_memories,
+            has_data=len(result.insights) > 0,
+        )
+    except Exception as exc:
+        logger.error(f"get_growth_insights failed for user {current_user.id}: {exc}", exc_info=True)
+        from datetime import datetime, timezone
+        return GrowthInsightsResponse(
+            insights=[],
+            generated_at=datetime.now(timezone.utc).isoformat(),
+            has_data=False,
+        )

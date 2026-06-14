@@ -8,6 +8,7 @@ from app.services.memory_service import memory_service
 from app.services.profile_service import profile_service
 from app.services.knowledge_graph_service import knowledge_graph_service
 from app.services.recommendation_service import recommendation_service
+from app.services.mentalbert_service import mentalbert_service
 
 __all__ = [
     "analyze_onboarding",
@@ -16,4 +17,5 @@ __all__ = [
     "profile_service",
     "knowledge_graph_service",
     "recommendation_service",
+    "mentalbert_service",
 ]

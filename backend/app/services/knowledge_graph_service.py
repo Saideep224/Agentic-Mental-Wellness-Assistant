@@ -22,7 +22,7 @@ Extract semantic triples representing facts about the user from the user's messa
 Instructions:
 1. Identify facts about the user's preferences, hobbies, interests, goals, stress triggers, coping mechanisms, profession, support system, or communication style.
 2. Format them as (subject, predicate, object) triples.
-3. The subject MUST be "User".
+3. The subject MUST be "{user_name}".
 4. The predicate should be a singular term representing the relationship type. Use camelCase or UPPERCASE:
    - Likes (for preferences, interests, favorites)
    - Goal (for aspirations, targets, focus areas)
@@ -36,29 +36,30 @@ Instructions:
 6. Provide a confidence score between 0.0 and 1.0 for each relationship.
 
 Output ONLY a valid JSON object matching this schema:
-{
+{{
   "relations": [
-    {"subject": "User", "predicate": "Likes", "object": "Anime", "confidence": 0.95},
-    {"subject": "User", "predicate": "Hobby", "object": "Editing", "confidence": 0.90}
+    {{"subject": "{user_name}", "predicate": "Likes", "object": "Anime", "confidence": 0.95}},
+    {{"subject": "{user_name}", "predicate": "Hobby", "object": "Editing", "confidence": 0.90}}
   ]
-}
+}}
 """
 
 
 class KnowledgeGraphService:
     """Manages extraction, persistence, and querying of user graph relationships."""
 
-    async def extract_relationships(self, message: str) -> List[Dict[str, Any]]:
+    async def extract_relationships(self, message: str, user_name: str = "User") -> List[Dict[str, Any]]:
         """Call LLM client to extract subject-predicate-object triples from user's message."""
         if not message or len(message.strip()) < 2:
             return []
 
         try:
             client = get_chat_client()
+            prompt = KNOWLEDGE_GRAPH_EXTRACTION_PROMPT.format(user_name=user_name)
             response = await client.chat.completions.create(
                 model=settings.llm_model,
                 messages=[
-                    {"role": "system", "content": KNOWLEDGE_GRAPH_EXTRACTION_PROMPT},
+                    {"role": "system", "content": prompt},
                     {"role": "user", "content": f"User message: {message}"}
                 ],
                 temperature=0.1,

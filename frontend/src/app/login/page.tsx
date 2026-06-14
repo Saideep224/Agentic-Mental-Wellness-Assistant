@@ -152,9 +152,9 @@ export default function LoginPage() {
         api.setStoredUser(freshUser);
 
         if (!freshUser.onboardingCompleted) {
-          router.push('/onboarding');
+          router.replace('/onboarding');
         } else {
-          router.push('/chat');
+          router.replace('/chat');
         }
       } else {
         console.log('[Auth] Logging in via Supabase Auth...');
@@ -196,9 +196,9 @@ export default function LoginPage() {
         api.setStoredUser(freshUser);
 
         if (!freshUser.onboardingCompleted) {
-          router.push('/onboarding');
+          router.replace('/onboarding');
         } else {
-          router.push('/chat');
+          router.replace('/chat');
         }
       }
     } catch (err: any) {

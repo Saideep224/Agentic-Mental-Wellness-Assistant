@@ -88,10 +88,10 @@ export default function AuthCallbackPage() {
 
         if (!freshUser.onboardingCompleted) {
           setStatus('Redirecting to onboarding...');
-          router.push('/onboarding');
+          router.replace('/onboarding');
         } else {
           setStatus('Redirecting to chat...');
-          router.push('/chat');
+          router.replace('/chat');
         }
       } catch (err: any) {
         console.error('[Esona Auth Callback] Error:', err);

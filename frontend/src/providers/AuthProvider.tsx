@@ -206,9 +206,9 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     setUser(newUser);
     
     if (!newUser.onboardingCompleted) {
-      router.push('/onboarding');
+      router.replace('/onboarding');
     } else {
-      router.push('/chat');
+      router.replace('/chat');
     }
   };
 

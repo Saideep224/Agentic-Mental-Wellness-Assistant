@@ -27,12 +27,13 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
     """Test suite for Esona V2 features: database, memory, emotion, and onboarding."""
 
     async def asyncSetUp(self):
-        # Initialize test engine and tables
-        self.engine = create_async_engine(TEST_DB_URL, echo=False, poolclass=NullPool)
+        # Initialize test engine and tables on a unique database file
+        self.db_filename = f"./test_esona_{uuid.uuid4().hex}.db"
+        self.test_db_url = f"sqlite+aiosqlite:///{self.db_filename}"
+        self.engine = create_async_engine(self.test_db_url, echo=False, poolclass=NullPool)
         self.session_maker = async_sessionmaker(self.engine, expire_on_commit=False, class_=AsyncSession)
 
         async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
 
         self.db = self.session_maker()
@@ -64,10 +65,11 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         await self.db.close()
         await self.engine.dispose()
         # Clean up database file
-        if os.path.exists("./test_esona.db"):
+        if os.path.exists(self.db_filename):
             try:
-                os.remove("./test_esona.db")
+                os.remove(self.db_filename)
             except Exception:
+                pass
                 pass
 
     async def test_message_persistence(self):
@@ -304,10 +306,38 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
     @patch("app.services.emotion_service.get_chat_client")
     @patch("app.chatbot.pipeline.generate_chat_completion_with_fallback")
     @patch("app.memory.memory_manager.MemoryManager._get_embedding")
-    async def test_emotion_validation_and_crisis_override(self, mock_embedding, mock_generate, mock_get_client):
+    @patch("app.services.profile_service.get_chat_client")
+    @patch("app.services.knowledge_graph_service.get_chat_client")
+    @patch("app.agents.response_agent.generate_chat_completion_with_fallback")
+    async def test_emotion_validation_and_crisis_override(
+        self,
+        mock_response_generate,
+        mock_kg_client,
+        mock_profile_client,
+        mock_embedding,
+        mock_pipeline_generate,
+        mock_emotion_client
+    ):
         """Verify the emotion classification pipeline behaves correctly for validation inputs."""
         import json
         mock_embedding.return_value = [0.1, 0.2, 0.3]
+        
+        # Mock profile client response
+        mock_response_facts = MagicMock()
+        mock_response_facts.choices = [
+            MagicMock(message=MagicMock(content='{"name": null, "university": null, "profession": null}'))
+        ]
+        mock_profile_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_facts)
+
+        # Mock kg client response
+        mock_response_rels = MagicMock()
+        mock_response_rels.choices = [
+            MagicMock(message=MagicMock(content='{"relations": []}'))
+        ]
+        mock_kg_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_rels)
+
+        # Mock final response generation
+        mock_response_generate.return_value = "I am a supportive response."
         
         # 1. Test "I am happy"
         # Mock emotion service LLM response
@@ -315,10 +345,10 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         mock_response_happy.choices = [
             MagicMock(message=MagicMock(content='{"detected_emotion": "Happy", "confidence_score": 0.95}'))
         ]
-        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_happy)
+        mock_emotion_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_happy)
 
         # Mock cognitive analyzer return for Happy
-        mock_generate.return_value = json.dumps({
+        mock_pipeline_generate.return_value = json.dumps({
             "message_type": "emotional",
             "personality_agent": {},
             "emotion_agent": {
@@ -353,9 +383,9 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         mock_response_anxious.choices = [
             MagicMock(message=MagicMock(content='{"detected_emotion": "Anxiety", "confidence_score": 0.95}'))
         ]
-        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_anxious)
+        mock_emotion_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_anxious)
 
-        mock_generate.return_value = json.dumps({
+        mock_pipeline_generate.return_value = json.dumps({
             "message_type": "emotional",
             "personality_agent": {},
             "emotion_agent": {
@@ -389,9 +419,9 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         mock_response_sad.choices = [
             MagicMock(message=MagicMock(content='{"detected_emotion": "Sadness", "confidence_score": 0.95}'))
         ]
-        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_sad)
+        mock_emotion_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_sad)
 
-        mock_generate.return_value = json.dumps({
+        mock_pipeline_generate.return_value = json.dumps({
             "message_type": "emotional",
             "personality_agent": {},
             "emotion_agent": {

@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, User, ArrowRight, Eye, EyeOff, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import EsonaLogo from '@/components/layout/EsonaLogo';
+import FullPageTransition from '@/components/layout/FullPageTransition';
 import * as api from '@/api';
 import { supabase } from '@/database/supabase';
 import { useAuth } from '@/providers/AuthProvider';
@@ -24,7 +25,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline' | 'idle'>('idle');
 
-  // Redirect if already authenticated
+  // Redirect to chat if already authenticated (after auth check completes)
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
       router.replace('/chat');
@@ -213,6 +214,24 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
+
+  // Visual guard: show loader while auth is being determined (prevents login form flash)
+  if (authLoading) {
+    return (
+      <AnimatePresence>
+        <FullPageTransition message="Checking your session..." />
+      </AnimatePresence>
+    );
+  }
+
+  // Visual guard: if already authenticated, show redirect loader instead of login form
+  if (isAuthenticated) {
+    return (
+      <AnimatePresence>
+        <FullPageTransition message="Taking you to chat..." />
+      </AnimatePresence>
+    );
+  }
 
   return (
     <main className="min-h-screen flex items-center justify-center px-4 py-20">

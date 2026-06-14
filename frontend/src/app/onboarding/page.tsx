@@ -12,13 +12,14 @@ import OtherInput from '@/components/onboarding/OtherInput';
 import CategoryTransition from '@/components/onboarding/CategoryTransition';
 import BreathingOrb from '@/components/ambient/BreathingOrb';
 import EsonaLogo from '@/components/layout/EsonaLogo';
-import EsonaLoader from '@/components/layout/EsonaLoader';
 import { getToken, getStoredUser, setStoredUser, getOnboardingStatus } from '@/api';
+import FullPageTransition from '@/components/layout/FullPageTransition';
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  const [showLoader, setShowLoader] = useState(true);
+  // showLoader is reserved for onboarding-complete redirect sequence (not used for status check)
+  const [showLoader, setShowLoader] = useState(false);
   const [isVerifyingStatus, setIsVerifyingStatus] = useState(true);
   const {
     currentQuestion,
@@ -110,11 +111,17 @@ export default function OnboardingPage() {
   }, [isComplete, router]);
 
   if (!mounted || isVerifyingStatus || isLoadingData) {
-    return <EsonaLoader onComplete={() => setShowLoader(false)} />;
-  }
-
-  if (showLoader) {
-    return <EsonaLoader onComplete={() => setShowLoader(false)} />;
+    return (
+      <AnimatePresence>
+        <FullPageTransition
+          message={
+            isVerifyingStatus
+              ? 'Checking your progress...'
+              : 'Loading your questions...'
+          }
+        />
+      </AnimatePresence>
+    );
   }
 
   // Completion screen

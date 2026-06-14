@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, BarChart3, Sparkles, ChevronDown, ChevronUp, Loader2, Edit2, Save, X, Heart, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import Navbar from '@/components/layout/Navbar';
-import EsonaLoader from '@/components/layout/EsonaLoader';
+import FullPageTransition from '@/components/layout/FullPageTransition';
 import MoodTrendChart from '@/components/dashboard/MoodTrendChart';
 import StressPatternChart from '@/components/dashboard/StressPatternChart';
 import EmotionalProfileCard from '@/components/dashboard/EmotionalProfileCard';
@@ -567,7 +567,7 @@ function YourAnswersCard({ profile, onUpdate }: { profile: any; onUpdate: () => 
 export default function DashboardPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  const [showLoader, setShowLoader] = useState(true);
+  const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const {
     moodTrends,
@@ -585,7 +585,10 @@ export default function DashboardPage() {
     const token = getToken();
     if (!token) {
       router.push('/login');
+      return;
     }
+    // Enforce minimum 1000ms loader display
+    setTimeout(() => setIsLoadingPage(false), 1000);
   }, [router]);
 
   const user = mounted ? getStoredUser() : null;
@@ -626,14 +629,12 @@ export default function DashboardPage() {
     return 'Insights from your conversations and emotional journey';
   };
 
-  if (!mounted) {
+  if (!mounted || isLoadingPage || isLoading) {
     return (
-      <div className="min-h-screen bg-[#040614] flex items-center justify-center" />
+      <AnimatePresence>
+        <FullPageTransition message="Loading your wellness dashboard..." />
+      </AnimatePresence>
     );
-  }
-
-  if (showLoader) {
-    return <EsonaLoader onComplete={() => setShowLoader(false)} />;
   }
 
   return (

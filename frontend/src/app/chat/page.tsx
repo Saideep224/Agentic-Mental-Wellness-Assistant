@@ -28,7 +28,7 @@ import Navbar from '@/components/layout/Navbar';
 import EsonaLogo from '@/components/layout/EsonaLogo';
 import ChatContainer from '@/components/chat/ChatContainer';
 import MessageBubble from '@/components/chat/MessageBubble';
-import EsonaLoader from '@/components/layout/EsonaLoader';
+import FullPageTransition from '@/components/layout/FullPageTransition';
 import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import { useChat } from '@/hooks/useChat';
@@ -53,7 +53,7 @@ export default function ChatPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [skipLoading, setSkipLoading] = useState(false);
-  const [showLoader, setShowLoader] = useState(true);
+  const [isLoadingPage, setIsLoadingPage] = useState(true);
 
   // Track accordion state for the Live Agent Debug Panel
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -202,9 +202,18 @@ export default function ChatPage() {
     }
   }, [activeConversationId]);
 
+  // Load conversations — hide page loader only after data arrives (min 1000ms)
   useEffect(() => {
-    loadConversations();
-  }, [loadConversations]);
+    if (!mounted) return;
+    const t0 = Date.now();
+    loadConversations().finally(() => {
+      const elapsed = Date.now() - t0;
+      const remaining = Math.max(0, 1000 - elapsed);
+      setTimeout(() => setIsLoadingPage(false), remaining);
+    });
+    // Only run once on mount — subsequent chat switches don't re-show the page loader
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
 
   // Create new conversation
   const handleNewConversation = async () => {
@@ -284,14 +293,12 @@ export default function ChatPage() {
     );
   };
 
-  if (!mounted) {
+  if (!mounted || isLoadingPage) {
     return (
-      <div className="min-h-screen bg-[#040614] flex items-center justify-center" />
+      <AnimatePresence>
+        <FullPageTransition message="Loading your conversations..." />
+      </AnimatePresence>
     );
-  }
-
-  if (showLoader) {
-    return <EsonaLoader onComplete={() => setShowLoader(false)} />;
   }
 
   return (

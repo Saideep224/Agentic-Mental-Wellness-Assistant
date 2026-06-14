@@ -127,39 +127,47 @@ export default function ChatPage() {
     conversationId: activeConversationId,
   });
 
-  // Focus the chat input after assistant response finishes loading
-  useEffect(() => {
+  // Helper: focus the chat input unless the user is actively editing another field
+  const focusInput = useCallback(() => {
     if (typeof window === 'undefined') return;
+    if (pathname !== '/chat') return;
 
-    // Check pathname and modals to prevent stealing focus
-    const isFocusAllowed = () => {
-      if (pathname !== '/chat') return false;
+    // Don't steal focus from title-edit inputs or modals
+    const hasModal =
+      !!document.querySelector('[role="dialog"]') ||
+      !!document.querySelector('.modal');
+    if (hasModal) return;
 
-      // Do not steal focus if a modal is open
-      const hasModal = !!document.querySelector('.fixed.z-50') || 
-                       !!document.querySelector('[role="dialog"]') ||
-                       !!document.querySelector('.modal');
-      if (hasModal) return false;
-
-      // Do not steal focus if user is editing something else
-      const activeEl = document.activeElement;
-      if (
-        activeEl && 
-        (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') && 
-        activeEl !== inputRef.current
-      ) {
-        return false;
-      }
-
-      return true;
-    };
-
-    if (isFocusAllowed() && !isLoading) {
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-      });
+    const activeEl = document.activeElement;
+    if (
+      activeEl &&
+      (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') &&
+      activeEl !== inputRef.current
+    ) {
+      return;
     }
-  }, [messages, isLoading, pathname]);
+
+    // Use rAF + tiny timeout to ensure DOM has settled after streaming
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
+    });
+  }, [pathname]);
+
+  // Focus input once a bot response finishes (isLoading AND isStreaming both drop to false)
+  useEffect(() => {
+    if (!isLoading && !isStreaming) {
+      focusInput();
+    }
+  }, [messages, isLoading, isStreaming, focusInput]);
+
+  // Focus input whenever the active chat changes (chat switch or new chat)
+  useEffect(() => {
+    if (activeConversationId) {
+      focusInput();
+    }
+  }, [activeConversationId, focusInput]);
 
   // Auth check
   useEffect(() => {
@@ -207,6 +215,11 @@ export default function ChatPage() {
       const convo = await api.createConversation(token);
       setConversations((prev) => [convo, ...prev]);
       setActiveConversationId(convo.id);
+      // activeConversationId effect will also trigger, but explicit call here
+      // ensures focus even if the ID didn't change (edge case)
+      requestAnimationFrame(() => {
+        setTimeout(() => inputRef.current?.focus(), 50);
+      });
     } catch (err) {
       console.error('Failed to create conversation:', err);
     } finally {

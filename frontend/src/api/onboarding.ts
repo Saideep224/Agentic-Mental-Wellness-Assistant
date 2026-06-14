@@ -49,3 +49,11 @@ export async function saveOnboardingStep(
 ): Promise<ApiResponse> {
   return apiPost<ApiResponse>('/api/onboarding/step', { step }, token);
 }
+
+/**
+ * Skip onboarding entirely — marks the user as onboarding_completed = true
+ * without requiring any quiz answers. Called from the "Skip — just chat" button.
+ */
+export async function skipOnboarding(token: string): Promise<{ success: boolean; message: string }> {
+  return apiPost<{ success: boolean; message: string }>('/api/onboarding/skip', {}, token);
+}

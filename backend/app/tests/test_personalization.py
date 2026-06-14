@@ -626,3 +626,74 @@ class GrowthInsightsServiceTestCase(unittest.IsolatedAsyncioTestCase):
         async with self.session_maker() as session:
             result = await self.service.get_top_insight_for_chat(session, self.user_id)
         self.assertIsNone(result)
+
+
+class OnboardingRoutingTestCase(unittest.IsolatedAsyncioTestCase):
+    """Tests for the non-blocking onboarding routing helpers."""
+
+    def setUp(self):
+        # No DB needed — these are pure unit tests
+        pass
+
+    def test_crisis_message_detected(self):
+        """is_crisis_message returns True for known crisis phrases."""
+        crisis_phrases = [
+            "I want to die",
+            "i wanna die right now",
+            "I want to kill myself",
+            "life is not worth living",
+            "I'm thinking about suicide",
+            "I want to hurt myself",
+        ]
+        for phrase in crisis_phrases:
+            with self.subTest(phrase=phrase):
+                self.assertTrue(
+                    onboarding_service.is_crisis_message(phrase),
+                    f"Expected crisis detection for: '{phrase}'"
+                )
+
+    def test_non_crisis_message_not_detected(self):
+        """is_crisis_message returns False for normal messages."""
+        safe_phrases = [
+            "College Student",
+            "Computer Science",
+            "I study at SRM AP",
+            "I like gaming",
+            "Direct and Honest",
+        ]
+        for phrase in safe_phrases:
+            with self.subTest(phrase=phrase):
+                self.assertFalse(
+                    onboarding_service.is_crisis_message(phrase),
+                    f"Expected NO crisis detection for: '{phrase}'"
+                )
+
+    def test_free_form_message_detected(self):
+        """is_free_form_message returns True for conversational messages."""
+        free_form_phrases = [
+            "I am stressed about my exams",
+            "hey can you help me with something",
+            "feeling really anxious today",
+            "I don't know what to do anymore",
+        ]
+        for phrase in free_form_phrases:
+            with self.subTest(phrase=phrase):
+                self.assertTrue(
+                    onboarding_service.is_free_form_message(phrase),
+                    f"Expected free-form detection for: '{phrase}'"
+                )
+
+    def test_structured_answer_not_free_form(self):
+        """is_free_form_message returns False for short, structured onboarding answers."""
+        structured_answers = [
+            "College Student",
+            "Good",
+            "Computer Science",
+        ]
+        for answer in structured_answers:
+            with self.subTest(answer=answer):
+                self.assertFalse(
+                    onboarding_service.is_free_form_message(answer),
+                    f"Expected structured answer (not free-form) for: '{answer}'"
+                )
+

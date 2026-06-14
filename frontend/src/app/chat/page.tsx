@@ -21,6 +21,8 @@ import {
   Heart,
   Brain,
   Loader2,
+  UserCheck,
+  ArrowRight,
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import EsonaLogo from '@/components/layout/EsonaLogo';
@@ -33,6 +35,7 @@ import { Conversation } from '@/types';
 import { getToken, getStoredUser } from '@/api';
 import * as api from '@/api';
 import { formatDate, truncateText } from '@/utils';
+import { skipOnboarding } from '@/api/onboarding';
 
 export default function ChatPage() {
   const router = useRouter();
@@ -46,6 +49,7 @@ export default function ChatPage() {
   const [mounted, setMounted] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [skipLoading, setSkipLoading] = useState(false);
 
   // Track accordion state for the Live Agent Debug Panel
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -187,6 +191,20 @@ export default function ChatPage() {
       return;
     }
     sendMessage(content);
+  };
+
+  const handleSkipOnboarding = async () => {
+    const token = getToken();
+    if (!token) return;
+    setSkipLoading(true);
+    try {
+      await skipOnboarding(token);
+      // Reload to get fresh user state (onboarding_completed = true)
+      window.location.reload();
+    } catch (err) {
+      console.error('Failed to skip onboarding:', err);
+      setSkipLoading(false);
+    }
   };
 
   // Find the latest assistant message with agent analysis data for debug panel
@@ -444,24 +462,69 @@ export default function ChatPage() {
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="flex flex-col items-center justify-center h-full text-center py-20"
+                  className="flex flex-col items-center justify-center h-full text-center py-16 px-4"
                 >
-                  <Sparkles
-                    size={40}
-                    className="mb-4 animate-breathe"
-                    style={{ color: 'var(--accent-cyan)', opacity: 0.5 }}
-                  />
-                  <h3
-                    className="text-xl font-semibold mb-2 glow-text"
+                  {/* Esona logo */}
+                  <div className="mb-6">
+                    <EsonaLogo size={64} showParticles glowIntensity="medium" aiState="idle" />
+                  </div>
+
+                  {/* Greeting */}
+                  <h2
+                    className="text-2xl font-bold mb-2 glow-text"
                     style={{ fontFamily: 'var(--font-outfit), sans-serif' }}
                   >
-                    Hey{user?.name ? `, ${user.name}` : ''} 👋
-                  </h3>
-                  <p className="text-sm max-w-sm" style={{ color: 'var(--text-secondary)' }}>
-                    I&apos;m Esona, your supporting buddie. Feel free to talk about anything
-                    — your day, your thoughts, or whatever&apos;s on your mind.
+                    Hi{user?.name ? `, ${user.name}` : ''}! I'm Esona 💙
+                  </h2>
+                  <p
+                    className="text-base mb-1 max-w-sm"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    How are you feeling today?
                   </p>
-                  <p className="text-xs mt-4" style={{ color: 'var(--text-muted)' }}>
+                  <p className="text-sm mb-8 max-w-xs" style={{ color: 'var(--text-secondary)' }}>
+                    You can tell me anything — I'm here for you. No pressure.
+                  </p>
+
+                  {/* Action buttons */}
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => router.push('/onboarding')}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(34,211,238,0.15), rgba(99,102,241,0.1))',
+                        border: '1px solid rgba(34,211,238,0.25)',
+                        color: 'var(--accent-cyan)',
+                      }}
+                    >
+                      <UserCheck size={16} />
+                      Tell me about yourself
+                    </motion.button>
+
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={handleSkipOnboarding}
+                      disabled={skipLoading}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 cursor-pointer"
+                      style={{
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
+                      {skipLoading ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <ArrowRight size={14} />
+                      )}
+                      {skipLoading ? 'Starting...' : 'Skip — just chat'}
+                    </motion.button>
+                  </div>
+
+                  <p className="text-xs mt-8" style={{ color: 'var(--text-muted)' }}>
                     Everything here stays between us. 💙
                   </p>
                 </motion.div>

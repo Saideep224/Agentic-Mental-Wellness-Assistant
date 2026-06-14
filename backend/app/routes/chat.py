@@ -458,55 +458,45 @@ async def send_message(
                 content=body.message
             )
 
-        # Conversational Onboarding Interception
+        # ---------------------------------------------------------------
+        # NON-BLOCKING ONBOARDING ROUTING
+        # Priority 1: Crisis detection  → bypass onboarding, run pipeline
+        # Priority 2: Free-form message → auto-complete, run pipeline
+        # Priority 3: Looks like an onboarding answer → save silently,
+        #             then STILL run the full agent pipeline (non-blocking)
+        # ---------------------------------------------------------------
         if not current_user.onboarding_completed:
-            logger.info(f"[ONBOARDING FLOW] User {current_user.id} is in onboarding mode.")
+            from app.services.onboarding_service import onboarding_service
             profile_res = await db.execute(select(UserProfile).where(UserProfile.user_id == current_user.id))
             profile = profile_res.scalar_one_or_none()
-            if not profile:
-                profile = UserProfile(
-                    user_id=current_user.id,
-                    onboarding_completed=False,
-                    personality_profile={"onboarding_stage": 1}
-                )
-                db.add(profile)
-                await db.flush()
-                
-            stage = profile.personality_profile.get("onboarding_stage", 1)
-            from app.services.onboarding_service import onboarding_service
-            
-            # Parse user answer for current stage
-            await onboarding_service.parse_and_save_answer(db, current_user, profile, stage, body.message)
-            
-            # Re-read profile stage after save
-            next_stage = profile.personality_profile.get("onboarding_stage", stage + 1)
-            if not profile.onboarding_completed and next_stage <= 16:
-                reply = onboarding_service.get_question(next_stage)
+
+            is_crisis = onboarding_service.is_crisis_message(body.message)
+            is_free_form = onboarding_service.is_free_form_message(body.message)
+
+            if is_crisis:
+                # CRISIS: auto-complete onboarding immediately, fall through to agent pipeline
+                logger.warning(f"[ONBOARDING CRISIS] Crisis message detected for user {current_user.id}. Bypassing onboarding.")
+                await onboarding_service.auto_complete_onboarding(db, current_user, profile)
+                await db.commit()
+            elif is_free_form:
+                # FREE-FORM: user is having a real conversation, auto-complete onboarding
+                logger.info(f"[ONBOARDING FREE-FORM] Free-form message detected. Auto-completing onboarding for user {current_user.id}.")
+                await onboarding_service.auto_complete_onboarding(db, current_user, profile)
+                await db.commit()
             else:
-                reply = f"Thanks for sharing all that with me, {current_user.name}! 💙 ||| I've got a good feel for your vibe now. ||| Let's chat about whatever's on your mind today!"
-            
-            # Save assistant onboarding question
-            assistant_msg = Message(
-                conversation_id=conversation_id_resolved,
-                user_id=current_user.id,
-                role=MessageRole.assistant,
-                content=reply,
-                emotion="Neutral",
-                mood_score=0.5,
-                agent_analysis={"onboarding_mode": True}
-            )
-            db.add(assistant_msg)
-            conversation.updated_at = datetime.now(timezone.utc)
-            
-            # Commit onboarding updates
-            await db.commit()
-            
-            return {
-                "response": reply,
-                "emotionDetected": "Neutral",
-                "moodScore": 0.5,
-                "agentAnalysis": {"onboarding_mode": True}
-            }
+                # STRUCTURED ANSWER: save silently, but DO NOT block — fall through to pipeline
+                if profile:
+                    stage = (profile.personality_profile or {}).get("onboarding_stage", 1)
+                    try:
+                        await onboarding_service.parse_and_save_answer(db, current_user, profile, stage, body.message)
+                        await db.commit()
+                        logger.info(f"[ONBOARDING SILENT SAVE] Saved answer for stage {stage} for user {current_user.id}.")
+                    except Exception as ob_err:
+                        logger.warning(f"[ONBOARDING SILENT SAVE] Failed to save onboarding answer: {ob_err}")
+                        await db.rollback()
+            # Re-read onboarding_completed in case auto_complete_onboarding updated it
+            await db.refresh(current_user)
+
 
         # 4. Build context for agents
         logger.info(f"[CONTEXT] Loading conversation history for id={conversation_id_resolved}...")
@@ -988,83 +978,42 @@ async def stream_message_sse(
             await db.rollback()
             raise HTTPException(status_code=500, detail="Failed to save user message")
 
-        # Conversational Onboarding Interception for SSE
+        # ---------------------------------------------------------------
+        # NON-BLOCKING ONBOARDING ROUTING (SSE)
+        # Priority 1: Crisis → bypass, run full pipeline
+        # Priority 2: Free-form → auto-complete, run full pipeline
+        # Priority 3: Structured answer → save silently, run pipeline
+        # ---------------------------------------------------------------
         if not current_user.onboarding_completed:
-            logger.info(f"[ONBOARDING SSE] User {current_user.id} is in onboarding mode.")
+            from app.services.onboarding_service import onboarding_service
             profile_res = await db.execute(select(UserProfile).where(UserProfile.user_id == current_user.id))
             profile = profile_res.scalar_one_or_none()
-            if not profile:
-                profile = UserProfile(
-                    user_id=current_user.id,
-                    onboarding_completed=False,
-                    personality_profile={"onboarding_stage": 1}
-                )
-                db.add(profile)
-                await db.flush()
-                
-            stage = profile.personality_profile.get("onboarding_stage", 1)
-            from app.services.onboarding_service import onboarding_service
-            
-            # Parse and save answer
-            await onboarding_service.parse_and_save_answer(db, current_user, profile, stage, message)
-            
-            next_stage = profile.personality_profile.get("onboarding_stage", stage + 1)
-            if not profile.onboarding_completed and next_stage <= 16:
-                reply = onboarding_service.get_question(next_stage)
+
+            is_crisis = onboarding_service.is_crisis_message(message)
+            is_free_form = onboarding_service.is_free_form_message(message)
+
+            if is_crisis:
+                logger.warning(f"[ONBOARDING SSE CRISIS] Crisis detected for user {current_user.id}. Bypassing onboarding.")
+                await onboarding_service.auto_complete_onboarding(db, current_user, profile)
+                await db.commit()
+            elif is_free_form:
+                logger.info(f"[ONBOARDING SSE FREE-FORM] Auto-completing onboarding for user {current_user.id}.")
+                await onboarding_service.auto_complete_onboarding(db, current_user, profile)
+                await db.commit()
             else:
-                reply = f"Thanks for sharing all that with me, {current_user.name}! 💙 ||| I've got a good feel for your vibe now. ||| Let's chat about whatever's on your mind today!"
-            
-            # Save assistant onboarding question
-            assistant_msg = Message(
-                conversation_id=conversation_id_resolved,
-                user_id=current_user.id,
-                role=MessageRole.assistant,
-                content=reply,
-                emotion="Neutral",
-                mood_score=0.5,
-                agent_analysis={"onboarding_mode": True}
-            )
-            db.add(assistant_msg)
-            conversation.updated_at = datetime.now(timezone.utc)
-            await db.commit()
-            
-            async def onboarding_event_generator() -> AsyncGenerator[dict, None]:
-                yield {
-                    "event": "message",
-                    "data": json.dumps({
-                        "type": "placeholder",
-                        "content": "...",
-                        "conversation_id": str(conversation_id_resolved),
-                    }),
-                }
-                await asyncio.sleep(0.05)
-                
-                chunk_size = 12
-                for i in range(0, len(reply), chunk_size):
-                    chunk = reply[i : i + chunk_size]
-                    yield {
-                        "event": "message",
-                        "data": json.dumps({
-                            "type": "chunk",
-                            "content": chunk,
-                            "conversation_id": str(conversation_id_resolved),
-                        }),
-                    }
-                    await asyncio.sleep(0.02)
-                    
-                yield {
-                    "event": "message",
-                    "data": json.dumps({
-                        "type": "done",
-                        "message_id": str(assistant_msg.id),
-                        "conversation_id": str(conversation_id_resolved),
-                        "emotion_detected": "Neutral",
-                        "mood_score": 0.5,
-                        "agent_analysis": {"onboarding_mode": True},
-                    }),
-                }
-                
-            return EventSourceResponse(onboarding_event_generator())
+                # Short structured answer — save silently, continue to pipeline
+                if profile:
+                    stage = (profile.personality_profile or {}).get("onboarding_stage", 1)
+                    try:
+                        await onboarding_service.parse_and_save_answer(db, current_user, profile, stage, message)
+                        await db.commit()
+                        logger.info(f"[ONBOARDING SSE SILENT SAVE] Saved answer for stage {stage}.")
+                    except Exception as ob_err:
+                        logger.warning(f"[ONBOARDING SSE SILENT SAVE] Failed: {ob_err}")
+                        await db.rollback()
+            # Re-read so the pipeline sees updated onboarding_completed
+            await db.refresh(current_user)
+
 
         # 4. Build context
         logger.info(f"[CONTEXT SSE] Loading history and emotional profile...")
@@ -1228,13 +1177,13 @@ async def generate_first_message(
                 "moodScore": first_msg.mood_score,
             }
             
-    # 2. Check onboarding status
+    # 2. New user greeting — always a warm welcome, never an onboarding question
     if not current_user.onboarding_completed:
-        logger.info(f"[FIRST MESSAGE] User {current_user.id} has not completed onboarding. Sending Stage 1 question.")
-        from app.services.onboarding_service import onboarding_service
-        reply = onboarding_service.get_question(1)
-        
-        # Save onboarding question as assistant's message
+        logger.info(f"[FIRST MESSAGE] New user {current_user.id}. Sending welcoming greeting instead of onboarding Q1.")
+        user_name = current_user.name or ""
+        name_part = f", {user_name}" if user_name else ""
+        reply = f"Hey{name_part}! I'm Esona 💙 ||| How are you feeling today? You can tell me anything — I'm here for you. ||| No pressure, just chat whenever you're ready."
+
         assistant_msg = Message(
             conversation_id=conversation.id,
             user_id=current_user.id,
@@ -1242,12 +1191,12 @@ async def generate_first_message(
             content=reply,
             emotion="Neutral",
             mood_score=0.5,
-            agent_analysis={"onboarding_mode": True}
+            agent_analysis={}
         )
         db.add(assistant_msg)
         conversation.updated_at = datetime.now(timezone.utc)
         await db.commit()
-        
+
         return {
             "response": reply,
             "emotionDetected": "Neutral",

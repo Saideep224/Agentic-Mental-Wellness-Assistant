@@ -38,6 +38,39 @@ ONBOARDING_QUESTIONS = {
     16: "How is your sleep generally?\n- Good\n- Average\n- Poor",
 }
 
+# ---------------------------------------------------------------------------
+# Crisis keyword list — checked BEFORE any onboarding logic.
+# If any phrase matches the user message, onboarding is bypassed and the full
+# agent pipeline runs immediately with crisis context.
+# ---------------------------------------------------------------------------
+CRISIS_KEYWORDS = [
+    "want to die", "wanna die", "wants to die",
+    "kill myself", "killing myself", "kill myself",
+    "end my life", "end it all", "end everything",
+    "not worth living", "life is not worth", "life isn't worth",
+    "no reason to live", "no point in living",
+    "want to disappear", "wish i could disappear",
+    "hurt myself", "harm myself", "self harm", "selfharm", "self-harm",
+    "suicide", "suicidal", "suicidal thoughts",
+    "don't want to exist", "dont want to exist",
+    "wish i was dead", "wish i were dead",
+    "better off dead", "better off without me",
+    "i want to die", "i wanna die",
+]
+
+# Words that indicate the user is having a real conversation rather than
+# answering an onboarding question. Any message matching these heuristics
+# will auto-complete onboarding and proceed to the agent pipeline.
+_EMOTIONAL_WORDS = {
+    "stressed", "stress", "anxious", "anxiety", "sad", "depressed",
+    "depression", "worried", "worry", "scared", "fear", "lonely",
+    "alone", "crying", "cry", "tired", "exhausted", "burnout",
+    "overwhelmed", "frustrated", "angry", "upset", "hurt", "pain",
+    "happy", "excited", "feeling", "feel", "felt", "emotion",
+    "can't sleep", "can't study", "can't focus", "help", "please",
+    "failing", "failed", "scared", "nervous", "panic",
+}
+
 ONBOARDING_PARSER_PROMPT = """You are an Onboarding Information Extractor. Your task is to extract the answer for a specific onboarding question from the user's message.
 
 Onboarding Question Type: {question_type}
@@ -71,6 +104,64 @@ Output ONLY valid JSON.
 
 class OnboardingService:
     """Orchestrates natural chat-based onboarding."""
+
+    # ------------------------------------------------------------------
+    # Safety & routing helpers
+    # ------------------------------------------------------------------
+
+    def is_crisis_message(self, message: str) -> bool:
+        """
+        Returns True if the message contains any crisis keywords.
+        Must be checked BEFORE any onboarding logic runs.
+        """
+        msg_lower = message.lower().strip()
+        return any(keyword in msg_lower for keyword in CRISIS_KEYWORDS)
+
+    def is_free_form_message(self, message: str) -> bool:
+        """
+        Returns True when the message looks like a real conversation rather
+        than a structured answer to an onboarding question.
+
+        Heuristics (any one sufficient):
+        - Message is 6+ words long
+        - Message contains an emotional word
+        - Message contains a question mark (user asking something)
+        - Message is a complete sentence (has punctuation + words)
+        """
+        words = message.strip().split()
+        if len(words) >= 6:
+            return True
+        if "?" in message:
+            return True
+        msg_lower = message.lower()
+        if any(ew in msg_lower for ew in _EMOTIONAL_WORDS):
+            return True
+        return False
+
+    async def auto_complete_onboarding(
+        self, db: AsyncSession, user: "User", profile: Optional["UserProfile"] = None
+    ) -> None:
+        """
+        Silently marks onboarding as completed for both User and UserProfile
+        without asking any further questions. Called when:
+        - User sends a free-form / emotional message
+        - User clicks the Skip button
+        - A crisis message is detected
+        """
+        try:
+            user.onboarding_completed = True
+            db.add(user)
+            if profile is not None:
+                profile.onboarding_completed = True
+                db.add(profile)
+            await db.flush()
+            logger.info(f"[Onboarding] Auto-completed onboarding for user {user.id}")
+        except Exception as e:
+            logger.error(f"[Onboarding] Failed to auto-complete onboarding: {e}", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Q&A helpers (kept for optional structured profile collection)
+    # ------------------------------------------------------------------
 
     def get_question(self, stage: int) -> str:
         """Get the question string for a given onboarding stage."""

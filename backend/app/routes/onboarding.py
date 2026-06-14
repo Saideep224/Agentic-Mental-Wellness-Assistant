@@ -307,3 +307,27 @@ async def get_onboarding_answers(
         }
         for row in rows
     ]
+
+
+@router.post("/skip")
+async def skip_onboarding(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Immediately mark onboarding as completed without requiring any answers.
+    Called when user clicks 'Skip Setup' or 'Skip — just chat'.
+    """
+    from app.models.user_profile import UserProfile
+    from app.services.onboarding_service import onboarding_service
+
+    profile_res = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == current_user.id)
+    )
+    profile = profile_res.scalar_one_or_none()
+
+    await onboarding_service.auto_complete_onboarding(db, current_user, profile)
+    await db.commit()
+
+    return {"success": True, "message": "Onboarding skipped. You can start chatting now!"}
+

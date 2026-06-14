@@ -19,6 +19,7 @@ export function useOnboarding() {
   const [showCategoryTransition, setShowCategoryTransition] = useState(false);
   const [showSkipModal, setShowSkipModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   const currentQuestion = questions[currentIndex];
   const totalQuestions = questions.length;
@@ -70,7 +71,10 @@ export function useOnboarding() {
 
     const loadSavedAnswers = async () => {
       const token = api.getToken();
-      if (!token) return;
+      if (!token) {
+        setIsLoadingData(false);
+        return;
+      }
 
       try {
         const saved = await api.getOnboardingAnswers(token);
@@ -115,6 +119,8 @@ export function useOnboarding() {
         saveProgress(nextIndex, savedResponses);
       } catch (err) {
         console.warn('[Onboarding] Could not load saved answers:', err);
+      } finally {
+        setIsLoadingData(false);
       }
     };
 
@@ -430,5 +436,6 @@ export function useOnboarding() {
     continuePastTransition,
     backToLogin,
     saveAndContinueLater,
+    isLoadingData,
   };
 }

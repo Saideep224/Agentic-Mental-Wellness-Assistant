@@ -2,11 +2,22 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/providers/AuthProvider';
 import InteractiveTorch from './InteractiveTorch';
 
 export default function HeroSection() {
   const [torchState, setTorchState] = useState<'unlit' | 'lighting' | 'revealing_text' | 'revealed_cta'>('unlit');
+  const router = useRouter();
+  const { isAuthenticated } = useAuth();
+
+  const handleBeginJourney = () => {
+    if (isAuthenticated) {
+      router.push('/onboarding');
+    } else {
+      router.push('/login');
+    }
+  };
 
   const handleLightTorch = () => {
     if (torchState !== 'unlit') return;
@@ -130,8 +141,8 @@ export default function HeroSection() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, ease: 'easeOut' }}
               >
-                <Link
-                  href="/login"
+                <button
+                  onClick={handleBeginJourney}
                   className="inline-flex items-center gap-2 px-8 py-4 text-lg font-semibold rounded-2xl transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_24px_rgba(59,201,255,0.4)]"
                   style={{
                     background: 'linear-gradient(90deg, #3BC9FF, #6C8CFF)',
@@ -146,7 +157,7 @@ export default function HeroSection() {
                   >
                     →
                   </motion.span>
-                </Link>
+                </button>
               </motion.div>
             )}
           </AnimatePresence>

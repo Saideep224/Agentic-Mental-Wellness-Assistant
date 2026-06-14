@@ -12,11 +12,14 @@ import OtherInput from '@/components/onboarding/OtherInput';
 import CategoryTransition from '@/components/onboarding/CategoryTransition';
 import BreathingOrb from '@/components/ambient/BreathingOrb';
 import EsonaLogo from '@/components/layout/EsonaLogo';
+import EsonaLoader from '@/components/layout/EsonaLoader';
 import { getToken, getStoredUser, setStoredUser, getOnboardingStatus } from '@/api';
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [showLoader, setShowLoader] = useState(true);
+  const [isVerifyingStatus, setIsVerifyingStatus] = useState(true);
   const {
     currentQuestion,
     currentIndex,
@@ -39,6 +42,7 @@ export default function OnboardingPage() {
     continuePastTransition,
     backToLogin,
     saveAndContinueLater,
+    isLoadingData,
   } = useOnboarding();
 
   useEffect(() => {
@@ -84,6 +88,8 @@ export default function OnboardingPage() {
         }
       } catch (err) {
         console.error('[LOG] [OnboardingPage StatusCheck] Failed to check onboarding status:', err);
+      } finally {
+        setIsVerifyingStatus(false);
       }
     };
 
@@ -103,12 +109,12 @@ export default function OnboardingPage() {
     }
   }, [isComplete, router]);
 
-  if (!mounted) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
-      </div>
-    );
+  if (!mounted || isVerifyingStatus || isLoadingData) {
+    return <EsonaLoader onComplete={() => setShowLoader(false)} />;
+  }
+
+  if (showLoader) {
+    return <EsonaLoader onComplete={() => setShowLoader(false)} />;
   }
 
   // Completion screen

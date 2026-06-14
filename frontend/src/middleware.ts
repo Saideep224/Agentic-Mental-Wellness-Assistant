@@ -23,12 +23,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // For auth routes, optionally redirect if already logged in
-  if (authRoutes.some((route) => pathname.startsWith(route))) {
-    if (sessionToken) {
-      return NextResponse.redirect(new URL('/chat', request.url));
-    }
-  }
+  // We delegate all login and auth redirection logic to the client-side AuthProvider
+  // to ensure onboarding verification completes correctly before routing to chat.
 
   return NextResponse.next();
 }

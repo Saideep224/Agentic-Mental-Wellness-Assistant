@@ -28,6 +28,7 @@ import Navbar from '@/components/layout/Navbar';
 import EsonaLogo from '@/components/layout/EsonaLogo';
 import ChatContainer from '@/components/chat/ChatContainer';
 import MessageBubble from '@/components/chat/MessageBubble';
+import EsonaLoader from '@/components/layout/EsonaLoader';
 import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import { useChat } from '@/hooks/useChat';
@@ -52,6 +53,7 @@ export default function ChatPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [skipLoading, setSkipLoading] = useState(false);
+  const [showLoader, setShowLoader] = useState(true);
 
   // Track accordion state for the Live Agent Debug Panel
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -271,10 +273,12 @@ export default function ChatPage() {
 
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
-      </div>
+      <div className="min-h-screen bg-[#040614] flex items-center justify-center" />
     );
+  }
+
+  if (showLoader) {
+    return <EsonaLoader onComplete={() => setShowLoader(false)} />;
   }
 
   return (

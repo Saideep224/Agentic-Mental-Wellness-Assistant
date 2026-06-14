@@ -8,6 +8,7 @@ import {
   Loader2, Check, Sparkles, AlertCircle
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
+import EsonaLoader from '@/components/layout/EsonaLoader';
 import { questions } from '@/data/questions';
 import { getToken, submitOnboarding, getOnboardingAnswers, upsertQuestionAnswersToSupabase } from '@/api';
 import { useAuth } from '@/providers/AuthProvider';
@@ -57,6 +58,7 @@ export default function KnowingMePage() {
   const router = useRouter();
   const { refreshUser } = useAuth();
   const [mounted, setMounted] = useState(false);
+  const [showLoader, setShowLoader] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [answers, setAnswers] = useState<any[]>([]);
   const [editedAnswers, setEditedAnswers] = useState<any[]>([]);
@@ -230,10 +232,12 @@ export default function KnowingMePage() {
 
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
-      </div>
+      <div className="min-h-screen bg-[#040614] flex items-center justify-center" />
     );
+  }
+
+  if (showLoader) {
+    return <EsonaLoader onComplete={() => setShowLoader(false)} />;
   }
 
   return (

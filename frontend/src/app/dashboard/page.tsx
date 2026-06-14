@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, BarChart3, Sparkles, ChevronDown, ChevronUp, Loader2, Edit2, Save, X, Heart, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import Navbar from '@/components/layout/Navbar';
+import EsonaLoader from '@/components/layout/EsonaLoader';
 import MoodTrendChart from '@/components/dashboard/MoodTrendChart';
 import StressPatternChart from '@/components/dashboard/StressPatternChart';
 import EmotionalProfileCard from '@/components/dashboard/EmotionalProfileCard';
@@ -566,6 +567,7 @@ function YourAnswersCard({ profile, onUpdate }: { profile: any; onUpdate: () => 
 export default function DashboardPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [showLoader, setShowLoader] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const {
     moodTrends,
@@ -626,10 +628,12 @@ export default function DashboardPage() {
 
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
-      </div>
+      <div className="min-h-screen bg-[#040614] flex items-center justify-center" />
     );
+  }
+
+  if (showLoader) {
+    return <EsonaLoader onComplete={() => setShowLoader(false)} />;
   }
 
   return (

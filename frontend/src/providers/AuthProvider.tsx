@@ -183,7 +183,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         const hasCompletedOnboarding = storedUser.onboardingCompleted ?? false;
         
-        if (pathname === '/' || pathname === '/login') {
+        if (pathname === '/login') {
           if (!hasCompletedOnboarding) {
             console.log('[LOG] [AuthProvider Checks] Redirecting to /onboarding');
             router.push('/onboarding');

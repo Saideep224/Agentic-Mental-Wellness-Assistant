@@ -79,7 +79,6 @@ export default function RootLayout({
           href="/BG1.mp4"
           as="video"
           type="video/mp4"
-          // @ts-expect-error — crossOrigin is valid on link preload
           crossOrigin="anonymous"
         />
       </head>

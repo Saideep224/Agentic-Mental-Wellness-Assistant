@@ -73,7 +73,12 @@ class MentalBERTService:
         text_lower = text.lower()
         
         # Check crisis override keywords
-        crisis_keywords = ["want to die", "kill myself", "end my life", "suicide"]
+        crisis_keywords = [
+            "suicide", "self-harm", "kill myself", "want to die", "end my life", 
+            "end it all", "hurting myself", "hurt myself", "painful to exist", 
+            "sleep forever", "no point in living", "planning to end it", 
+            "want to sleep and never wake up", "don't want to exist", "live anymore"
+        ]
         if any(keyword in text_lower for keyword in crisis_keywords):
             # 0: happy, 1: neutral, 2: stress, 3: anxiety, 4: sadness, 5: frustration, 6: loneliness
             scores = [0.0, 0.05, 0.15, 0.0, 0.75, 0.0, 0.05]

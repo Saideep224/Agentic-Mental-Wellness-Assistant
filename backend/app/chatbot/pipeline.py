@@ -249,10 +249,15 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     mood_score = round(1.0 - (stress_val * 0.2 + anxiety_val * 0.3 + sadness_val * 0.3 + burnout_val * 0.2), 2)
     mood_score = max(0.05, min(0.95, mood_score))
 
-    # Apply Crisis Override if crisis keywords are present
+    # Apply Crisis Override if crisis keywords are present or safety agent flagged it
     msg_lower = user_message.lower()
-    crisis_keywords = ["want to die", "kill myself", "end my life", "suicide"]
-    if any(keyword in msg_lower for keyword in crisis_keywords):
+    crisis_keywords = [
+        "want to die", "kill myself", "end my life", "suicide", "self-harm",
+        "end it all", "hurting myself", "hurt myself", "painful to exist", 
+        "sleep forever", "no point in living", "planning to end it", 
+        "want to sleep and never wake up", "don't want to exist", "live anymore"
+    ]
+    if any(keyword in msg_lower for keyword in crisis_keywords) or s_data.get("crisis_detected"):
         detected_emotion = "Crisis"
         confidence_score = 0.95
         mood_score = 0.05

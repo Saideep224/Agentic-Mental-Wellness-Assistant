@@ -21,7 +21,12 @@ class SafetyAgent:
         primary_emotion = emotion_data.get("primary_emotion", "")
         
         # Keyword triggers
-        crisis_words = ["suicide", "self-harm", "kill myself", "want to die", "end my life", "end it all"]
+        crisis_words = [
+            "suicide", "self-harm", "kill myself", "want to die", "end my life", 
+            "end it all", "hurting myself", "hurt myself", "painful to exist", 
+            "sleep forever", "no point in living", "planning to end it", 
+            "want to sleep and never wake up", "don't want to exist", "live anymore"
+        ]
         msg_lower = user_message.lower()
         has_crisis_word = any(word in msg_lower for word in crisis_words)
 

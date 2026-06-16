@@ -1,15 +1,11 @@
 import type { Metadata } from 'next';
 import { Inter, Space_Grotesk } from 'next/font/google';
-import Script from 'next/script';
 import '@/styles/globals.css';
 import AuthProvider from '@/providers/AuthProvider';
 import ThemeProvider from '@/providers/ThemeProvider';
 import FloatingParticles from '@/components/ambient/FloatingParticles';
 import VideoBackground from '@/components/ambient/VideoBackground';
 import PageTransition from '@/components/layout/PageTransition';
-
-
-
 
 const inter = Inter({
   subsets: ['latin'],
@@ -62,7 +58,31 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html
+      lang="en"
+      className="dark"
+      // Inline style on <html> ensures the dark base is applied even
+      // before the external CSS file is parsed — eliminates the very
+      // first-frame white flash on cold loads.
+      style={{ backgroundColor: '#040614' }}
+    >
+      <head>
+        {/*
+         * Preload hints — tell the browser to fetch these assets at the
+         * highest network priority BEFORE the page finishes parsing.
+         * background.png = poster for the video → visible on first paint.
+         * BG1.mp4       = background video   → starts playing sooner.
+         */}
+        <link rel="preload" href="/background.png" as="image" />
+        <link
+          rel="preload"
+          href="/BG1.mp4"
+          as="video"
+          type="video/mp4"
+          // @ts-expect-error — crossOrigin is valid on link preload
+          crossOrigin="anonymous"
+        />
+      </head>
       <body
         className={`${inter.variable} ${spaceGrotesk.variable} font-sans antialiased`}
         style={{

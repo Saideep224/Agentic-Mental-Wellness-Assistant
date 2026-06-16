@@ -89,6 +89,22 @@ export default function ChatPage() {
 
   const { messages, setMessages, isLoading, isStreaming, streamPlaceholder, sendMessage } = useChat({
     conversationId: activeConversationId,
+    onSpecialistAction: (action, specialistId) => {
+      if (!activeConversationId) return;
+      setConversations((prev) =>
+        prev.map((conv) => {
+          if (conv.id !== activeConversationId) return conv;
+          const current: string[] = (conv as any).active_specialists || [];
+          let updated: string[];
+          if (action === 'invited') {
+            updated = current.includes(specialistId) ? current : [...current, specialistId];
+          } else {
+            updated = current.filter((s) => s !== specialistId);
+          }
+          return { ...conv, active_specialists: updated } as any;
+        })
+      );
+    },
   });
 
   // Helper: focus the chat input unless the user is actively editing another field

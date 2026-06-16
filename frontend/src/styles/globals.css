@@ -59,10 +59,19 @@
 
 html {
   scroll-behavior: smooth;
+  /* ─── Flash Prevention ───────────────────────────────────────────────────
+   * Set the deepest cinematic background color directly on <html>.
+   * This is the VERY FIRST paint the browser makes — before any JS, React,
+   * or the video component is ready. Without this, the browser default
+   * (white / gray) flashes through during hydration and video load.
+   * This must match --bg-primary exactly so the transition is invisible.
+   * ───────────────────────────────────────────────────────────────────── */
+  background-color: #040614;
 }
 
 body {
-  /* Transparent — video shows through via VideoBackground component */
+  /* Transparent — video shows through via VideoBackground component.
+   * The <html> element above provides the dark fallback until the video plays. */
   background-color: transparent;
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;

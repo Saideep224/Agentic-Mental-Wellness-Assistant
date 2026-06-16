@@ -44,6 +44,11 @@ from app.orchestrator.response_orchestrator import response_orchestrator
 
 logger = logging.getLogger(__name__)
 
+# Per-user cache of the last 20 Buddy response texts for repetition guard.
+# keyed by user_id (str) → list[str]  (most-recent last)
+_recent_responses_cache: dict[str, list[str]] = {}
+_RESPONSE_CACHE_SIZE = 20
+
 
 # ── Helper: Retrieve Conversation Summary ─────────────────────
 async def _get_conversation_summary(db: AsyncSession, user_id: str, conversation_id: str) -> str | None:
@@ -420,16 +425,22 @@ async def response_agent_node(state: AgentState) -> dict:
 
     # If crisis is detected by the Safety Agent, override response strategy
     safety_data = state.get("safety_agent", {})
+    # Pull message_type from intent agent to route casual vs emotional
+    message_type = state.get("intent_agent", {}).get("message_type", "emotional")
+
     if safety_data.get("crisis_detected"):
         tone = "calming"
         strategy = "Activate Esona Crisis Support Protocol. Focus on validating pain, sharing safety hotlines (e.g. Vandrevala Foundation or AASRA), staying grounded, and being direct. Strictly no humor."
+        message_type = "crisis"  # override so the intent block reflects this
     else:
-        # Call Orchestrator to decide Tone and Strategy
+        # Call Orchestrator to decide Tone and Strategy — pass message_type so
+        # casual messages bypass all emotional-support routing.
         orchestrated = response_orchestrator.determine_tone_and_strategy(
             personality=state.get("personality_agent", {}),
             emotion=state.get("emotion_agent", {}),
             behavior=state.get("behavior_agent", {}),
-            growth=state.get("growth_agent", {})
+            growth=state.get("growth_agent", {}),
+            message_type=message_type,
         )
         tone = orchestrated["tone"]
         strategy = orchestrated["strategy"]
@@ -463,6 +474,9 @@ async def response_agent_node(state: AgentState) -> dict:
     except Exception as gi_err:
         logger.warning(f"Failed to fetch growth insight for chat injection: {gi_err}")
 
+    # Retrieve per-user recent responses for the repetition guard
+    recent_buddy_responses = _recent_responses_cache.get(str(user_id), [])
+
     # Compile Final Orchestrated System Prompt
     system_prompt = response_orchestrator.build_final_prompt(
         user_name=user_name,
@@ -482,6 +496,8 @@ async def response_agent_node(state: AgentState) -> dict:
         comfort_kit=state.get("comfort_kit", {}),
         emotion_timeline=emotion_timeline,
         growth_insight=growth_insight,
+        message_type=message_type,
+        recent_buddy_responses=recent_buddy_responses,
     )
 
     # Prompt Summary for Live Debug Panel
@@ -509,13 +525,34 @@ async def response_agent_node(state: AgentState) -> dict:
 
     # Call Response Agent to generate response with quality checks
     try:
-        gen_res = await response_agent.generate(messages=messages, temperature=0.7, max_tokens=800)
+        gen_res = await response_agent.generate(
+            messages=messages,
+            temperature=0.7,
+            max_tokens=800,
+            recent_responses=recent_buddy_responses,
+        )
         text = gen_res.get("text", "")
         reasoning = gen_res.get("reasoning", "")
     except Exception as e:
         logger.error(f"Response agent generation failed: {e}", exc_info=True)
-        text = "I'm here for you. ||| Things sound a bit heavy right now... ||| What's on your mind?"
+        # Casual-appropriate fallbacks (never robotic support language)
+        import random
+        casual_fallbacks = [
+            "damn... ||| okay talk to me, what's going on?",
+            "wait what 😭 ||| say that again",
+            "bro hold on ||| what happened",
+            "oof ||| okay i'm listening",
+        ]
+        text = random.choice(casual_fallbacks)
         reasoning = "Response generation failed, fallback triggered."
+
+    # Update the per-user recent-responses cache (repetition guard)
+    if text and user_id:
+        cache = _recent_responses_cache.setdefault(str(user_id), [])
+        cache.append(text)
+        # Keep only the last N responses
+        if len(cache) > _RESPONSE_CACHE_SIZE:
+            _recent_responses_cache[str(user_id)] = cache[-_RESPONSE_CACHE_SIZE:]
 
     # Assemble structured developer debug payload
     agent_analysis = {

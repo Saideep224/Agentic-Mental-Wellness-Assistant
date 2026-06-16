@@ -17,26 +17,48 @@ class ResponseOrchestrator:
     - Create final Gemini prompt
     """
 
-    def determine_tone_and_strategy(self, 
+    def determine_tone_and_strategy(
+        self,
         personality: Dict[str, Any],
         emotion: Dict[str, Any],
         behavior: Dict[str, Any],
-        growth: Dict[str, Any]
+        growth: Dict[str, Any],
+        message_type: str = "emotional",
     ) -> Dict[str, Any]:
         """
         Evaluate all agent states to determine the best response tone and support strategy.
+        message_type is the primary routing signal — casual/check_in messages NEVER
+        fall into emotional-support mode regardless of emotion scores.
         """
+        # ── Intent-first routing ────────────────────────────────────────────
+        # If the cognitive analyzer classified the message as casual or check_in,
+        # skip all emotion threshold checks and return a banter/chat strategy.
+        # This prevents "I'm here for you" responses to "what the heck" or "bro".
+        if message_type in ("casual", "check_in"):
+            return {
+                "tone": "casual",
+                "strategy": (
+                    "This is casual chat — NOT an emotional distress message. "
+                    "React naturally like a close friend texting on WhatsApp. "
+                    "Match the user's energy and vibe. If they seem confused/surprised, react to that. "
+                    "If they're being playful, be playful back. "
+                    "DO NOT use emotional support language, therapy framing, or ask 'what's wrong'. "
+                    "DO NOT start with 'I'm here for you' or any support opener. "
+                    "Just be a normal friend responding to a text."
+                ),
+            }
+
+        # ── Emotional routing ────────────────────────────────────────────────
         stress = emotion.get("stress", 0.3)
         anxiety = emotion.get("anxiety", 0.3)
         sadness = emotion.get("sadness", 0.3)
         burnout = emotion.get("burnout", 0.3)
         intensity = emotion.get("emotional_intensity", 5)
-        
+
         procrastination = behavior.get("procrastination", "low")
         sleep_issues = behavior.get("sleep_issues", "none detected")
-        
+
         motivation = growth.get("motivation", "moderate")
-        self_awareness = growth.get("self_awareness", "moderate")
 
         # Determine Tone
         if stress >= 0.7 or anxiety >= 0.7 or intensity >= 8:
@@ -81,6 +103,8 @@ class ResponseOrchestrator:
         comfort_kit: Dict[str, Any] = None,
         emotion_timeline: List[str] = None,
         growth_insight: str = None,
+        message_type: str = "emotional",
+        recent_buddy_responses: List[str] = None,
     ) -> str:
         """
         Assemble the highly tailored system prompt for Gemini based on orchestrated data.
@@ -130,6 +154,47 @@ class ResponseOrchestrator:
         user_current_challenge = personality_profile.get("current_challenge") or "Not specified"
         user_advice_preference = personality_profile.get("advice_preference") or "Not specified"
         user_primary_support_need = personality_profile.get("primary_support_need") or "Not specified"
+
+        # --- User Texting Style Mirror Block ---
+        # Extract the user's own texting fingerprint so Buddy can gradually mirror it.
+        reply_style_data = personality_profile.get("reply_style") or {}
+        emoji_usage    = reply_style_data.get("emoji_usage") or "medium"
+        para_pref      = reply_style_data.get("paragraph_preference") or "short"
+        comm_tone      = reply_style_data.get("communication_style") or "casual"
+        # Derive simple mirroring rules from the values
+        if emoji_usage in ("high", "frequent"):
+            mirror_emoji = "The user uses a lot of emojis — match that energy. Use 😭, 💀, 😂, 🫂 freely."
+        elif emoji_usage in ("low", "rare", "none"):
+            mirror_emoji = "The user rarely uses emojis — keep yours minimal (1 per response max)."
+        else:
+            mirror_emoji = "The user uses emojis occasionally — use 1–2 per response at natural moments."
+
+        if comm_tone in ("formal", "professional"):
+            mirror_tone = (
+                "The user writes formally. Gradually adopt a slightly more polished tone: "
+                "complete sentences, less slang, fewer abbreviations. Still warm but not purely casual."
+            )
+        elif comm_tone in ("casual", "informal"):
+            mirror_tone = (
+                "The user writes casually. Mirror their casualness: use lowercase freely, "
+                "drop punctuation naturally, abbreviate like a real friend (ngl, idk, fr, tbh)."
+            )
+        else:
+            mirror_tone = "Maintain a warm, natural casual tone — friendly but not over-the-top."
+
+        if para_pref in ("long", "detailed"):
+            mirror_length = "The user tends to write longer messages — you can occasionally expand a little, but still keep bubbles under 30 words each."
+        else:
+            mirror_length = "The user prefers short messages — keep every bubble under 20 words. Never expand."
+
+        user_mirror_block = (
+            "USER TEXTING STYLE MIRROR (ADAPTIVE PERSONALITY):\n"
+            "Buddy gradually mirrors the user's own texting style to feel more personal and familiar.\n"
+            f"  Emoji mirror rule: {mirror_emoji}\n"
+            f"  Tone mirror rule:  {mirror_tone}\n"
+            f"  Length mirror rule: {mirror_length}\n"
+            "Apply these rules naturally. Do not announce that you are mirroring their style.\n"
+        )
         
         # Extract interests, goals, stress triggers
         interests_val = personality_profile.get("interests") or []
@@ -223,6 +288,53 @@ class ResponseOrchestrator:
                 " Keep it casual and human — NOT clinical. Do NOT force it if it doesn't fit."
                 "\n================================================="
             )
+        # ── Intent Classification Block ──────────────────────────────────────────────
+        # This is the single most important signal. It tells Buddy whether
+        # the incoming message is casual banter or genuine emotional distress.
+        INTENT_LABELS = {
+            "casual": (
+                "INTENT: CASUAL CHAT ● NON-EMOTIONAL ● BANTER MODE\n"
+                "The cognitive system classified this as a casual/banter message, NOT emotional distress.\n"
+                "THIS IS A HARD RULE: DO NOT use emotional support language, therapy framing, or\n"
+                "any opener like 'I'm here for you', 'What's on your mind?', or 'That sounds heavy'.\n"
+                "React the same way a close friend would react to that text: naturally, conversationally,\n"
+                "matching the user's surprise/confusion/playfulness.\n"
+                "Examples of correct casual responses:\n"
+                "  'wait what' | 'bro WHAT' | 'okay now i'm curious' | 'say sike' | '\ud83d\ude2d what happened' | 'HOLD ON'"
+            ),
+            "check_in": (
+                "INTENT: CHECK-IN ● LIGHT MOOD ● CONVERSATIONAL MODE\n"
+                "This is a greeting or casual check-in, not a distress message.\n"
+                "Respond warmly and naturally like a friend who's happy to hear from them.\n"
+                "If you have relevant event memories (e.g. exam, interview), check in on those naturally.\n"
+                "Do NOT open with emotional support or therapy language."
+            ),
+            "emotional": (
+                "INTENT: EMOTIONAL DISTRESS ● SUPPORT MODE\n"
+                "The user appears to be experiencing genuine emotional distress.\n"
+                "Respond with warmth and presence. Validate their feeling through your reaction,\n"
+                "NOT by using therapy phrases. Show you care through authentic friend-style empathy."
+            ),
+            "crisis": (
+                "INTENT: CRISIS ● SAFETY MODE\n"
+                "The user may be in genuine distress or danger. Respond with calm, grounded, human warmth.\n"
+                "Share safety resources naturally. Do not use clinical language but do be direct and caring."
+            ),
+        }
+        intent_classification_block = INTENT_LABELS.get(message_type, INTENT_LABELS["emotional"])
+
+        # ── Repetition Guard Block ────────────────────────────────────────────────
+        recent_responses_block = ""
+        if recent_buddy_responses:
+            formatted = "\n".join(f"  - {r}" for r in recent_buddy_responses[-5:])
+            recent_responses_block = (
+                "\n=================================================\n"
+                "REPETITION GUARD (CRITICAL):\n"
+                "These are your last recent responses to this user. DO NOT repeat any of these\n"
+                "templates, phrases, or openers. Vary your reaction style each time.\n"
+                f"{formatted}\n"
+                "================================================="
+            )
 
         system_prompt = f"""You are Buddy, the user's close friend.
 Your job is NOT to be a therapist, counselor, or advice engine. Your job is to feel like a real, close, emotionally-aware friend texting the user on WhatsApp. The user should forget they are talking to an AI.
@@ -269,6 +381,9 @@ PERSONALIZATION RULES:
 COMMUNICATION STYLE DIRECTION:
 {style_instructions}
 
+USER TEXTING STYLE MIRROR (ADAPTIVE PERSONALITY):
+{user_mirror_block}
+
 CURRENT DATE & TIME:
 - {current_time_str}
 
@@ -276,10 +391,13 @@ RELEVANT PAST MEMORIES:
 {memories_str}
 {event_checkin_instr}
 =================================================
+INTENT CLASSIFICATION (READ THIS FIRST — OVERRIDES ALL OTHER DIRECTIVES):
+{intent_classification_block}
+=================================================
 ORCHESTRATED RESPONSE DIRECTIVES:
 - Target Tone: {tone.upper()}
 - Support Strategy: {strategy}
-
+{recent_responses_block}
 =================================================
 OUTPUT FORMAT REQUIREMENT (CRITICAL):
 You MUST structure your response into TWO parts:

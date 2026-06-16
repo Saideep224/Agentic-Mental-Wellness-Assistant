@@ -17,9 +17,10 @@ class ResponseAgent:
     - Executing retries with temperature scaling
     """
 
-    async def generate(self, messages: list, temperature: float = 0.7, max_tokens: int = 800) -> dict:
+    async def generate(self, messages: list, temperature: float = 0.7, max_tokens: int = 800, recent_responses: list = None) -> dict:
         """
         Generate chat response with fallback and quality checking. Returns a dict with 'text' and 'reasoning'.
+        recent_responses: list of recent Buddy response strings (for repetition guard).
         """
         retries = 2
         current_temp = temperature
@@ -64,10 +65,24 @@ class ResponseAgent:
                 clean_text = re.sub(r"(?i)</?reasoning>", "", clean_text).strip()
                 
                 # Check response quality on the clean text
-                if self.check_response_quality(clean_text) or attempt == retries:
+                quality_ok = self.check_response_quality(clean_text)
+
+                # Repetition guard: reject if too similar to a recent response
+                repetition_ok = True
+                if recent_responses and clean_text:
+                    for prev in recent_responses[-5:]:
+                        if self._similarity_score(clean_text, prev) > 0.65:
+                            repetition_ok = False
+                            logger.warning(
+                                f"[RepetitionGuard] Response too similar to a recent one (attempt {attempt + 1}). "
+                                "Retrying with higher temperature."
+                            )
+                            break
+
+                if (quality_ok and repetition_ok) or attempt == retries:
                     return {"text": clean_text, "reasoning": reasoning}
                 
-                logger.warning(f"Response failed quality check on attempt {attempt + 1}. Retrying with adjusted temperature...")
+                logger.warning(f"Response failed quality/repetition check on attempt {attempt + 1}. Retrying with adjusted temperature...")
                 current_temp = min(1.0, current_temp + 0.15)
             except Exception as e:
                 logger.error(f"ResponseAgent generation failed: {e}", exc_info=True)
@@ -78,6 +93,17 @@ class ResponseAgent:
             "text": "damn... ||| okay talk to me, what's going on?",
             "reasoning": "Fallback response triggered due to error or poor quality."
         }
+
+    @staticmethod
+    def _similarity_score(a: str, b: str) -> float:
+        """Simple token-overlap Jaccard similarity. No external dependencies."""
+        if not a or not b:
+            return 0.0
+        tokens_a = set(a.lower().split())
+        tokens_b = set(b.lower().split())
+        intersection = tokens_a & tokens_b
+        union = tokens_a | tokens_b
+        return len(intersection) / len(union) if union else 0.0
 
     def check_response_quality(self, text: str) -> bool:
         """

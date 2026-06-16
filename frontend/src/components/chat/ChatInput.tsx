@@ -74,7 +74,7 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={disabled ? 'Esona is thinking...' : 'Type your message...'}
+            placeholder="Type your message..."
             disabled={disabled}
             rows={1}
             inputMode="text"

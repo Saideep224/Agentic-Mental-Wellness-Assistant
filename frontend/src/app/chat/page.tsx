@@ -87,6 +87,9 @@ export default function ChatPage() {
 
   const user = mounted ? getStoredUser() : null;
 
+  const activeConv = conversations.find((c) => c.id === activeConversationId);
+  const activeAgentId = activeConv?.agent_id || 'buddy';
+
   const { messages, setMessages, isLoading, isStreaming, streamPlaceholder, sendMessage } = useChat({
     conversationId: activeConversationId,
     onSpecialistAction: (action, specialistId) => {
@@ -647,20 +650,9 @@ export default function ChatPage() {
                       </div>
                     );
                   })}
-                  {streamPlaceholder && (
-                    <MessageBubble
-                      message={{
-                        id: 'stream-placeholder',
-                        role: 'assistant',
-                        content: streamPlaceholder,
-                        timestamp: new Date(),
-                        isPlaceholder: true,
-                      }}
-                    />
-                  )}
                   <AnimatePresence>
-                    {isLoading && !isStreaming && !streamPlaceholder && messages[messages.length - 1]?.role === 'user' && (
-                      <TypingIndicator />
+                    {((isLoading && !isStreaming) || streamPlaceholder) && (
+                      <TypingIndicator agentId={activeAgentId} />
                     )}
                   </AnimatePresence>
                 </>

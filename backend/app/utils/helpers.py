@@ -75,42 +75,8 @@ def get_random_human_fallback() -> str:
 
 
 def get_speculative_transition(message: str) -> str:
-    """Returns a fast, speculative emotional acknowledgment or transitional phrase to reduce perceived latency."""
-    msg = (message or "").lower().strip()
-    if not msg:
-        return "Hmm..."
-        
-    # Greetings
-    if msg in ("hi", "hello", "hey", "yo", "sup", "greetings"):
-        return "Hey! 👋"
-        
-    # Sad/stressed keywords
-    sad_words = ("sad", "bad", "depress", "exhaust", "tired", "burnout", "stressed", "anx", "panic", "cry", "hurt", "lonely", "alone")
-    if any(w in msg for w in sad_words):
-        return random.choice([
-            "Oh, I hear you...",
-            "I'm right here.",
-            "That sounds really heavy...",
-            "Hmm, hold on..."
-        ])
-        
-    # Success/Happy keywords
-    happy_words = ("happy", "good", "great", "excit", "awesome", "won", "passed", "love", "smile", "glad")
-    if any(w in msg for w in happy_words):
-        return random.choice([
-            "Oh, wow!",
-            "Aww!",
-            "Love that!",
-            "Hmm, let's see..."
-        ])
-        
-    # Default transitions
-    return random.choice([
-        "Hmm...",
-        "Hold on...",
-        "Let's see...",
-        "Yeah..."
-    ])
+    """Returns a fast transition placeholder to trigger typing indicator."""
+    return "typing"
 
 
 def detect_specialist_action(message: str, active_specialists: list[str]) -> tuple[str | None, str | None]:

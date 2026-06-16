@@ -24,11 +24,36 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: 'Esona - Your Supporting Buddie',
+  metadataBase: new URL(process.env.NEXTAUTH_URL || 'http://localhost:3000'),
+  title: 'Esona - Your Supporting Buddy',
   description:
     'An emotionally adaptive AI that truly understands you — your moods, your words, your silence. Esona is a multi-agent mental wellness chatbot that grows with you.',
   keywords: ['mental health', 'AI chatbot', 'emotional support', 'wellness', 'therapy'],
   authors: [{ name: 'Esona Team' }],
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/favicon.png', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/apple-touch-icon.png' },
+    ],
+  },
+  manifest: '/manifest.json',
+  openGraph: {
+    title: 'Esona - Your Supporting Buddy',
+    description:
+      'An emotionally adaptive AI that truly understands you — your moods, your words, your silence. Esona is a multi-agent mental wellness chatbot that grows with you.',
+    type: 'website',
+    images: [
+      {
+        url: '/logo.png',
+        width: 1200,
+        height: 630,
+        alt: 'Esona Logo',
+      },
+    ],
+  },
 };
 
 export default function RootLayout({

@@ -7,9 +7,10 @@ import * as api from '@/api';
 
 interface UseChatOptions {
   conversationId: string | null;
+  onSpecialistAction?: (action: 'invited' | 'removed', specialistId: string) => void;
 }
 
-export function useChat({ conversationId }: UseChatOptions) {
+export function useChat({ conversationId, onSpecialistAction }: UseChatOptions) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -422,6 +423,11 @@ export function useChat({ conversationId }: UseChatOptions) {
                     cleanUpConnection();
                   }
                 }, 50);
+              } else if (data.type === 'specialist_action') {
+                // Natural language specialist invite/remove — notify parent to update UI
+                if (onSpecialistAction && data.action && data.specialist_id) {
+                  onSpecialistAction(data.action, data.specialist_id);
+                }
               } else if (data.type === 'error') {
                 console.error('SSE Error event:', data.content);
                 cleanUpConnection();

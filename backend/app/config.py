@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
     OPENROUTER_API_BASE: str = "https://openrouter.ai/api/v1"
 
+    PRIMARY_PROVIDER: str = "gemini"
+
     # ── Ollama ────────────────────────────────────────────────
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3"

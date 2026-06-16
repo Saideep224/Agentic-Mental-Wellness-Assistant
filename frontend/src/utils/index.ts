@@ -91,12 +91,39 @@ export function formatMessageTime(date: Date | string | null | undefined): strin
   try {
     const d = typeof date === 'string' ? new Date(date) : date;
     if (isNaN(d.getTime())) return '';
-    return d.toLocaleString("en-IN", {
-      timeZone: "Asia/Kolkata",
-      hour: "numeric",
-      minute: "numeric",
+
+    const now = new Date();
+    
+    // Check if same day, month, year (Today)
+    const isToday = 
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+
+    // Check if Yesterday
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday = 
+      d.getDate() === yesterday.getDate() &&
+      d.getMonth() === yesterday.getMonth() &&
+      d.getFullYear() === yesterday.getFullYear();
+
+    const timeStr = d.toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
       hour12: true
     });
+
+    if (isToday) {
+      return `Today: ${timeStr}`;
+    } else if (isYesterday) {
+      return 'Yesterday';
+    } else {
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
   } catch {
     return '';
   }

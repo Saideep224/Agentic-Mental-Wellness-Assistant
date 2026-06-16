@@ -113,3 +113,63 @@ def get_speculative_transition(message: str) -> str:
     ])
 
 
+def detect_specialist_action(message: str, active_specialists: list[str]) -> tuple[str | None, str | None]:
+    """
+    Analyzes user message for specialist invite/removal intent.
+    Returns: (action, specialist_id)
+    where action can be 'invite', 'remove', or None.
+    """
+    msg = (message or "").lower().strip()
+    
+    # Define mapping of keywords to specialist IDs
+    spec_keywords = {
+        "lex": ["lex", "lawyer", "legal", "attorney"],
+        "maya": ["maya", "doctor", "dr. maya", "dr maya", "physician", "health support", "med"],
+        "ray": ["ray", "officer ray", "officer", "cop", "security", "safety", "cyber"],
+        "techie": ["techie", "tech", "programmer", "developer", "coding", "debugger"],
+        "mentor": ["mentor", "study", "academic", "tutor", "class"],
+        "finance": ["finance", "money", "budget", "financial"],
+        "fitness": ["fitness", "workout", "gym", "trainer", "exercise"]
+    }
+    
+    # 1. Check for removal intent
+    removal_triggers = [
+        "remove", "disconnect", "leave", "go away", "don't need", "dont need",
+        "can leave", "ask to leave", "thanks", "thank you", "goodbye", "bye", "dismiss"
+    ]
+    
+    is_removal = any(trigger in msg for trigger in removal_triggers)
+    
+    if is_removal:
+        # Check if they mention an active specialist
+        for spec_id in active_specialists:
+            keywords = spec_keywords.get(spec_id, [spec_id])
+            if any(kw in msg for kw in keywords):
+                return "remove", spec_id
+        # Fallback: if they just say "disconnect all" or "remove specialist" or "can leave"
+        if "specialist" in msg or "specialists" in msg or "disconnect" in msg or "remove" in msg or "leave" in msg:
+            if active_specialists:
+                return "remove", active_specialists[0]
+                
+    # 2. Check for invite intent
+    invite_triggers = [
+        "connect", "invite", "add", "call", "bring in", "summon", 
+        "get", "talk to", "need", "ask", "chat with", "consult"
+    ]
+    
+    is_invite = any(trigger in msg for trigger in invite_triggers)
+    
+    if is_invite or any(kw in msg for spec_list in spec_keywords.values() for kw in spec_list):
+        # Find which specialist they are referring to
+        for spec_id, keywords in spec_keywords.items():
+            if any(kw in msg for kw in keywords):
+                # Only invite if they aren't already active
+                if spec_id not in active_specialists:
+                    # Let's verify it's a positive intent (not "don't connect Lex")
+                    if not is_removal:
+                        return "invite", spec_id
+                        
+    return None, None
+
+
+

@@ -51,57 +51,57 @@ async def generate_chat_completion_with_fallback(
     logger = logging.getLogger(__name__)
 
     # Build order of providers based on settings and preferred_model
-    providers = []
+    all_possible_providers = {}
 
-    # Helper to clean model names for specific providers
-    def get_ollama_base(url):
-        if url and not url.endswith('/v1') and not url.endswith('/v1/'):
-            return url.rstrip('/') + '/v1'
-        return url
+    # 1. Ollama
+    if settings.OLLAMA_BASE_URL:
+        all_possible_providers["ollama"] = ("Ollama", get_ollama_base(settings.OLLAMA_BASE_URL), "ollama", settings.OLLAMA_MODEL)
+
+    # 2. Gemini
+    if settings.GEMINI_API_KEY:
+        all_possible_providers["gemini"] = ("Gemini", settings.GEMINI_API_BASE, settings.GEMINI_API_KEY, settings.GEMINI_MODEL)
+
+    # 3. OpenAI
+    if settings.OPENAI_API_KEY:
+        all_possible_providers["openai"] = ("OpenAI", None, settings.OPENAI_API_KEY, settings.OPENAI_MODEL)
+
+    # 4. DeepSeek
+    if settings.DEEPSEEK_API_KEY:
+        all_possible_providers["deepseek"] = ("DeepSeek", settings.DEEPSEEK_API_BASE, settings.DEEPSEEK_API_KEY, "deepseek-chat")
+
+    # 5. OpenRouter
+    if settings.OPENROUTER_API_KEY:
+        all_possible_providers["openrouter"] = ("OpenRouter", settings.OPENROUTER_API_BASE, settings.OPENROUTER_API_KEY, settings.OPENROUTER_MODEL)
+
+    providers = []
+    first_provider_key = None
 
     # If preferred_model is specified, try to resolve it first
     if preferred_model:
         pref = preferred_model.lower()
         if "llama" in pref or "ollama" in pref:
-            if settings.OLLAMA_BASE_URL:
-                providers.append(("Ollama-Preferred", get_ollama_base(settings.OLLAMA_BASE_URL), "ollama", settings.OLLAMA_MODEL))
+            first_provider_key = "ollama"
         elif "deepseek" in pref:
-            if settings.DEEPSEEK_API_KEY:
-                providers.append(("DeepSeek-Preferred", settings.DEEPSEEK_API_BASE, settings.DEEPSEEK_API_KEY, "deepseek-chat"))
-            elif settings.OPENROUTER_API_KEY:
-                providers.append(("OpenRouter-DeepSeek", settings.OPENROUTER_API_BASE, settings.OPENROUTER_API_KEY, "deepseek/deepseek-chat"))
+            first_provider_key = "deepseek"
         elif "gemini" in pref:
-            if settings.GEMINI_API_KEY:
-                providers.append(("Gemini-Preferred", settings.GEMINI_API_BASE, settings.GEMINI_API_KEY, preferred_model))
-            elif settings.OPENROUTER_API_KEY:
-                providers.append(("OpenRouter-Gemini", settings.OPENROUTER_API_BASE, settings.OPENROUTER_API_KEY, "google/gemini-2.5-flash"))
+            first_provider_key = "gemini"
         elif "gpt" in pref:
-            if settings.OPENAI_API_KEY:
-                providers.append(("OpenAI-Preferred", None, settings.OPENAI_API_KEY, preferred_model))
-            elif settings.OPENROUTER_API_KEY:
-                providers.append(("OpenRouter-OpenAI", settings.OPENROUTER_API_BASE, settings.OPENROUTER_API_KEY, f"openai/{preferred_model}"))
+            first_provider_key = "openai"
 
-    # Add other providers based on configurations (fallbacks)
+    primary_provider = (settings.PRIMARY_PROVIDER or "gemini").lower()
+    if not first_provider_key or first_provider_key not in all_possible_providers:
+        first_provider_key = primary_provider if primary_provider in all_possible_providers else None
 
-    # 1. Ollama
-    if settings.OLLAMA_BASE_URL and not any(p[0].startswith("Ollama") for p in providers):
-        providers.append(("Ollama", get_ollama_base(settings.OLLAMA_BASE_URL), "ollama", settings.OLLAMA_MODEL))
+    # Add the selected first provider
+    if first_provider_key and first_provider_key in all_possible_providers:
+        p_info = all_possible_providers[first_provider_key]
+        p_model = preferred_model if preferred_model and first_provider_key in preferred_model.lower() else p_info[3]
+        providers.append((p_info[0], p_info[1], p_info[2], p_model))
 
-    # 2. Gemini
-    if settings.GEMINI_API_KEY and not any(p[0].startswith("Gemini") for p in providers):
-        providers.append(("Gemini", settings.GEMINI_API_BASE, settings.GEMINI_API_KEY, settings.GEMINI_MODEL))
-
-    # 3. OpenAI
-    if settings.OPENAI_API_KEY and not any(p[0].startswith("OpenAI") for p in providers):
-        providers.append(("OpenAI", None, settings.OPENAI_API_KEY, settings.OPENAI_MODEL))
-
-    # 4. DeepSeek
-    if settings.DEEPSEEK_API_KEY and not any(p[0].startswith("DeepSeek") for p in providers):
-        providers.append(("DeepSeek", settings.DEEPSEEK_API_BASE, settings.DEEPSEEK_API_KEY, "deepseek-chat"))
-
-    # 5. OpenRouter
-    if settings.OPENROUTER_API_KEY and not any(p[0].startswith("OpenRouter") for p in providers):
-        providers.append(("OpenRouter", settings.OPENROUTER_API_BASE, settings.OPENROUTER_API_KEY, settings.OPENROUTER_MODEL))
+    # Add other providers as fallbacks
+    for key, p_info in all_possible_providers.items():
+        if key != first_provider_key:
+            providers.append(p_info)
 
     # Fallback to ConfigDefault if nothing is added
     if not providers:

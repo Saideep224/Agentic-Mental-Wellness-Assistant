@@ -24,7 +24,7 @@ from app.models.user_profile import UserProfile
 from app.models.mood_log import MoodLog
 from app.routes.auth import get_current_user
 from app.database import _history_cache, _profile_cache, write_queue
-from app.utils.helpers import get_random_human_fallback, get_speculative_transition, normalize_uuid
+from app.utils.helpers import get_random_human_fallback, get_speculative_transition, normalize_uuid, detect_specialist_action
 
 
 class MockConversation:
@@ -539,6 +539,31 @@ async def send_message(
 
         # 5. Run agent graph
         logger.info(f"[AI AGENT] Running multi-agent cognitive graph for user message...")
+
+        # --- Intent-based specialist routing ---
+        current_specialists: list = list(conversation.active_specialists or [])
+        specialist_action, action_target = detect_specialist_action(body.message, current_specialists)
+        specialist_action_event = None
+        if specialist_action == "invite" and action_target:
+            if action_target not in current_specialists:
+                current_specialists.append(action_target)
+                conversation.active_specialists = current_specialists
+                db.add(conversation)
+                await db.commit()
+                await db.refresh(conversation)
+                specialist_action_event = {"action": "invited", "specialist_id": action_target}
+                logger.info(f"[SPECIALIST INTENT] Invited specialist '{action_target}' to conversation {conversation_id_resolved}")
+        elif specialist_action == "remove" and action_target:
+            if action_target in current_specialists:
+                current_specialists.remove(action_target)
+                conversation.active_specialists = current_specialists
+                db.add(conversation)
+                await db.commit()
+                await db.refresh(conversation)
+                specialist_action_event = {"action": "removed", "specialist_id": action_target}
+                logger.info(f"[SPECIALIST INTENT] Removed specialist '{action_target}' from conversation {conversation_id_resolved}")
+        # --- End intent-based routing ---
+
         specialist_id = None
         if conversation.agent_id and conversation.agent_id != "buddy":
             specialist_id = conversation.agent_id
@@ -826,6 +851,7 @@ async def send_message(
             "specialistResponse": specialist_response,
             "specialistId": specialist_id,
             "suggestedSpecialist": suggested_specialist,
+            "specialistActionEvent": specialist_action_event,
         }
 
     except Exception as route_err:
@@ -859,6 +885,31 @@ async def generate_and_persist_sse_response(
                 )
             )
             conversation = conversation_res.scalar_one_or_none()
+
+            # --- Intent-based specialist routing (SSE path) ---
+            current_specialists: list = list((conversation.active_specialists if conversation else None) or [])
+            specialist_action, action_target = detect_specialist_action(message, current_specialists)
+            sse_specialist_action_event = None
+            if conversation:
+                if specialist_action == "invite" and action_target:
+                    if action_target not in current_specialists:
+                        current_specialists.append(action_target)
+                        conversation.active_specialists = current_specialists
+                        db.add(conversation)
+                        await db.commit()
+                        await db.refresh(conversation)
+                        sse_specialist_action_event = {"action": "invited", "specialist_id": action_target}
+                        logger.info(f"[SSE SPECIALIST INTENT] Invited specialist '{action_target}' to conversation {conversation_id}")
+                elif specialist_action == "remove" and action_target:
+                    if action_target in current_specialists:
+                        current_specialists.remove(action_target)
+                        conversation.active_specialists = current_specialists
+                        db.add(conversation)
+                        await db.commit()
+                        await db.refresh(conversation)
+                        sse_specialist_action_event = {"action": "removed", "specialist_id": action_target}
+                        logger.info(f"[SSE SPECIALIST INTENT] Removed specialist '{action_target}' from conversation {conversation_id}")
+            # --- End intent-based routing ---
 
             specialist_id = None
             if conversation:
@@ -1161,6 +1212,7 @@ async def generate_and_persist_sse_response(
             "agent_analysis": agent_analysis,
             "message_id": str(assistant_msg.id) if hasattr(assistant_msg, "id") else str(uuid.uuid4()),
             "suggested_specialist": suggested_specialist,
+            "specialist_action_event": sse_specialist_action_event,
         }
 
 
@@ -1326,6 +1378,21 @@ async def stream_message_sse(
                 specialist_id = persisted.get("specialist_id")
                 specialist_msg_id = persisted.get("specialist_message_id")
                 suggested_specialist = persisted.get("suggested_specialist")
+                sse_specialist_action = persisted.get("specialist_action_event")
+
+                # Emit specialist_action event so the frontend can update the UI
+                if sse_specialist_action:
+                    logger.info(f"[SSE STREAM] Yielding specialist_action event: {sse_specialist_action}")
+                    yield {
+                        "event": "message",
+                        "data": json.dumps({
+                            "type": "specialist_action",
+                            "action": sse_specialist_action["action"],
+                            "specialist_id": sse_specialist_action["specialist_id"],
+                            "conversation_id": str(conversation_id_resolved),
+                        }),
+                    }
+                    await asyncio.sleep(0.03)
 
                 # If specialist response is active, stream it first
                 if specialist_response and specialist_id:

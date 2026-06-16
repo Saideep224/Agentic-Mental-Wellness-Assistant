@@ -35,6 +35,13 @@ def get_embedding_client() -> AsyncOpenAI:
     return _embedding_client
 
 
+def get_ollama_base(url: str | None) -> str | None:
+    """Helper to clean model names for specific providers."""
+    if url and not url.endswith('/v1') and not url.endswith('/v1/'):
+        return url.rstrip('/') + '/v1'
+    return url
+
+
 async def generate_chat_completion_with_fallback(
     messages: list,
     temperature: float = 0.7,

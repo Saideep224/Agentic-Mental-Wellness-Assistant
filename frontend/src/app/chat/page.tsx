@@ -38,6 +38,17 @@ import * as api from '@/api';
 import { formatDate, truncateText } from '@/utils';
 import { skipOnboarding } from '@/api/onboarding';
 
+const agentSidebarConfig: Record<string, { emoji: string; name: string; role?: string; gradient: string; border: string }> = {
+  buddy: { emoji: '💙', name: 'Buddy', gradient: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'rgba(56, 189, 248, 0.3)' },
+  lex: { emoji: '⚖️', name: 'Lex', role: 'Legal Support', gradient: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)', border: 'rgba(245, 158, 11, 0.3)' },
+  maya: { emoji: '👨‍⚕️', name: 'Dr. Maya', role: 'Health Support', gradient: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'rgba(16, 185, 129, 0.3)' },
+  ray: { emoji: '👮', name: 'Officer Ray', role: 'Safety & Cyber Support', gradient: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)', border: 'rgba(239, 68, 68, 0.3)' },
+  techie: { emoji: '💻', name: 'Techie', role: 'Technical Support', gradient: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)', border: 'rgba(99, 102, 241, 0.3)' },
+  mentor: { emoji: '📚', name: 'Mentor', role: 'Study Support', gradient: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)', border: 'rgba(139, 92, 246, 0.3)' },
+  finance: { emoji: '💰', name: 'Finance Coach', gradient: 'linear-gradient(135deg, #db2777 0%, #be185d 100%)', border: 'rgba(236, 72, 153, 0.3)' },
+  fitness: { emoji: '🏋️', name: 'Fitness Coach', gradient: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)', border: 'rgba(20, 184, 166, 0.3)' },
+};
+
 export default function ChatPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -50,10 +61,9 @@ export default function ChatPage() {
   const [debugOpen, setDebugOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState('');
   const [skipLoading, setSkipLoading] = useState(false);
   const [isLoadingPage, setIsLoadingPage] = useState(true);
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<string[]>([]);
 
   // Track accordion state for the Live Agent Debug Panel
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -71,59 +81,13 @@ export default function ChatPage() {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const handleSaveTitle = async (id: string) => {
-    if (!editTitle.trim()) {
-      setEditingId(null);
-      return;
-    }
-    const token = getToken();
-    if (!token) return;
-
-    setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, title: editTitle.trim() } : c))
-    );
-    setEditingId(null);
-
-    try {
-      await api.updateConversation(id, editTitle.trim(), token);
-    } catch (err) {
-      console.error('Failed to update title:', err);
-      loadConversations();
-    }
-  };
-
-  const handleDeleteConversation = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this conversation?')) return;
-    const token = getToken();
-    if (!token) return;
-
-    setConversations((prev) => prev.filter((c) => c.id !== id));
-    if (activeConversationId === id) {
-      setActiveConversationId(null);
-    }
-
-    try {
-      await api.deleteConversation(id, token);
-      const convos = await api.getConversations(token);
-      setConversations(convos);
-      if (convos.length > 0) {
-        setActiveConversationId(convos[0].id);
-      } else {
-        setActiveConversationId(null);
-      }
-    } catch (err) {
-      console.error('Failed to delete conversation:', err);
-      loadConversations();
-    }
-  };
-
   useEffect(() => {
     setMounted(true);
   }, []);
 
   const user = mounted ? getStoredUser() : null;
 
-  const { messages, isLoading, isStreaming, streamPlaceholder, sendMessage } = useChat({
+  const { messages, setMessages, isLoading, isStreaming, streamPlaceholder, sendMessage } = useChat({
     conversationId: activeConversationId,
   });
 
@@ -186,19 +150,12 @@ export default function ChatPage() {
       setConversations(convos);
       if (convos.length > 0) {
         if (!activeConversationId) {
-          setActiveConversationId(convos[0].id);
+          const buddyConv = convos.find((c) => c.agent_id === 'buddy') || convos[0];
+          setActiveConversationId(buddyConv.id);
         }
-      } else {
-        // Auto-create first conversation
-        setIsCreating(true);
-        const convo = await api.createConversation(token);
-        setConversations([convo]);
-        setActiveConversationId(convo.id);
-        setIsCreating(false);
       }
     } catch (err) {
       console.error('Failed to load conversations:', err);
-      setIsCreating(false);
     }
   }, [activeConversationId]);
 
@@ -215,41 +172,38 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
-  // Create new conversation
-  const handleNewConversation = async () => {
-    const token = getToken();
+  const handleConnectSpecialist = async (specialistId: string) => {
+    if (!activeConversationId) return;
+    const token = api.getToken();
     if (!token) return;
-    setIsCreating(true);
+
     try {
-      const convo = await api.createConversation(token);
-      setConversations((prev) => [convo, ...prev]);
-      setActiveConversationId(convo.id);
-      // activeConversationId effect will also trigger, but explicit call here
-      // ensures focus even if the ID didn't change (edge case)
-      requestAnimationFrame(() => {
-        setTimeout(() => inputRef.current?.focus(), 50);
-      });
+      const newMsgs = await api.connectSpecialist(activeConversationId, specialistId, token);
+      setMessages((prev) => [...prev, ...newMsgs]);
+      await loadConversations();
+      focusInput();
     } catch (err) {
-      console.error('Failed to create conversation:', err);
-    } finally {
-      setIsCreating(false);
+      console.error('Failed to connect specialist:', err);
+    }
+  };
+
+  const handleDisconnectSpecialist = async () => {
+    if (!activeConversationId) return;
+    const token = api.getToken();
+    if (!token) return;
+
+    try {
+      const newMsgs = await api.disconnectSpecialist(activeConversationId, token);
+      setMessages((prev) => [...prev, ...newMsgs]);
+      await loadConversations();
+      focusInput();
+    } catch (err) {
+      console.error('Failed to disconnect specialist:', err);
     }
   };
 
   const handleSend = async (content: string) => {
-    if (!activeConversationId) {
-      const token = getToken();
-      if (!token) return;
-      try {
-        const convo = await api.createConversation(token);
-        setConversations((prev) => [convo, ...prev]);
-        setActiveConversationId(convo.id);
-        sendMessage(content, convo.id);
-      } catch (err) {
-        console.error('Failed to auto-create conversation:', err);
-      }
-      return;
-    }
+    if (!activeConversationId) return;
     sendMessage(content);
   };
 
@@ -328,134 +282,113 @@ export default function ChatPage() {
               className="h-full overflow-hidden flex-shrink-0 border-r"
               style={{ borderColor: 'var(--glass-border)' }}
             >
-              <div className="h-full flex flex-col p-4 w-[280px]">
-                {/* New chat button */}
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleNewConversation}
-                  disabled={isCreating}
-                  className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 mb-4 cursor-pointer transition-all duration-300"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(59, 130, 246, 0.05))',
-                    border: '1px solid rgba(56, 189, 248, 0.2)',
-                    color: 'var(--accent-cyan)',
-                  }}
-                >
-                  <Plus size={16} />
-                  {isCreating ? 'Creating...' : 'New Chat'}
-                </motion.button>
+              <div className="h-full flex flex-col p-3 w-[280px]">
+                {/* Contacts Header */}
+                <div className="px-3 py-2 flex items-center justify-between mb-4 border-b border-white/5">
+                  <span className="font-bold text-base tracking-wide text-[var(--text-primary)]">
+                    Contacts
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="text-[10px] text-emerald-400 font-semibold uppercase">Online</span>
+                  </div>
+                </div>
 
-                {/* Conversations list */}
-                <div className="flex-1 overflow-y-auto space-y-1 pr-1">
-                  {conversations.length === 0 ? (
-                    <div className="text-center py-10">
-                      <MessageCircle
-                        size={32}
-                        className="mx-auto mb-3"
-                        style={{ color: 'var(--text-muted)', opacity: 0.5 }}
-                      />
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        No conversations yet.
-                        <br />
-                        Start a new one!
-                      </p>
-                    </div>
-                  ) : (
-                    conversations.map((convo) => (
-                      <div
-                        key={convo.id}
-                        onClick={() => {
-                          if (editingId !== convo.id) {
+                {/* Contacts list */}
+                <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                  {(() => {
+                    const buddyConvo = conversations.find((c) => c.agent_id === 'buddy');
+                    const specialists = conversations.filter((c) => c.agent_id && c.agent_id !== 'buddy');
+
+                    const renderContactItem = (convo: Conversation) => {
+                      const info = agentSidebarConfig[convo.agent_id || 'buddy'] || {
+                        name: convo.title || 'Support Agent',
+                        emoji: '🤝',
+                        gradient: 'linear-gradient(135deg, #64748b 0%, #475569 100%)',
+                        border: 'rgba(148, 163, 184, 0.3)',
+                        role: undefined
+                      };
+                      const isActive = activeConversationId === convo.id;
+                      
+                      return (
+                        <div
+                          key={convo.id}
+                          onClick={() => {
                             setActiveConversationId(convo.id);
-                          }
-                        }}
-                        className="w-full text-left px-3 py-3 rounded-xl transition-all duration-200 cursor-pointer group"
-                        style={{
-                          background:
-                            activeConversationId === convo.id
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer border"
+                          style={{
+                            background: isActive
                               ? 'rgba(56, 189, 248, 0.08)'
                               : 'transparent',
-                          border:
-                            activeConversationId === convo.id
-                              ? '1px solid rgba(56, 189, 248, 0.15)'
-                              : '1px solid transparent',
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <div className="flex items-center gap-2 truncate flex-1">
-                            <MessageCircle size={12} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-                            {editingId === convo.id ? (
-                              <input
-                                value={editTitle}
-                                onChange={(e) => setEditTitle(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleSaveTitle(convo.id);
-                                  if (e.key === 'Escape') setEditingId(null);
-                                }}
-                                onBlur={() => handleSaveTitle(convo.id)}
-                                onClick={(e) => e.stopPropagation()}
-                                autoFocus
-                                className="bg-black/40 text-xs rounded border border-white/20 px-2 py-0.5 w-full focus:outline-none focus:border-cyan-400 text-white"
-                              />
-                            ) : (
-                              <span
-                                className="text-sm font-medium truncate"
-                                style={{
-                                  color:
-                                    activeConversationId === convo.id
-                                      ? 'var(--text-primary)'
-                                      : 'var(--text-secondary)',
-                                }}
-                              >
-                                {convo.title || 'New Conversation'}
+                            borderColor: isActive
+                              ? 'rgba(56, 189, 248, 0.15)'
+                              : 'transparent',
+                          }}
+                        >
+                          {/* Avatar */}
+                          <div className="relative flex-shrink-0">
+                            <div
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-lg select-none"
+                              style={{
+                                background: info.gradient,
+                                boxShadow: isActive ? `0 0 10px ${info.border}` : 'none',
+                              }}
+                            >
+                              {info.emoji}
+                            </div>
+                            <div 
+                              className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-[#090d1a] bg-emerald-500"
+                              title="Online"
+                            />
+                          </div>
+
+                          {/* Details */}
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-semibold text-xs text-[var(--text-primary)] truncate">
+                                {info.name}
+                              </span>
+                              {convo.lastMessageTimestamp && (
+                                <span className="text-[9px] text-[var(--text-muted)] flex-shrink-0">
+                                  {formatDate(convo.lastMessageTimestamp)}
+                                </span>
+                              )}
+                            </div>
+                            {info.role && (
+                              <span className="text-[9px] text-[var(--text-muted)] font-medium -mt-0.5">
+                                {info.role}
                               </span>
                             )}
+                            {convo.lastMessage ? (
+                              <p className="text-[11px] text-[var(--text-muted)] truncate mt-0.5 leading-tight">
+                                {convo.lastMessage}
+                              </p>
+                            ) : (
+                              <p className="text-[11px] text-[var(--text-muted)] italic truncate mt-0.5 leading-tight">
+                                No messages yet
+                              </p>
+                            )}
                           </div>
-                          
-                          {editingId !== convo.id && (
-                            <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingId(convo.id);
-                                  setEditTitle(convo.title || 'New Conversation');
-                                }}
-                                className="p-1 text-white/40 hover:text-sky-400 hover:bg-white/5 rounded transition-all duration-150 cursor-pointer"
-                                title="Edit Title"
-                              >
-                                <Edit2 size={12} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteConversation(convo.id);
-                                }}
-                                className="p-1 text-white/40 hover:text-rose-400 hover:bg-white/5 rounded transition-all duration-150 cursor-pointer"
-                                title="Delete Chat"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                          )}
                         </div>
-                        {convo.lastMessage && (
-                          <p
-                            className="text-xs truncate pl-5"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            {truncateText(convo.lastMessage, 50)}
-                          </p>
+                      );
+                    };
+
+                    return (
+                      <>
+                        {buddyConvo && renderContactItem(buddyConvo)}
+
+                        {specialists.length > 0 && (
+                          <>
+                            <div className="mt-5 mb-2 px-3 text-[10px] font-bold tracking-wider uppercase text-sky-400 select-none opacity-80">
+                              Suggested Support Agents:
+                            </div>
+                            {specialists.map((c) => renderContactItem(c))}
+                          </>
                         )}
-                        <p
-                          className="text-xs pl-5 mt-0.5"
-                          style={{ color: 'var(--text-muted)', opacity: 0.6 }}
-                        >
-                          {formatDate(convo.createdAt)}
-                        </p>
-                      </div>
-                    ))
-                  )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </motion.aside>
@@ -466,36 +399,104 @@ export default function ChatPage() {
         <div className="flex-1 flex flex-col min-w-0">
           {/* Chat header */}
           <div
-            className="flex items-center gap-3 px-4 py-3 border-b"
+            className="flex items-center gap-4 px-4 py-3 border-b"
             style={{ borderColor: 'var(--glass-border)' }}
           >
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 rounded-lg transition-colors cursor-pointer hover:bg-white/5"
+              className="p-2 rounded-lg transition-colors cursor-pointer hover:bg-white/5 flex-shrink-0"
               style={{ color: 'var(--text-muted)' }}
             >
               {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
             </button>
 
-            <div className="flex items-center gap-2">
-              <EsonaLogo 
-                size={32} 
-                showParticles={false} 
-                glowIntensity="low" 
-                aiState={isStreaming ? 'speaking' : isLoading ? 'listening' : 'idle'}
-              />
-              <div>
-                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                  Esona
-                </p>
-                <p className="text-xs" style={{ color: 'var(--accent-emerald)' }}>
-                  ● Online
-                </p>
-              </div>
-            </div>
+            {(() => {
+              const activeConv = conversations.find(c => c.id === activeConversationId);
+              const info = activeConv ? agentSidebarConfig[activeConv.agent_id || 'buddy'] : agentSidebarConfig.buddy;
+              const isBuddy = activeConv?.agent_id === 'buddy';
+              
+              return (
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {isBuddy ? (
+                    <EsonaLogo 
+                      size={36} 
+                      showParticles={false} 
+                      glowIntensity="low" 
+                      aiState={isStreaming ? 'speaking' : isLoading ? 'listening' : 'idle'}
+                    />
+                  ) : (
+                    <div
+                      className="w-9 h-9 rounded-full flex items-center justify-center text-lg select-none flex-shrink-0"
+                      style={{
+                        background: info.gradient,
+                        boxShadow: `0 0 10px ${info.border}`,
+                      }}
+                    >
+                      {info.emoji}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                        {info.name}
+                      </p>
+                      {info.role && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[var(--text-muted)] flex-shrink-0">
+                          {info.role}
+                        </span>
+                      )}
+                    </div>
+                    {isBuddy && activeConv?.active_specialists && activeConv.active_specialists.length > 0 ? (
+                      <p className="text-[11px] text-sky-400 font-medium">
+                        Group Chat with Buddy
+                      </p>
+                    ) : (
+                      <p className="text-xs flex items-center gap-1" style={{ color: 'var(--accent-emerald)' }}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                        Online
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Connected Specialist Pills (only in Buddy chat) */}
+                  {isBuddy && activeConv?.active_specialists && activeConv.active_specialists.length > 0 && (
+                    <div className="hidden sm:flex items-center gap-2 ml-4 overflow-x-auto py-1 custom-scrollbar">
+                      {activeConv.active_specialists.map((specId) => {
+                        const specInfo = agentSidebarConfig[specId];
+                        if (!specInfo) return null;
+                        return (
+                          <div 
+                            key={specId} 
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border text-white flex-shrink-0"
+                            style={{
+                              background: specInfo.gradient,
+                              borderColor: specInfo.border,
+                              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+                            }}
+                          >
+                            <span>{specInfo.emoji}</span>
+                            <span>{specInfo.name}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDisconnectSpecialist();
+                              }}
+                              className="ml-1 p-0.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors cursor-pointer text-[10px] leading-none font-bold"
+                              title="Disconnect Specialist"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Hidden Dev Insights Toggle */}
-            <div className="ml-auto">
+            <div className="ml-auto flex-shrink-0">
               <button
                 onClick={() => setDebugOpen(!debugOpen)}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all duration-300 cursor-pointer"
@@ -590,9 +591,46 @@ export default function ChatPage() {
                 </motion.div>
               ) : (
                 <>
-                  {messages.map((message) => (
-                    <MessageBubble key={message.id} message={message} />
-                  ))}
+                  {messages.map((message) => {
+                    const activeConv = conversations.find(c => c.id === activeConversationId);
+                    const suggestedSpec = message.agentAnalysis?.suggested_specialist;
+                    const isAlreadyConnected = activeConv?.active_specialists?.includes(suggestedSpec);
+                    const isDismissed = dismissedSuggestions.includes(message.id);
+                    const showSuggestion = suggestedSpec && !isAlreadyConnected && !isDismissed;
+
+                    return (
+                      <div key={message.id} className="space-y-3">
+                        <MessageBubble message={message} />
+                        {showSuggestion && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className="flex flex-col items-center my-4 p-4 rounded-2xl border bg-black/40 backdrop-blur-md max-w-sm mx-auto space-y-3"
+                            style={{ borderColor: 'rgba(56, 189, 248, 0.25)', boxShadow: '0 8px 32px rgba(56, 189, 248, 0.05)' }}
+                          >
+                            <p className="text-xs text-[var(--text-secondary)] text-center px-2 leading-relaxed">
+                              Buddy suggested involving <strong>{agentSidebarConfig[suggestedSpec]?.name || suggestedSpec}</strong> for specialized {agentSidebarConfig[suggestedSpec]?.role?.toLowerCase() || 'support'}.
+                            </p>
+                            <div className="flex gap-3 w-full justify-center">
+                              <button
+                                onClick={() => handleConnectSpecialist(suggestedSpec)}
+                                className="px-5 py-2 bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 text-white rounded-xl text-xs font-semibold shadow-lg shadow-sky-500/10 cursor-pointer transition-all duration-200"
+                              >
+                                Connect
+                              </button>
+                              <button
+                                onClick={() => setDismissedSuggestions((prev) => [...prev, message.id])}
+                                className="px-5 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-[var(--text-secondary)] rounded-xl text-xs font-semibold cursor-pointer transition-all duration-200"
+                              >
+                                Not Now
+                              </button>
+                            </div>
+                          </motion.div>
+                        )}
+                      </div>
+                    );
+                  })}
                   {streamPlaceholder && (
                     <MessageBubble
                       message={{

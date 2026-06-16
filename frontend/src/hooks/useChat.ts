@@ -162,6 +162,8 @@ export function useChat({ conversationId }: UseChatOptions) {
       let accumulatedContent = '';
       let burstQueue = '';
       let isProcessingBurst = false;
+      let currentSenderType = 'buddy';
+      let buddyBubbleSpawned = false;
 
       const cleanUpConnection = () => {
         if (connectionTimeout) {
@@ -305,26 +307,68 @@ export function useChat({ conversationId }: UseChatOptions) {
                 // Show temporary placeholder bubble via separate state
                 setIsLoading(false);
                 setStreamPlaceholder(data.content);
+              } else if (data.type === 'specialist_start') {
+                setIsLoading(false);
+                setIsStreaming(true);
+                setStreamPlaceholder(null);
+                isMessageCreated = true;
+                currentSenderType = data.specialist_id;
+                
+                const messageId = generateId();
+                activeBubbleId = `${messageId}-0`;
+                bubbleCount = 0;
+                accumulatedContent = '';
+                burstQueue = '';
+                
+                setMessages((prev) => {
+                  const specBubble: Message = {
+                    id: activeBubbleId,
+                    role: 'assistant',
+                    content: '',
+                    sender_type: currentSenderType,
+                    timestamp: new Date(),
+                  };
+                  return [...prev, specBubble];
+                });
+              } else if (data.type === 'specialist_chunk') {
+                burstQueue += data.content;
+                const messageId = activeBubbleId.split('-')[0];
+                processBurst(messageId);
+              } else if (data.type === 'specialist_done') {
+                const finalId = data.message_id || activeBubbleId;
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === activeBubbleId
+                      ? { ...msg, id: finalId, content: msg.content.trim() }
+                      : msg
+                  )
+                );
+                buddyBubbleSpawned = false;
               } else if (data.type === 'chunk') {
-                if (!isMessageCreated) {
+                if (!buddyBubbleSpawned) {
+                  buddyBubbleSpawned = true;
                   isMessageCreated = true;
+                  currentSenderType = 'buddy';
+                  
                   const messageId = generateId();
                   activeBubbleId = `${messageId}-0`;
                   bubbleCount = 0;
                   accumulatedContent = '';
+                  burstQueue = '';
                   
                   setIsLoading(false);
                   setIsStreaming(true);
                   setStreamPlaceholder(null);
                   
                   setMessages((prev) => {
-                    const firstBubble: Message = {
+                    const buddyBubble: Message = {
                       id: activeBubbleId,
                       role: 'assistant',
                       content: '',
+                      sender_type: 'buddy',
                       timestamp: new Date(),
                     };
-                    return [...prev, firstBubble];
+                    return [...prev, buddyBubble];
                   });
                 }
                 

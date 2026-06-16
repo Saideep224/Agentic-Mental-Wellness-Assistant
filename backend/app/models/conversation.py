@@ -39,6 +39,8 @@ class Conversation(Base):
         SafeUUID, ForeignKey("profiles.user_id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(512), default="New Conversation")
+    agent_id: Mapped[str] = mapped_column(String(50), default="buddy", server_default="buddy", nullable=False)
+    active_specialists: Mapped[list | None] = mapped_column(JSON, default=list, server_default='[]', nullable=True)
     emotional_tag: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -102,6 +104,7 @@ class Message(Base):
     emotion_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     stress_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     anxiety_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sender_type: Mapped[str | None] = mapped_column(String(50), default="user", server_default="user", nullable=True)
     agent_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     emotional_context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

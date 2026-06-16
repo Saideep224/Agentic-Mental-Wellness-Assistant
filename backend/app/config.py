@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
     OPENROUTER_API_BASE: str = "https://openrouter.ai/api/v1"
 
+    # ── Ollama ────────────────────────────────────────────────
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3"
+
+    # ── DeepSeek ──────────────────────────────────────────────
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_API_BASE: str = "https://api.deepseek.com/v1"
+
     # ── UncloseAI ─────────────────────────────────────────────
     USE_UNCLOSEAI: bool = False
     UNCLOSEAI_API_BASE: str = "https://hermes.ai.unturf.com/v1"

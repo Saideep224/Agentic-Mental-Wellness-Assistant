@@ -136,6 +136,10 @@ async def create_tables() -> None:
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS stress_score double precision;"))
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS anxiety_score double precision;"))
                 await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS university text;"))
+                # V2 columns
+                await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS agent_id text DEFAULT 'buddy';"))
+                await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS active_specialists jsonb DEFAULT '[]';"))
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS sender_type text DEFAULT 'user';"))
             else:
                 for col in ["emotion_score", "stress_score", "anxiety_score"]:
                     try:
@@ -144,6 +148,19 @@ async def create_tables() -> None:
                         pass
                 try:
                     await conn.execute(text("ALTER TABLE user_profile ADD COLUMN university VARCHAR(255);"))
+                except Exception:
+                    pass
+                # V2 columns (SQLite)
+                try:
+                    await conn.execute(text("ALTER TABLE conversations ADD COLUMN agent_id VARCHAR(50) DEFAULT 'buddy';"))
+                except Exception:
+                    pass
+                try:
+                    await conn.execute(text("ALTER TABLE conversations ADD COLUMN active_specialists JSON DEFAULT '[]';"))
+                except Exception:
+                    pass
+                try:
+                    await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN sender_type VARCHAR(50) DEFAULT 'user';"))
                 except Exception:
                     pass
         logger.info("[Migration] Database columns checked/added successfully.")

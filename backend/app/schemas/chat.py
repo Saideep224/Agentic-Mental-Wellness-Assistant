@@ -24,6 +24,7 @@ class MessageResponse(BaseModel):
     conversation_id: uuid.UUID
     role: str
     content: str
+    sender_type: str | None = "user"
     emotion_detected: str | None = None
     mood_score: float | None = None
     emotion_score: float | None = None
@@ -48,6 +49,10 @@ class ConversationResponse(BaseModel):
     title: str
     created_at: datetime
     message_count: int = 0
+    agent_id: str = "buddy"
+    active_specialists: list[str] | None = []
+    last_message: str | None = None
+    last_message_timestamp: str | None = None
 
     model_config = {"from_attributes": True}
 

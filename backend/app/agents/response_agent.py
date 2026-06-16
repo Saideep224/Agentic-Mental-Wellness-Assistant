@@ -30,6 +30,7 @@ class ResponseAgent:
                     messages=messages,
                     temperature=current_temp,
                     max_tokens=max_tokens,
+                    preferred_model=settings.OLLAMA_MODEL,
                 )
                 
                 # Parse reasoning and clean text

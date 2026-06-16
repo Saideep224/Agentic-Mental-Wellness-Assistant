@@ -135,6 +135,35 @@ Title:"""
         return "✨ Soft check-in"
 
 
+def detect_specialist_recommendation(message: str, agent_analysis: dict) -> str | None:
+    """Detect if the message suggests a need for a specialist agent based on keyword indicators or agent analysis."""
+    msg_lower = message.lower()
+    
+    # Keyword sets for the 7 specialists
+    keywords = {
+        "lex": ["legal", "lawyer", "court", "sue", "property dispute", "land dispute", "contract", "police case", "family property", "agreement", "lease", "tenant", "advocate", "litigation"],
+        "maya": ["health", "symptom", "pain", "medical", "doctor", "disease", "illness", "headache", "chest pain", "diagnosis", "health anxiety", "sick", "infection", "cough", "fever", "physician"],
+        "ray": ["hacked", "stalker", "cyber", "scam", "blackmail", "harass", "threat", "bully", "online safety", "scammed", "stole my account", "compromised", "phishing", "leak"],
+        "techie": ["code", "bug", "programming", "git", "database error", "broken phone", "windows update", "server down", "software crash", "tech support", "ide", "laptop", "computer", "compiler"],
+        "mentor": ["exam", "study", "failing class", "test stress", "academic pressure", "semester", "syllabus", "procrastinating study", "homework", "grades", "school", "college", "university", "midterm"],
+        "finance": ["money", "budget", "finance", "debt", "loan", "broke", "credit card", "bills", "rent", "cost of living", "salary", "student loan", "bankrupt", "expenses", "saving"],
+        "fitness": ["workout", "exercise", "weight loss", "nutrition", "diet", "gym", "fitness", "calories", "posture", "muscle", "active habits", "cardio", "sleep schedule", "stretching", "running"]
+    }
+    
+    for spec_id, words in keywords.items():
+        if any(w in msg_lower for w in words):
+            return spec_id
+            
+    # Also check inferred causes from cognitive analyzer
+    causes = agent_analysis.get("context_analysis", {}).get("inferred_causes", [])
+    causes_str = " ".join([str(c) for c in causes]).lower()
+    for spec_id, words in keywords.items():
+        if any(w in causes_str for w in words):
+            return spec_id
+            
+    return None
+
+
 async def _get_or_create_conversation(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -342,7 +371,7 @@ Summary:"""
         logger.error(f"Failed to generate and store conversation summary: {e}", exc_info=True)
 
 
-async def async_save_message(conversation_id, user_id, role, content, emotion_detected=None, mood_score=None, agent_analysis=None):
+async def async_save_message(conversation_id, user_id, role, content, emotion_detected=None, mood_score=None, agent_analysis=None, sender_type=None):
     """Asynchronously inserts a message inside a fresh DB session on failure."""
     logger.info(f"[BackgroundWriteQueue] Executing async message save: conversation_id={conversation_id}, role={role}")
     from app.routes.chat import get_db_session
@@ -365,7 +394,8 @@ async def async_save_message(conversation_id, user_id, role, content, emotion_de
                 emotion_detected=emotion_detected,
                 mood_score=mood_score,
                 agent_analysis=agent_analysis,
-                emotional_context=agent_analysis.get("emotion_analysis", {}) if agent_analysis else None
+                emotional_context=agent_analysis.get("emotion_analysis", {}) if agent_analysis else None,
+                sender_type=sender_type
             )
             save_db.add(msg)
             conv.updated_at = datetime.now(timezone.utc)
@@ -509,20 +539,104 @@ async def send_message(
 
         # 5. Run agent graph
         logger.info(f"[AI AGENT] Running multi-agent cognitive graph for user message...")
+        specialist_id = None
+        if conversation.agent_id and conversation.agent_id != "buddy":
+            specialist_id = conversation.agent_id
+        elif conversation.active_specialists:
+            specialist_id = conversation.active_specialists[0]
+
+        specialist_response = None
+        suggested_specialist = None
+
         try:
-            result = await run_agent_graph(
-                user_message=body.message,
-                user_id=str(current_user.id),
-                conversation_history=history,
-                emotional_profile=emotional_profile,
-                conversation_id=conversation_id_resolved,
-                db=db,
-            )
+            if specialist_id:
+                # 1. Run preprocessing (cog analyzer + memory) to extract shared context
+                from app.chatbot.pipeline import preprocessing_node
+                initial_state = {
+                    "user_message": body.message,
+                    "user_id": str(current_user.id),
+                    "conversation_id": str(conversation_id_resolved),
+                    "conversation_history": history,
+                    "emotional_profile": emotional_profile,
+                    "db": db,
+                    "router_decision": {},
+                    "emotion_analysis": {},
+                    "personality_analysis": {},
+                    "context_analysis": {},
+                    "memories": [],
+                    "recommendations": [],
+                    "comfort_kit": {},
+                    "response": "",
+                    "mood_score": 0.5,
+                    "detected_emotion": "neutral",
+                    "personality_agent": {},
+                    "emotion_agent": {},
+                    "behavior_agent": {},
+                    "growth_agent": {},
+                    "intent_agent": {},
+                    "safety_agent": {},
+                    "memory_extraction": {},
+                    "response_strategy": {},
+                    "orchestrated_prompt_summary": "",
+                    "agent_analysis": {},
+                }
+                cog_res = await preprocessing_node(initial_state)
+                
+                # 2. Invoke the specialist agent via AI Router
+                from app.services.ai_router import ai_router
+                spec_res = await ai_router.generate_response(
+                    db=db,
+                    user_id=str(current_user.id),
+                    agent_id=specialist_id,
+                    user_message=body.message,
+                    conversation_history=history,
+                    cog_res=cog_res
+                )
+                specialist_response = spec_res["response"]
+
+                # 3. Inject specialist response into Buddy's graph as system note and dialog turn
+                system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
+                updated_history = history + [
+                    {"role": "system", "content": system_note},
+                    {"role": "assistant", "content": specialist_response, "sender_type": specialist_id}
+                ]
+
+                # Run Buddy graph with specialist injected
+                result = await run_agent_graph(
+                    user_message=body.message,
+                    user_id=str(current_user.id),
+                    conversation_history=updated_history,
+                    emotional_profile=emotional_profile,
+                    conversation_id=conversation_id_resolved,
+                    db=db,
+                )
+            else:
+                # No specialist active, run normal Buddy graph
+                result = await run_agent_graph(
+                    user_message=body.message,
+                    user_id=str(current_user.id),
+                    conversation_history=history,
+                    emotional_profile=emotional_profile,
+                    conversation_id=conversation_id_resolved,
+                    db=db,
+                )
+
             logger.info(f"[AI AGENT SUCCESS] Multi-agent processing complete.")
             full_response = result.get("response", "I'm here for you. Could you tell me more?")
             detected_emotion = result.get("detected_emotion", None)
             mood_score = result.get("mood_score", None)
             agent_analysis = result.get("agent_analysis", {})
+
+            # Check if Buddy should recommend a specialist (only on Buddy chat, when no specialist is active)
+            if not specialist_id and conversation.agent_id == "buddy":
+                suggested_specialist = detect_specialist_recommendation(body.message, agent_analysis)
+                if suggested_specialist:
+                    from app.agents.specialist_registry import SPECIALIST_REGISTRY
+                    spec_info = SPECIALIST_REGISTRY[suggested_specialist]
+                    rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
+                    full_response += rec_suffix
+                    agent_analysis["suggested_specialist"] = suggested_specialist
+
         except Exception as agent_err:
             logger.error(f"[AI AGENT ERROR] Multi-agent execution failed: {agent_err}. Falling back to randomized human reply.", exc_info=True)
             full_response = get_random_human_fallback()
@@ -585,16 +699,33 @@ async def send_message(
         except Exception as mem_err:
             logger.error(f"[MEMORY ERROR] Failed to save memory: {mem_err}", exc_info=True)
 
-        # 8. Save assistant message and mood logs to DB
+        # 8. Save assistant messages and mood logs to DB
         logger.info(f"[DB INSERT] Saving AI response and Mood logs to database...")
         logger.info(f"[TYPE LOG] send_message assistant: conversation_id type: {type(conversation_id_resolved)}, value: {conversation_id_resolved}")
         logger.info(f"[TYPE LOG] send_message assistant: user_id type: {type(current_user.id)}, value: {current_user.id}")
         try:
+            # 8a. If specialist responded, save specialist message
+            if specialist_id and specialist_response:
+                spec_msg = Message(
+                    conversation_id=conversation_id_resolved,
+                    user_id=current_user.id,
+                    role=MessageRole.assistant,
+                    content=specialist_response,
+                    sender_type=specialist_id,
+                    emotion=detected_emotion,
+                    emotion_score=confidence_score,
+                    stress_score=stress_score,
+                    anxiety_score=anxiety_score,
+                )
+                db.add(spec_msg)
+
+            # 8b. Save Buddy message
             assistant_msg = Message(
                 conversation_id=conversation_id_resolved,
                 user_id=current_user.id,
                 role=MessageRole.assistant,
                 content=full_response,
+                sender_type="buddy",
                 emotion_detected=detected_emotion,
                 mood_score=mood_score,
                 agent_analysis=agent_analysis,
@@ -646,16 +777,25 @@ async def send_message(
             except Exception as ref_err:
                 logger.error(f"[REFLECTION ERROR] Reflection failed: {ref_err}", exc_info=True)
 
-            # Commit assistant message + mood logs
+            # Commit assistant messages + mood logs
             await db.commit()
             try:
                 await db.refresh(assistant_msg)
             except Exception:
                 pass
-            logger.info(f"[DB COMMIT SUCCESS] AI response (id={getattr(assistant_msg, 'id', 'N/A')}) and MoodLog saved successfully.")
+            logger.info(f"[DB COMMIT SUCCESS] AI response and MoodLog saved successfully.")
         except Exception as db_err:
             logger.error(f"[DB COMMIT ERROR] Failed to save assistant message/mood log: {db_err}. Queueing async recovery.", exc_info=True)
             await db.rollback()
+            if specialist_id and specialist_response:
+                await write_queue.add_task(
+                    async_save_message,
+                    conversation_id=conversation_id_resolved,
+                    user_id=current_user.id,
+                    role=MessageRole.assistant,
+                    content=specialist_response,
+                    sender_type=specialist_id
+                )
             await write_queue.add_task(
                 async_save_message,
                 conversation_id=conversation_id_resolved,
@@ -664,7 +804,8 @@ async def send_message(
                 content=full_response,
                 emotion_detected=detected_emotion,
                 mood_score=mood_score,
-                agent_analysis=agent_analysis
+                agent_analysis=agent_analysis,
+                sender_type="buddy"
             )
             await write_queue.add_task(
                 async_save_mood_log,
@@ -682,6 +823,9 @@ async def send_message(
             "stressScore": stress_score,
             "anxietyScore": anxiety_score,
             "agentAnalysis": agent_analysis,
+            "specialistResponse": specialist_response,
+            "specialistId": specialist_id,
+            "suggestedSpecialist": suggested_specialist,
         }
 
     except Exception as route_err:
@@ -706,22 +850,114 @@ async def generate_and_persist_sse_response(
     """
     logger.info(f"[SSE PERSIST] Starting background processing for conversation_id={conversation_id}")
     
-    # 1. Run agent graph
     async with get_db_session() as db:
         try:
-            logger.info(f"[SSE AI] Running agent graph...")
-            result = await run_agent_graph(
-                user_message=message,
-                user_id=str(current_user_id),
-                conversation_history=history,
-                emotional_profile=emotional_profile,
-                conversation_id=conversation_id,
-                db=db,
+            conversation_res = await db.execute(
+                select(Conversation).where(
+                    Conversation.id == conversation_id,
+                    Conversation.user_id == current_user_id
+                )
             )
+            conversation = conversation_res.scalar_one_or_none()
+
+            specialist_id = None
+            if conversation:
+                if conversation.agent_id and conversation.agent_id != "buddy":
+                    specialist_id = conversation.agent_id
+                elif conversation.active_specialists:
+                    specialist_id = conversation.active_specialists[0]
+
+            specialist_response = None
+            suggested_specialist = None
+
+            if specialist_id:
+                # 1. Run preprocessing (cog analyzer + memory) to extract shared context
+                from app.chatbot.pipeline import preprocessing_node
+                initial_state = {
+                    "user_message": message,
+                    "user_id": str(current_user_id),
+                    "conversation_id": str(conversation_id),
+                    "conversation_history": history,
+                    "emotional_profile": emotional_profile,
+                    "db": db,
+                    "router_decision": {},
+                    "emotion_analysis": {},
+                    "personality_analysis": {},
+                    "context_analysis": {},
+                    "memories": [],
+                    "recommendations": [],
+                    "comfort_kit": {},
+                    "response": "",
+                    "mood_score": 0.5,
+                    "detected_emotion": "neutral",
+                    "personality_agent": {},
+                    "emotion_agent": {},
+                    "behavior_agent": {},
+                    "growth_agent": {},
+                    "intent_agent": {},
+                    "safety_agent": {},
+                    "memory_extraction": {},
+                    "response_strategy": {},
+                    "orchestrated_prompt_summary": "",
+                    "agent_analysis": {},
+                }
+                cog_res = await preprocessing_node(initial_state)
+                
+                # 2. Invoke the specialist agent via AI Router
+                from app.services.ai_router import ai_router
+                spec_res = await ai_router.generate_response(
+                    db=db,
+                    user_id=str(current_user_id),
+                    agent_id=specialist_id,
+                    user_message=message,
+                    conversation_history=history,
+                    cog_res=cog_res
+                )
+                specialist_response = spec_res["response"]
+
+                # 3. Inject specialist response into Buddy's graph as system note and dialog turn
+                system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
+                updated_history = history + [
+                    {"role": "system", "content": system_note},
+                    {"role": "assistant", "content": specialist_response, "sender_type": specialist_id}
+                ]
+
+                # Run Buddy graph with specialist injected
+                result = await run_agent_graph(
+                    user_message=message,
+                    user_id=str(current_user_id),
+                    conversation_history=updated_history,
+                    emotional_profile=emotional_profile,
+                    conversation_id=conversation_id,
+                    db=db,
+                )
+            else:
+                # No specialist active, run normal Buddy graph
+                result = await run_agent_graph(
+                    user_message=message,
+                    user_id=str(current_user_id),
+                    conversation_history=history,
+                    emotional_profile=emotional_profile,
+                    conversation_id=conversation_id,
+                    db=db,
+                )
+
+            logger.info(f"[SSE AI SUCCESS] Agent processing complete.")
             full_response = result.get("response", "I'm here for you. Could you tell me more?")
             detected_emotion = result.get("detected_emotion", None)
             mood_score = result.get("mood_score", None)
             agent_analysis = result.get("agent_analysis", {})
+
+            # Check if Buddy should recommend a specialist
+            if not specialist_id and conversation and conversation.agent_id == "buddy":
+                suggested_specialist = detect_specialist_recommendation(message, agent_analysis)
+                if suggested_specialist:
+                    from app.agents.specialist_registry import SPECIALIST_REGISTRY
+                    spec_info = SPECIALIST_REGISTRY[suggested_specialist]
+                    rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
+                    full_response += rec_suffix
+                    agent_analysis["suggested_specialist"] = suggested_specialist
+
         except Exception as agent_err:
             logger.error(f"[SSE AI ERROR] Agent graph execution failed: {agent_err}. Falling back to randomized human reply.", exc_info=True)
             full_response = get_random_human_fallback()
@@ -757,20 +993,7 @@ async def generate_and_persist_sse_response(
         except Exception as update_user_msg_err:
             logger.warning(f"Failed to update user message with emotion details: {update_user_msg_err}")
 
-        # 2. Get/recreate conversation
-        conversation = None
-        try:
-            conversation_res = await db.execute(
-                select(Conversation).where(
-                    Conversation.id == conversation_id,
-                    Conversation.user_id == current_user_id
-                )
-            )
-            conversation = conversation_res.scalar_one_or_none()
-        except Exception as db_err:
-            logger.warning(f"[SSE DB WARNING] Failed to query conversation {conversation_id} inside background task: {db_err}")
-
-        # If conversation is missing (deleted or failed query), create a temp mock so DB saves don't raise Foreign Key errors
+        # If conversation is missing, create a temp mock
         if not conversation:
             try:
                 conversation = Conversation(id=conversation_id, user_id=current_user_id, title="New Conversation")
@@ -793,53 +1016,81 @@ async def generate_and_persist_sse_response(
                 logger.warning(f"[SSE TITLE WARNING] LLM title failed: {title_err}. Falling back to default.")
                 conversation.title = generate_emotional_title(message, detected_emotion or "neutral")
 
-        # 4. Save assistant message and mood logs
-        logger.info(f"[SSE DB INSERT] Instantiating AI response Message...")
-        assistant_msg = Message(
-            conversation_id=conversation_id,
-            user_id=current_user_id,
-            role=MessageRole.assistant,
-            content=full_response,
-            emotion_detected=detected_emotion,
-            mood_score=mood_score,
-            agent_analysis=agent_analysis,
-            emotion=detected_emotion,
-            emotion_score=confidence_score,
-            stress_score=stress_score,
-            anxiety_score=anxiety_score,
-            emotional_context={"emotion": detected_emotion, "confidence": confidence_score},
-        )
-        db.add(assistant_msg)
-
-        # Save mood log
-        dims = result.get("emotion_dimensions", {})
-        mood_log = MoodLog(
-            user_id=current_user_id,
-            mood_score=mood_score or 0.5,
-            mood_label=detected_emotion or "neutral",
-            detected_emotion=detected_emotion or "neutral",
-            stress=dims.get("stress", 0.3),
-            happiness=dims.get("happiness", 0.5),
-            sadness=dims.get("sadness", 0.3),
-            anxiety=dims.get("anxiety", 0.3),
-            motivation=dims.get("motivation", 0.5),
-            confidence=dims.get("confidence", 0.5),
-        )
-        db.add(mood_log)
-
-        if conversation:
-            if detected_emotion:
-                conversation.emotional_tag = detected_emotion
-            conversation.updated_at = datetime.now(timezone.utc)
-            db.add(conversation)
-
-        # 5. Commit everything
+        # 4. Save assistant messages and mood logs
+        specialist_msg_id = None
         try:
+            # 4a. Save specialist message
+            if specialist_id and specialist_response:
+                spec_msg = Message(
+                    conversation_id=conversation_id,
+                    user_id=current_user_id,
+                    role=MessageRole.assistant,
+                    content=specialist_response,
+                    sender_type=specialist_id,
+                    emotion=detected_emotion,
+                    emotion_score=confidence_score,
+                    stress_score=stress_score,
+                    anxiety_score=anxiety_score,
+                )
+                db.add(spec_msg)
+                await db.flush()
+                specialist_msg_id = str(spec_msg.id)
+
+            # 4b. Save Buddy message
+            assistant_msg = Message(
+                conversation_id=conversation_id,
+                user_id=current_user_id,
+                role=MessageRole.assistant,
+                content=full_response,
+                sender_type="buddy",
+                emotion_detected=detected_emotion,
+                mood_score=mood_score,
+                agent_analysis=agent_analysis,
+                emotion=detected_emotion,
+                emotion_score=confidence_score,
+                stress_score=stress_score,
+                anxiety_score=anxiety_score,
+                emotional_context={"emotion": detected_emotion, "confidence": confidence_score},
+            )
+            db.add(assistant_msg)
+
+            # Save mood log
+            dims = result.get("emotion_dimensions", {})
+            mood_log = MoodLog(
+                user_id=current_user_id,
+                mood_score=mood_score or 0.5,
+                mood_label=detected_emotion or "neutral",
+                detected_emotion=detected_emotion or "neutral",
+                stress=dims.get("stress", 0.3),
+                happiness=dims.get("happiness", 0.5),
+                sadness=dims.get("sadness", 0.3),
+                anxiety=dims.get("anxiety", 0.3),
+                motivation=dims.get("motivation", 0.5),
+                confidence=dims.get("confidence", 0.5),
+            )
+            db.add(mood_log)
+
+            if conversation:
+                if detected_emotion:
+                    conversation.emotional_tag = detected_emotion
+                conversation.updated_at = datetime.now(timezone.utc)
+                db.add(conversation)
+
+            # 5. Commit everything
             await db.commit()
             logger.info(f"[SSE DB SUCCESS] Background save successful for conversation_id={conversation_id}")
         except Exception as commit_err:
             logger.error(f"[SSE DB COMMIT ERROR] Failed to save background SSE updates: {commit_err}. Queueing async recovery.", exc_info=True)
             await db.rollback()
+            if specialist_id and specialist_response:
+                await write_queue.add_task(
+                    async_save_message,
+                    conversation_id=conversation_id,
+                    user_id=current_user_id,
+                    role=MessageRole.assistant,
+                    content=specialist_response,
+                    sender_type=specialist_id
+                )
             await write_queue.add_task(
                 async_save_message,
                 conversation_id=conversation_id,
@@ -848,7 +1099,8 @@ async def generate_and_persist_sse_response(
                 content=full_response,
                 emotion_detected=detected_emotion,
                 mood_score=mood_score,
-                agent_analysis=agent_analysis
+                agent_analysis=agent_analysis,
+                sender_type="buddy"
             )
             await write_queue.add_task(
                 async_save_mood_log,
@@ -897,6 +1149,9 @@ async def generate_and_persist_sse_response(
             logger.error(f"[SSE REFLECTION ERROR] Reflection failed: {ref_err}", exc_info=True)
 
         return {
+            "specialist_response": specialist_response,
+            "specialist_id": specialist_id,
+            "specialist_message_id": specialist_msg_id,
             "full_response": full_response,
             "detected_emotion": detected_emotion,
             "mood_score": mood_score,
@@ -905,6 +1160,7 @@ async def generate_and_persist_sse_response(
             "anxiety_score": anxiety_score,
             "agent_analysis": agent_analysis,
             "message_id": str(assistant_msg.id) if hasattr(assistant_msg, "id") else str(uuid.uuid4()),
+            "suggested_specialist": suggested_specialist,
         }
 
 
@@ -1066,8 +1322,50 @@ async def stream_message_sse(
                 emotion_score = persisted.get("emotion_score", 1.0)
                 stress_score = persisted.get("stress_score", 0.0)
                 anxiety_score = persisted.get("anxiety_score", 0.0)
- 
-                # Yield actual chunks
+                specialist_response = persisted.get("specialist_response")
+                specialist_id = persisted.get("specialist_id")
+                specialist_msg_id = persisted.get("specialist_message_id")
+                suggested_specialist = persisted.get("suggested_specialist")
+
+                # If specialist response is active, stream it first
+                if specialist_response and specialist_id:
+                    logger.info(f"[SSE STREAM] Yielding specialist '{specialist_id}' response text chunks...")
+                    yield {
+                        "event": "message",
+                        "data": json.dumps({
+                            "type": "specialist_start",
+                            "specialist_id": specialist_id,
+                            "conversation_id": str(conversation_id_resolved),
+                        }),
+                    }
+                    await asyncio.sleep(0.05)
+
+                    chunk_size = 12
+                    for i in range(0, len(specialist_response), chunk_size):
+                        chunk = specialist_response[i : i + chunk_size]
+                        yield {
+                            "event": "message",
+                            "data": json.dumps({
+                                "type": "specialist_chunk",
+                                "content": chunk,
+                                "specialist_id": specialist_id,
+                                "conversation_id": str(conversation_id_resolved),
+                            }),
+                        }
+                        await asyncio.sleep(0.02)
+
+                    yield {
+                        "event": "message",
+                        "data": json.dumps({
+                            "type": "specialist_done",
+                            "specialist_id": specialist_id,
+                            "message_id": specialist_msg_id,
+                            "conversation_id": str(conversation_id_resolved),
+                        }),
+                    }
+                    await asyncio.sleep(0.1)
+
+                # Yield Buddy chunks
                 logger.info(f"[SSE STREAM] Yielding response text chunks...")
                 chunk_size = 12
                 for i in range(0, len(full_response), chunk_size):
@@ -1096,6 +1394,7 @@ async def stream_message_sse(
                         "stress_score": stress_score,
                         "anxiety_score": anxiety_score,
                         "agent_analysis": agent_analysis,
+                        "suggested_specialist": suggested_specialist,
                     }),
                 }
  

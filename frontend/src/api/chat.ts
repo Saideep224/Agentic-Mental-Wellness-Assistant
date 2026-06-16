@@ -45,6 +45,9 @@ export async function getConversations(token: string): Promise<Conversation[]> {
     title: c.title,
     createdAt: c.created_at ? new Date(c.created_at) : new Date(),
     lastMessage: c.last_message,
+    agent_id: c.agent_id || 'buddy',
+    active_specialists: c.active_specialists || [],
+    lastMessageTimestamp: c.last_message_timestamp || c.last_message_ts,
   }));
 }
 
@@ -55,6 +58,7 @@ export async function getConversationMessages(conversationId: string, token: str
     role: m.role,
     content: m.content,
     timestamp: m.created_at ? new Date(m.created_at) : new Date(),
+    sender_type: m.sender_type,
     emotionDetected: m.emotion_detected ?? m.emotionDetected,
     moodScore: m.mood_score ?? m.moodScore,
     emotionScore: m.emotion_score ?? m.emotionScore,
@@ -71,6 +75,8 @@ export async function createConversation(token: string): Promise<Conversation> {
     title: data.title,
     createdAt: data.created_at ? new Date(data.created_at) : new Date(),
     lastMessage: data.last_message,
+    agent_id: data.agent_id || 'buddy',
+    active_specialists: data.active_specialists || [],
   };
 }
 
@@ -85,9 +91,60 @@ export async function updateConversation(
     title: data.title,
     createdAt: data.created_at ? new Date(data.created_at) : new Date(),
     lastMessage: data.last_message,
+    agent_id: data.agent_id || 'buddy',
+    active_specialists: data.active_specialists || [],
   };
 }
 
 export async function deleteConversation(conversationId: string, token: string): Promise<void> {
   await apiDelete(`/api/chat/conversations/${conversationId}`, token);
+}
+
+export async function connectSpecialist(
+  conversationId: string,
+  specialistId: string,
+  token: string
+): Promise<Message[]> {
+  const data = await apiPost<any[]>(
+    `/api/chat/conversations/${conversationId}/connect-specialist`,
+    { specialist_id: specialistId },
+    token
+  );
+  return data.map((m) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    timestamp: m.created_at ? new Date(m.created_at) : new Date(),
+    sender_type: m.sender_type,
+    emotionDetected: m.emotion_detected ?? m.emotionDetected,
+    moodScore: m.mood_score ?? m.moodScore,
+    emotionScore: m.emotion_score ?? m.emotionScore,
+    stressScore: m.stress_score ?? m.stressScore,
+    anxietyScore: m.anxiety_score ?? m.anxietyScore,
+    agentAnalysis: m.agent_analysis ?? m.agentAnalysis,
+  }));
+}
+
+export async function disconnectSpecialist(
+  conversationId: string,
+  token: string
+): Promise<Message[]> {
+  const data = await apiPost<any[]>(
+    `/api/chat/conversations/${conversationId}/disconnect-specialist`,
+    {},
+    token
+  );
+  return data.map((m) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    timestamp: m.created_at ? new Date(m.created_at) : new Date(),
+    sender_type: m.sender_type,
+    emotionDetected: m.emotion_detected ?? m.emotionDetected,
+    moodScore: m.mood_score ?? m.moodScore,
+    emotionScore: m.emotion_score ?? m.emotionScore,
+    stressScore: m.stress_score ?? m.stressScore,
+    anxietyScore: m.anxiety_score ?? m.anxietyScore,
+    agentAnalysis: m.agent_analysis ?? m.agentAnalysis,
+  }));
 }

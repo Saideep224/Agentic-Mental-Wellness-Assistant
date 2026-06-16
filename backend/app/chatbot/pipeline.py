@@ -106,6 +106,16 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
                 import uuid
                 user_name = profile.get("user_name", "User") or "User"
                 extracted_rels = await knowledge_graph_service.extract_relationships(user_message, user_name=user_name)
+                
+                # Explicitly store non-neutral detected emotion in the Knowledge Graph
+                if detected_emotion and detected_emotion != "Neutral":
+                    extracted_rels.append({
+                        "subject": user_name,
+                        "predicate": "Feels",
+                        "object": detected_emotion,
+                        "confidence": confidence_score
+                    })
+                
                 if extracted_rels:
                     user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
                     await knowledge_graph_service.store_relationships(temp_db, user_uuid, extracted_rels)

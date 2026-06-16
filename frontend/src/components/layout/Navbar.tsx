@@ -30,7 +30,7 @@ export default function Navbar() {
   const navLinks = [
     { href: '/chat', label: 'Chat', icon: MessageCircle },
     { href: '/knowing-me', label: 'Knowing Me', icon: Heart },
-    { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
+    { href: '/dashboard', label: 'My Growth', icon: BarChart3 },
   ];
 
   const handleLogout = async () => {

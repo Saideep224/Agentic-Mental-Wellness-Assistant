@@ -632,7 +632,7 @@ export default function DashboardPage() {
   if (!mounted || isLoadingPage || isLoading) {
     return (
       <AnimatePresence>
-        <FullPageTransition message="Loading your wellness dashboard..." />
+        <FullPageTransition message="Loading your growth insights..." />
       </AnimatePresence>
     );
   }

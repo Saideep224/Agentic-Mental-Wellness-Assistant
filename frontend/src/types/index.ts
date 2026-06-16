@@ -45,6 +45,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  sender_type?: string;
   emotionDetected?: string;
   moodScore?: number;
   emotionScore?: number;
@@ -59,6 +60,9 @@ export interface Conversation {
   title: string;
   createdAt: Date;
   lastMessage?: string;
+  agent_id?: string;
+  active_specialists?: string[];
+  lastMessageTimestamp?: string;
 }
 
 export interface ChatState {

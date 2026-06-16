@@ -127,7 +127,7 @@ class KnowledgeGraphService:
     async def retrieve_relevant_relationships(
         self, db: AsyncSession, user_id: uuid.UUID, message: str
     ) -> List[KnowledgeGraphRelation]:
-        """Query relevant relationships based on matching message keywords, falling back to top 5 recent."""
+        """Query relevant relationships based on matching message keywords, falling back to top 40 recent."""
         all_rels = await self.retrieve_relationships(db, user_id)
         if not all_rels:
             return []
@@ -139,9 +139,9 @@ class KnowledgeGraphService:
             if rel.predicate.lower() in message_lower or rel.object.lower() in message_lower:
                 relevant.append(rel)
 
-        # Fallback to top 5 recent if no direct text matches are found
+        # Fallback to top 40 recent if no direct text matches are found
         if not relevant:
-            relevant = all_rels[:5]
+            relevant = all_rels[:40]
 
         return relevant
 

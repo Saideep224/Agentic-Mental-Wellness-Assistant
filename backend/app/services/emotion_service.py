@@ -50,7 +50,8 @@ Target Categories:
 
 To make a highly accurate classification, you must analyze:
 1. Normalized text content (ignoring word elongation).
-2. Emoji Analysis: Emojis represent direct emotional markers. Map:
+2. MentalBERT Base Prediction: The raw text-only prediction from our local model.
+3. Emoji Analysis: Emojis represent direct emotional markers. Map:
    - 😭 -> Sadness / Distress
    - 💔 -> Sadness / Heartbreak
    - 😡 -> Frustration
@@ -58,14 +59,18 @@ To make a highly accurate classification, you must analyze:
    - 😂 -> Happy / Joy
    - ❤️ -> Happy / Affection
    Note: Heartbreak and deep emotional distress should be classified under the 'Sadness' category (or 'Anxiety' if fear/panic is dominant).
-3. Conversation Context: The history of the current interaction.
-4. Past Conversation Context: The summary of previous sessions.
+4. Conversation Context: The history of the current interaction.
+5. Past Conversation Context: The summary of previous sessions.
+6. Relevant Memories & Knowledge Graph: Essential background info to resolve ambiguity (e.g. "I got a kiss" -> Happy if single/dating, etc).
 
 Input Details provided:
 - Normalized message: {normalized_message}
+- MentalBERT Base Prediction: {base_prediction} (confidence: {base_confidence})
 - Detected Emojis: {emoji_summary}
 - Recent history context: {recent_context}
 - Past session summary context: {past_summary}
+- Relevant Memories: {memories}
+- Knowledge Graph: {kg}
 
 Output ONLY a valid JSON object matching this schema:
 {{
@@ -233,7 +238,8 @@ class EmotionService:
     """Manages emotion classification and logs results to the database."""
 
     async def classify_emotion_mentalbert(
-        self, db: AsyncSession, user_id: str, message: str, conversation_id: str = None, history: list = None
+        self, db: AsyncSession, user_id: str, message: str, conversation_id: str = None, 
+        history: list = None, memories: list = None, graph_relationships: list = None
     ) -> Dict[str, Any]:
         """
         Classifies the message into one of the 7 specified emotions,
@@ -257,6 +263,10 @@ class EmotionService:
         emoji_counts = extract_emojis(message)
         normalized_message = normalize_stretched_words(message)
 
+        base_prediction = "Unknown (Using LLM context inference)"
+        base_confidence = 0.0
+        raw_predictions = None
+
         # 1. Attempt local classification if configured
         if settings.USE_LOCAL_EMOTION_MODEL:
             classifier = get_local_classifier()
@@ -264,31 +274,17 @@ class EmotionService:
                 try:
                     logger.info(f"TEXT SENT TO MENTALBERT (Local): '{normalized_message}'")
                     # Run inference locally on normalized text
-                    predictions = classifier(normalized_message)
-                    logger.info(f"Raw Model Predictions: {predictions}")
+                    raw_predictions = classifier(normalized_message)
                     
-                    if predictions and len(predictions) > 0:
+                    if raw_predictions and len(raw_predictions) > 0:
                         # Apply emoji boosting
-                        matched_emotion, confidence_score = boost_local_predictions(predictions, emoji_counts)
-                        
-                        logger.info(
-                            f"[Local MentalBERT with Boost] Classified message: '{message[:40]}...' as "
-                            f"'{matched_emotion}' (confidence: {confidence_score})"
-                        )
-                        
-                        await self._save_emotion_log(db, user_id, message, matched_emotion, confidence_score)
-                        
-                        return {
-                            "detected_emotion": matched_emotion,
-                            "confidence_score": confidence_score
-                        }
+                        base_prediction, base_confidence = boost_local_predictions(raw_predictions, emoji_counts)
                 except Exception as local_err:
-                    logger.error(f"Local emotion classification failed: {local_err}. Falling back to LLM.", exc_info=True)
+                    logger.error(f"Local emotion classification failed: {local_err}. Falling back to LLM context.", exc_info=True)
 
-        # 2. Fallback: Execute classification call via LLM simulating MentalBERT
+        # 2. Execute Context Resolver via LLM
         try:
             client = get_chat_client()
-            logger.info(f"TEXT SENT TO MENTALBERT (LLM Simulator): '{normalized_message}'")
             
             # Emoji context string
             if emoji_counts:
@@ -309,11 +305,23 @@ class EmotionService:
             if conversation_id and db:
                 past_summary = await _get_conversation_summary(db, user_id, conversation_id) or "None"
                 
+            memories_str = "None"
+            if memories:
+                memories_str = "\n".join(memories)
+                
+            kg_str = "None"
+            if graph_relationships:
+                kg_str = "\n".join(graph_relationships)
+                
             prompt = MENTALBERT_EMOTION_CLASSIFIER_CONTEXT_PROMPT.format(
                 normalized_message=normalized_message,
+                base_prediction=base_prediction,
+                base_confidence=base_confidence,
                 emoji_summary=emoji_summary,
                 recent_context=recent_context,
-                past_summary=past_summary
+                past_summary=past_summary,
+                memories=memories_str,
+                kg=kg_str
             )
             
             messages = [
@@ -327,7 +335,6 @@ class EmotionService:
                 response_format={"type": "json_object"},
             )
             raw = response.choices[0].message.content.strip()
-            logger.info(f"LLM Raw Output: {raw}")
             result = json.loads(raw)
             
             detected_emotion = result.get("detected_emotion", "Neutral")
@@ -342,8 +349,14 @@ class EmotionService:
                     break
 
             logger.info(
-                f"[MentalBERT API Simulator] Classified message: '{message[:40]}...' as "
-                f"'{matched_emotion}' (confidence: {confidence_score})"
+                f"\n=== MENTALBERT DEBUG ===\n"
+                f"User Message: {message}\n"
+                f"Raw MentalBERT Scores: {raw_predictions if raw_predictions else 'N/A'}\n"
+                f"Base MentalBERT Emotion: {base_prediction} (conf: {base_confidence})\n"
+                f"Selected Emotion (Context-Aware): {matched_emotion}\n"
+                f"Confidence: {confidence_score}\n"
+                f"Final Stored Emotion: {matched_emotion}\n"
+                f"========================"
             )
 
             await self._save_emotion_log(db, user_id, message, matched_emotion, confidence_score)
@@ -354,7 +367,11 @@ class EmotionService:
             }
 
         except Exception as e:
-            logger.error(f"Error in classify_emotion_mentalbert: {e}. Falling back to local rule-based simulation.", exc_info=True)
+            logger.error(f"Error in Context Resolver LLM: {e}. Falling back to base prediction or rule-based simulation.", exc_info=True)
+            if base_prediction != "Unknown (Using LLM context inference)":
+                await self._save_emotion_log(db, user_id, message, base_prediction, base_confidence)
+                return {"detected_emotion": base_prediction, "confidence_score": base_confidence}
+                
             try:
                 from app.services.mentalbert_service import mentalbert_service
                 scores = mentalbert_service.predict(normalized_message)
@@ -386,7 +403,7 @@ class EmotionService:
                 emotions = ["happy", "neutral", "stress", "anxiety", "sadness", "frustration", "loneliness"]
                 max_idx = scores.index(max(scores)) if scores else 1
                 primary = emotions[max_idx].capitalize()
-                confidence = max(scores) if scores else 0.5
+                confidence = min(1.0, max(scores) if scores else 0.5)
                 
                 logger.info(f"[Fallback Simulator] Mapped failed API call to simulated emotion: '{primary}' (confidence: {confidence})")
                 await self._save_emotion_log(db, user_id, message, primary, confidence)

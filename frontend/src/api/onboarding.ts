@@ -57,3 +57,8 @@ export async function saveOnboardingStep(
 export async function skipOnboarding(token: string): Promise<{ success: boolean; message: string }> {
   return apiPost<{ success: boolean; message: string }>('/api/onboarding/skip', {}, token);
 }
+
+export async function recalculateProfile(token: string): Promise<{ success: boolean; message: string }> {
+  return apiPost<{ success: boolean; message: string }>('/api/onboarding/recalculate', {}, token);
+}
+

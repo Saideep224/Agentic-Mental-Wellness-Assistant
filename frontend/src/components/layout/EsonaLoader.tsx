@@ -4,7 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface EsonaLoaderProps {
-  onComplete: () => void;
+  onComplete?: () => void;
+  force?: boolean;
+  duration?: number;
 }
 
 // 17x8 half-grid representing half of the symmetric pixel-art lantern
@@ -89,7 +91,7 @@ const FRONT_TREES = [
   { x: 78, scale: 2.2 }, { x: 88, scale: 2.1 }
 ];
 
-export default function EsonaLoader({ onComplete }: EsonaLoaderProps) {
+export default function EsonaLoader({ onComplete, force = false, duration = 4500 }: EsonaLoaderProps) {
   const [mounted, setMounted] = useState(false);
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState(1);
@@ -100,8 +102,8 @@ export default function EsonaLoader({ onComplete }: EsonaLoaderProps) {
     setMounted(true);
 
     // Initial check for session bypass
-    if (typeof window !== 'undefined' && sessionStorage.getItem('esona_loaded') === 'true') {
-      onComplete();
+    if (!force && typeof window !== 'undefined' && sessionStorage.getItem('esona_loaded') === 'true') {
+      if (onComplete) onComplete();
       return;
     }
 
@@ -127,7 +129,6 @@ export default function EsonaLoader({ onComplete }: EsonaLoaderProps) {
     setFireflies(generatedFireflies);
 
     // Animation progress logic
-    const duration = 4500; // 4.5 seconds
     const intervalTime = 30; // 30ms ticks
     const steps = duration / intervalTime;
     let currentStep = 0;
@@ -146,16 +147,16 @@ export default function EsonaLoader({ onComplete }: EsonaLoaderProps) {
       } else {
         clearInterval(interval);
         setTimeout(() => {
-          if (typeof window !== 'undefined') {
+          if (!force && typeof window !== 'undefined') {
             sessionStorage.setItem('esona_loaded', 'true');
           }
-          onComplete();
+          if (onComplete) onComplete();
         }, 400);
       }
     }, intervalTime);
 
     return () => clearInterval(interval);
-  }, [onComplete]);
+  }, [onComplete, force, duration]);
 
   if (!mounted) return null;
 

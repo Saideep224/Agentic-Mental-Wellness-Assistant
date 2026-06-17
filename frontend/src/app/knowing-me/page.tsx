@@ -10,7 +10,7 @@ import {
 import Navbar from '@/components/layout/Navbar';
 import EsonaLoader from '@/components/layout/EsonaLoader';
 import { questions } from '@/data/questions';
-import { getToken, submitOnboarding, getOnboardingAnswers, upsertQuestionAnswersToSupabase } from '@/api';
+import { getToken, submitOnboarding, getOnboardingAnswers, upsertQuestionAnswersToSupabase, recalculateProfile } from '@/api';
 import { useAuth } from '@/providers/AuthProvider';
 
 const CATEGORIES = [
@@ -70,8 +70,16 @@ export default function KnowingMePage() {
 
   const fetchAnswers = useCallback(async (token: string) => {
     setIsLoading(true);
+    setShowLoader(true);
+    const startTime = Date.now();
     try {
-      const rawAnswers = await getOnboardingAnswers(token);
+      const [rawAnswers] = await Promise.all([
+        getOnboardingAnswers(token),
+        recalculateProfile(token).catch(err => {
+          console.warn('[KnowingMe] Profile recalculation failed:', err);
+          return null;
+        })
+      ]);
       setAnswers(rawAnswers);
       setEditedAnswers(JSON.parse(JSON.stringify(rawAnswers)));
     } catch (err: any) {
@@ -87,6 +95,11 @@ export default function KnowingMePage() {
       setEditedAnswers(JSON.parse(JSON.stringify(emptyAnswers)));
     } finally {
       setIsLoading(false);
+      const elapsed = Date.now() - startTime;
+      const remainingDelay = Math.max(0, 1500 - elapsed);
+      setTimeout(() => {
+        setShowLoader(false);
+      }, remainingDelay);
     }
   }, []);
 
@@ -178,6 +191,8 @@ export default function KnowingMePage() {
 
     setIsSaving(true);
     setError(null);
+    setShowLoader(true);
+    const startTime = Date.now();
 
     try {
       const completeAnswers = questions.map(q => {
@@ -207,8 +222,17 @@ export default function KnowingMePage() {
       );
       await submitOnboarding(completeAnswers, token);
 
+      // Recalculate profile synchronously
+      try {
+        await recalculateProfile(token);
+      } catch (err) {
+        console.warn('[KnowingMe] Profile recalculation failed on save:', err);
+      }
+
       // Refresh data
-      await fetchAnswers(token);
+      const rawAnswers = await getOnboardingAnswers(token);
+      setAnswers(rawAnswers);
+      setEditedAnswers(JSON.parse(JSON.stringify(rawAnswers)));
       await refreshUser();
 
       setEditingCategory(null);
@@ -219,6 +243,11 @@ export default function KnowingMePage() {
       setError(err instanceof Error ? err.message : 'Failed to save your answers. Please try again.');
     } finally {
       setIsSaving(false);
+      const elapsed = Date.now() - startTime;
+      const remainingDelay = Math.max(0, 1500 - elapsed);
+      setTimeout(() => {
+        setShowLoader(false);
+      }, remainingDelay);
     }
   };
 
@@ -237,7 +266,7 @@ export default function KnowingMePage() {
   }
 
   if (showLoader) {
-    return <EsonaLoader onComplete={() => setShowLoader(false)} />;
+    return <EsonaLoader force={true} duration={1500} />;
   }
 
   return (

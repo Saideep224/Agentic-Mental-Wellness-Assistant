@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.user import User
 from app.models.user_profile import UserProfile
+from app.models.conversation import Message
+from app.models.memory import Memory
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +48,51 @@ async def analyze_onboarding(
 
     answers_summary = "\n".join(formatted_responses)
 
+    # Fetch last 50 chat messages from the user/assistant to contextualize the profile
+    try:
+        messages_result = await db.execute(
+            select(Message)
+            .where(Message.user_id == user_id)
+            .order_by(Message.created_at.desc())
+            .limit(50)
+        )
+        db_messages = messages_result.scalars().all()
+        # Sort chronologically
+        db_messages = list(reversed(db_messages))
+        chat_context = "\n".join([
+            f"{'User' if m.role == 'user' else 'Buddy'}: {m.content}"
+            for m in db_messages
+        ])
+    except Exception as e:
+        logger.warning(f"Failed to fetch messages for onboarding analysis: {e}")
+        chat_context = "No chat history available."
+
+    # Fetch recent memories
+    try:
+        memories_result = await db.execute(
+            select(Memory)
+            .where(Memory.user_id == user_id)
+            .order_by(Memory.created_at.desc())
+            .limit(15)
+        )
+        db_memories = memories_result.scalars().all()
+        memories_context = "\n".join([
+            f"- {mem.memory_content} (Type: {mem.memory_type or 'General'})"
+            for mem in db_memories
+        ])
+    except Exception as e:
+        logger.warning(f"Failed to fetch memories for onboarding analysis: {e}")
+        memories_context = "No memories available."
+
     system_prompt = """
-    You are an advanced psychological profiling system. Your task is to analyze a user's answers to a 25-question onboarding questionnaire and produce a structured, deep emotional and behavioral profile.
+    You are an advanced psychological profiling system. Your task is to analyze a user's answers to their onboarding questionnaire, their recent chat history, and their recorded memories to produce a structured, deep emotional and behavioral profile.
     
-    The questionnaire covers five categories:
-    1. Background & Demographics (Q1-Q5)
-    2. Personality & Behavioral Understanding (Q6-Q10)
-    3. Emotional State & Stress Analysis (Q11-Q15)
-    4. Hobbies & Comfort Zone Understanding (Q16-Q20)
-    5. Communication & Response Preference (Q21-Q25)
+    The inputs are:
+    1. Onboarding answers (from a 25-question onboarding setup or updates).
+    2. Recent chat logs with Esona/Buddy.
+    3. Recorded memories/observations.
+
+    Analyze these sources comprehensively to generate a cohesive, accurate profile.
 
     Analyze these answers and output a single JSON object containing exactly these keys:
     - personality_type: containing 'type' (a descriptive name, e.g. "Thoughtful Introvert", "Empathetic Rescuer", etc.), 'description', 'strengths' (list of strings), 'growth_areas' (list of strings), and 'summary' (a brief overview).
@@ -71,9 +109,16 @@ async def analyze_onboarding(
     """
 
     user_prompt = f"""
-    Analyze the following user onboarding answers and generate the structured emotional profile:
+    Analyze the following user data to generate the structured emotional profile:
     
+    ONBOARDING QUESTIONS AND ANSWERS:
     {answers_summary}
+    
+    RECENT CHAT CONVERSATION HISTORY:
+    {chat_context}
+    
+    RECORDED MEMORIES / KEY OBSERVATIONS:
+    {memories_context}
     """
 
     # Use client to run query

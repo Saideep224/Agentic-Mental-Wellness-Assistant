@@ -331,3 +331,41 @@ async def skip_onboarding(
 
     return {"success": True, "message": "Onboarding skipped. You can start chatting now!"}
 
+
+@router.post("/recalculate")
+async def recalculate_profile(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Recalculate the user's emotional and personality profile based on
+    their 25 onboarding answers and their latest chat history.
+    """
+    # 1. Fetch saved onboarding answers
+    result = await db.execute(
+        select(UserAnswer)
+        .where(UserAnswer.user_id == current_user.id)
+        .order_by(UserAnswer.question_id.asc())
+    )
+    rows = result.scalars().all()
+    
+    if not rows:
+        return {"success": True, "message": "No onboarding answers to recalculate."}
+        
+    answers_to_analyze = [
+        {
+            "question_id": r.question_id,
+            "category": r.category,
+            "selected_answers": r.selected_answers,
+            "custom_answer": r.custom_answer,
+        }
+        for r in rows
+    ]
+    
+    # Run the profiling synchronously to ensure it completes
+    await analyze_onboarding(current_user.id, answers_to_analyze, db)
+    await db.commit()
+    
+    return {"success": True, "message": "Profile recalculated successfully based on answers and chat history."}
+
+

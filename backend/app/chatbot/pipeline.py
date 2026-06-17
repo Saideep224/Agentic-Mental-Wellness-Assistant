@@ -82,6 +82,33 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     db = state.get("db")
     user_id = state.get("user_id", "")
 
+    memories = []
+    patterns = {}
+    graph_relationships = []
+
+    if db and user_id:
+        try:
+            from app.agents import memory_agent
+            result = await asyncio.wait_for(
+                memory_agent.retrieve_context(db, user_id, user_message, limit=5),
+                timeout=0.8
+            )
+            memories = result.get("memories", [])
+            patterns = result.get("emotional_patterns", {})
+            # Populate in-memory cache for memory_agent_node later
+            _memory_cache[str(user_id)] = (memories, patterns)
+        except Exception as e:
+            logger.warning(f"[MEMORY] Memory retrieval early fetch failed: {e}")
+
+        try:
+            from app.services.knowledge_graph_service import knowledge_graph_service
+            import uuid
+            user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+            rels = await knowledge_graph_service.retrieve_relevant_relationships(db, user_uuid, user_message)
+            graph_relationships = [f"- {r.subject} -> {r.predicate} -> {r.object}" for r in rels]
+        except Exception as e:
+            logger.warning(f"KG retrieval early fetch failed: {e}")
+
     # 1. Run MentalBERT Emotion Classification and save to db (happens inside the service)
     detected_emotion = "Neutral"
     confidence_score = 1.0
@@ -99,7 +126,9 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
                 user_id,
                 user_message,
                 conversation_id=state.get("conversation_id"),
-                history=history
+                history=history,
+                memories=memories,
+                graph_relationships=graph_relationships
             )
             detected_emotion = emotion_res.get("detected_emotion", "Neutral")
             confidence_score = emotion_res.get("confidence_score", 1.0)

@@ -435,6 +435,49 @@ async def async_save_mood_log(user_id, mood_score, mood_label, dims):
             raise
 
 
+def check_buddy_intervention(message: str, specialist_id: str, specialist_response: str, cog_res: dict) -> tuple[bool, str | None]:
+    """
+    Checks if Buddy should intervene in a specialist conversation.
+    Returns (should_intervene, reason).
+    """
+    # 1. Direct address
+    message_lower = message.lower()
+    if "buddy" in message_lower:
+        return True, "mention"
+
+    # 2. Confusion
+    confusion_keywords = ["confused", "don't understand", "what does that mean", "dont understand", "what do you mean"]
+    if any(kw in message_lower for kw in confusion_keywords):
+        return True, "confusion"
+
+    # 3. Highly technical terms
+    technical_jargon = [
+        "jurisdiction", "liability", "compliance", "statute", "remedy",
+        "clause", "agreement", "dispute", "physiological", "hydration",
+        "baseline", "stress response", "consult a physician", "block",
+        "otp", "phishing", "screenshots", "cybercrime portal", "incident log",
+        "stack trace", "debug", "error log", "dependency", "framework",
+        "backend", "frontend", "runtime", "syntax", "breakpoint",
+        "pomodoro", "active recall", "feynman technique", "time-blocking",
+        "revision", "syllabus", "budget", "fixed expenses", "variable costs",
+        "savings rate", "debt-to-income", "emergency fund", "reps", "sets",
+        "progressive overload", "protein intake", "calorie deficit", "workout split"
+    ]
+    spec_response_lower = specialist_response.lower()
+    if any(word in spec_response_lower for word in technical_jargon):
+        return True, "technical"
+
+    # 4. Emotional Intensity
+    e_data = cog_res.get("emotion_agent", {})
+    stress_val = float(e_data.get("stress", 0.0))
+    anxiety_val = float(e_data.get("anxiety", 0.0))
+    sadness_val = float(e_data.get("sadness", 0.0))
+    if stress_val >= 0.7 or anxiety_val >= 0.7 or sadness_val >= 0.7:
+        return True, "emotion"
+
+    return False, None
+
+
 @router.post("/message")
 async def send_message(
     body: ChatMessageRequest,
@@ -619,22 +662,41 @@ async def send_message(
                 )
                 specialist_response = spec_res["response"]
 
-                # 3. Inject specialist response into Buddy's graph as system note and dialog turn
-                system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
-                updated_history = history + [
-                    {"role": "system", "content": system_note},
-                    {"role": "assistant", "content": specialist_response, "sender_type": specialist_id}
-                ]
+                # Check Buddy Intervention
+                should_intervene, reason = check_buddy_intervention(body.message, specialist_id, specialist_response, cog_res)
 
-                # Run Buddy graph with specialist injected
-                result = await run_agent_graph(
-                    user_message=body.message,
-                    user_id=str(current_user.id),
-                    conversation_history=updated_history,
-                    emotional_profile=emotional_profile,
-                    conversation_id=conversation_id_resolved,
-                    db=db,
-                )
+                if should_intervene:
+                    # 3. Inject specialist response into Buddy's graph as system note and dialog turn
+                    if reason == "technical":
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend."
+                    else:
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
+                    
+                    updated_history = history + [
+                        {"role": "system", "content": system_note},
+                        {"role": "assistant", "content": specialist_response, "sender_type": specialist_id}
+                    ]
+
+                    # Run Buddy graph with specialist injected
+                    result = await run_agent_graph(
+                        user_message=body.message,
+                        user_id=str(current_user.id),
+                        conversation_history=updated_history,
+                        emotional_profile=emotional_profile,
+                        conversation_id=conversation_id_resolved,
+                        db=db,
+                    )
+                else:
+                    # Buddy remains silent
+                    result = {
+                        "response": None,
+                        "detected_emotion": cog_res.get("detected_emotion", "neutral"),
+                        "detected_emotion_confidence": cog_res.get("detected_emotion_confidence", 1.0),
+                        "mood_score": cog_res.get("mood_score", 0.5),
+                        "emotion_agent": cog_res.get("emotion_agent", {}),
+                        "emotion_dimensions": cog_res.get("emotion_dimensions", {}),
+                        "agent_analysis": {},
+                    }
             else:
                 # No specialist active, run normal Buddy graph
                 result = await run_agent_graph(
@@ -745,22 +807,24 @@ async def send_message(
                 db.add(spec_msg)
 
             # 8b. Save Buddy message
-            assistant_msg = Message(
-                conversation_id=conversation_id_resolved,
-                user_id=current_user.id,
-                role=MessageRole.assistant,
-                content=full_response,
-                sender_type="buddy",
-                emotion_detected=detected_emotion,
-                mood_score=mood_score,
-                agent_analysis=agent_analysis,
-                emotion=detected_emotion,
-                emotion_score=confidence_score,
-                stress_score=stress_score,
-                anxiety_score=anxiety_score,
-                emotional_context={"emotion": detected_emotion, "confidence": confidence_score},
-            )
-            db.add(assistant_msg)
+            assistant_msg = None
+            if full_response is not None:
+                assistant_msg = Message(
+                    conversation_id=conversation_id_resolved,
+                    user_id=current_user.id,
+                    role=MessageRole.assistant,
+                    content=full_response,
+                    sender_type="buddy",
+                    emotion_detected=detected_emotion,
+                    mood_score=mood_score,
+                    agent_analysis=agent_analysis,
+                    emotion=detected_emotion,
+                    emotion_score=confidence_score,
+                    stress_score=stress_score,
+                    anxiety_score=anxiety_score,
+                    emotional_context={"emotion": detected_emotion, "confidence": confidence_score},
+                )
+                db.add(assistant_msg)
 
             # Save mood log
             dims = result.get("emotion_dimensions", {})
@@ -804,10 +868,11 @@ async def send_message(
 
             # Commit assistant messages + mood logs
             await db.commit()
-            try:
-                await db.refresh(assistant_msg)
-            except Exception:
-                pass
+            if assistant_msg:
+                try:
+                    await db.refresh(assistant_msg)
+                except Exception:
+                    pass
             logger.info(f"[DB COMMIT SUCCESS] AI response and MoodLog saved successfully.")
         except Exception as db_err:
             logger.error(f"[DB COMMIT ERROR] Failed to save assistant message/mood log: {db_err}. Queueing async recovery.", exc_info=True)
@@ -821,17 +886,18 @@ async def send_message(
                     content=specialist_response,
                     sender_type=specialist_id
                 )
-            await write_queue.add_task(
-                async_save_message,
-                conversation_id=conversation_id_resolved,
-                user_id=current_user.id,
-                role=MessageRole.assistant,
-                content=full_response,
-                emotion_detected=detected_emotion,
-                mood_score=mood_score,
-                agent_analysis=agent_analysis,
-                sender_type="buddy"
-            )
+            if full_response is not None:
+                await write_queue.add_task(
+                    async_save_message,
+                    conversation_id=conversation_id_resolved,
+                    user_id=current_user.id,
+                    role=MessageRole.assistant,
+                    content=full_response,
+                    emotion_detected=detected_emotion,
+                    mood_score=mood_score,
+                    agent_analysis=agent_analysis,
+                    sender_type="buddy"
+                )
             await write_queue.add_task(
                 async_save_mood_log,
                 user_id=current_user.id,
@@ -966,22 +1032,41 @@ async def generate_and_persist_sse_response(
                 )
                 specialist_response = spec_res["response"]
 
-                # 3. Inject specialist response into Buddy's graph as system note and dialog turn
-                system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
-                updated_history = history + [
-                    {"role": "system", "content": system_note},
-                    {"role": "assistant", "content": specialist_response, "sender_type": specialist_id}
-                ]
+                # Check Buddy Intervention
+                should_intervene, reason = check_buddy_intervention(message, specialist_id, specialist_response, cog_res)
 
-                # Run Buddy graph with specialist injected
-                result = await run_agent_graph(
-                    user_message=message,
-                    user_id=str(current_user_id),
-                    conversation_history=updated_history,
-                    emotional_profile=emotional_profile,
-                    conversation_id=conversation_id,
-                    db=db,
-                )
+                if should_intervene:
+                    # 3. Inject specialist response into Buddy's graph as system note and dialog turn
+                    if reason == "technical":
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend."
+                    else:
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
+                    
+                    updated_history = history + [
+                        {"role": "system", "content": system_note},
+                        {"role": "assistant", "content": specialist_response, "sender_type": specialist_id}
+                    ]
+
+                    # Run Buddy graph with specialist injected
+                    result = await run_agent_graph(
+                        user_message=message,
+                        user_id=str(current_user_id),
+                        conversation_history=updated_history,
+                        emotional_profile=emotional_profile,
+                        conversation_id=conversation_id,
+                        db=db,
+                    )
+                else:
+                    # Buddy remains silent
+                    result = {
+                        "response": None,
+                        "detected_emotion": cog_res.get("detected_emotion", "neutral"),
+                        "detected_emotion_confidence": cog_res.get("detected_emotion_confidence", 1.0),
+                        "mood_score": cog_res.get("mood_score", 0.5),
+                        "emotion_agent": cog_res.get("emotion_agent", {}),
+                        "emotion_dimensions": cog_res.get("emotion_dimensions", {}),
+                        "agent_analysis": {},
+                    }
             else:
                 # No specialist active, run normal Buddy graph
                 result = await run_agent_graph(
@@ -1088,22 +1173,24 @@ async def generate_and_persist_sse_response(
                 specialist_msg_id = str(spec_msg.id)
 
             # 4b. Save Buddy message
-            assistant_msg = Message(
-                conversation_id=conversation_id,
-                user_id=current_user_id,
-                role=MessageRole.assistant,
-                content=full_response,
-                sender_type="buddy",
-                emotion_detected=detected_emotion,
-                mood_score=mood_score,
-                agent_analysis=agent_analysis,
-                emotion=detected_emotion,
-                emotion_score=confidence_score,
-                stress_score=stress_score,
-                anxiety_score=anxiety_score,
-                emotional_context={"emotion": detected_emotion, "confidence": confidence_score},
-            )
-            db.add(assistant_msg)
+            assistant_msg = None
+            if full_response is not None:
+                assistant_msg = Message(
+                    conversation_id=conversation_id,
+                    user_id=current_user_id,
+                    role=MessageRole.assistant,
+                    content=full_response,
+                    sender_type="buddy",
+                    emotion_detected=detected_emotion,
+                    mood_score=mood_score,
+                    agent_analysis=agent_analysis,
+                    emotion=detected_emotion,
+                    emotion_score=confidence_score,
+                    stress_score=stress_score,
+                    anxiety_score=anxiety_score,
+                    emotional_context={"emotion": detected_emotion, "confidence": confidence_score},
+                )
+                db.add(assistant_msg)
 
             # Save mood log
             dims = result.get("emotion_dimensions", {})
@@ -1210,7 +1297,7 @@ async def generate_and_persist_sse_response(
             "stress_score": stress_score,
             "anxiety_score": anxiety_score,
             "agent_analysis": agent_analysis,
-            "message_id": str(assistant_msg.id) if hasattr(assistant_msg, "id") else str(uuid.uuid4()),
+            "message_id": str(assistant_msg.id) if (assistant_msg is not None and hasattr(assistant_msg, "id")) else str(uuid.uuid4()),
             "suggested_specialist": suggested_specialist,
             "specialist_action_event": sse_specialist_action_event,
         }
@@ -1433,19 +1520,20 @@ async def stream_message_sse(
                     await asyncio.sleep(0.1)
 
                 # Yield Buddy chunks
-                logger.info(f"[SSE STREAM] Yielding response text chunks...")
-                chunk_size = 12
-                for i in range(0, len(full_response), chunk_size):
-                    chunk = full_response[i : i + chunk_size]
-                    yield {
-                        "event": "message",
-                        "data": json.dumps({
-                            "type": "chunk",
-                            "content": chunk,
-                            "conversation_id": str(conversation_id_resolved),
-                        }),
-                    }
-                    await asyncio.sleep(0.03)
+                if full_response is not None:
+                    logger.info(f"[SSE STREAM] Yielding response text chunks...")
+                    chunk_size = 12
+                    for i in range(0, len(full_response), chunk_size):
+                        chunk = full_response[i : i + chunk_size]
+                        yield {
+                            "event": "message",
+                            "data": json.dumps({
+                                "type": "chunk",
+                                "content": chunk,
+                                "conversation_id": str(conversation_id_resolved),
+                            }),
+                        }
+                        await asyncio.sleep(0.03)
  
                 # Yield done event
                 logger.info(f"[SSE STREAM] Yielding final 'done' event.")
@@ -1688,5 +1776,35 @@ def get_db_session():
     return async_session_maker()
 
 
+from pydantic import BaseModel
 
-# Conversation CRUD endpoints moved to app.routes.conversations
+class DebugEmotionRequest(BaseModel):
+    text: str
+
+
+@router.post("/debug/emotion")
+async def debug_emotion(body: DebugEmotionRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Temporary debug endpoint to test MentalBERT classification.
+    """
+    try:
+        from app.services.emotion_service import emotion_service
+        # Generate a dummy user ID for logging/saving
+        dummy_user_id = str(uuid.uuid4())
+        res = await emotion_service.classify_emotion_mentalbert(db, dummy_user_id, body.text)
+        
+        detected_emotion = res.get("detected_emotion", "Neutral")
+        confidence = res.get("confidence_score", 1.0)
+        
+        return {
+            "mentalbert_prediction": detected_emotion,
+            "confidence": confidence,
+            "final_emotion": detected_emotion
+        }
+    except Exception as e:
+        logger.error(f"Debug emotion classification failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Emotion classification failed: {str(e)}"
+        )
+

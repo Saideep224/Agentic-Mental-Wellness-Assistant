@@ -87,11 +87,18 @@ export default function ChatPage() {
 
   const user = mounted ? getStoredUser() : null;
 
+  const [connectingSpecialistId, setConnectingSpecialistId] = useState<string | null>(null);
+  const [removingSpecialistId, setRemovingSpecialistId] = useState<string | null>(null);
+  const [tempSystemEvent, setTempSystemEvent] = useState<{ text: string; id: string } | null>(null);
+  const [staggerTypingAgentId, setStaggerTypingAgentId] = useState<string | null>(null);
+
   const activeConv = conversations.find((c) => c.id === activeConversationId);
   const activeAgentId = activeConv?.agent_id || 'buddy';
+  const activeSpecialistId = activeConv?.active_specialists?.[0] || null;
 
-  const { messages, setMessages, isLoading, isStreaming, streamPlaceholder, sendMessage } = useChat({
+  const { messages, setMessages, isLoading, isStreaming, streamPlaceholder, typingAgentId, sendMessage } = useChat({
     conversationId: activeConversationId,
+    activeSpecialistId,
     onSpecialistAction: (action, specialistId) => {
       if (!activeConversationId) return;
       setConversations((prev) =>
@@ -196,28 +203,106 @@ export default function ChatPage() {
     const token = api.getToken();
     if (!token) return;
 
+    setConnectingSpecialistId(specialistId);
+
     try {
       const newMsgs = await api.connectSpecialist(activeConversationId, specialistId, token);
-      setMessages((prev) => [...prev, ...newMsgs]);
+      
+      // Update conversations first
       await loadConversations();
-      focusInput();
+      
+      setConnectingSpecialistId(null);
+      
+      // Show "<Agent Name> joined." toast banner for 2 seconds
+      const specName = agentSidebarConfig[specialistId]?.name || specialistId;
+      setTempSystemEvent({ text: `${specName} joined.`, id: Date.now().toString() });
+      setTimeout(() => {
+        setTempSystemEvent(null);
+      }, 2000);
+
+      // Sequentially stagger appending the connect messages
+      let currentIdx = 0;
+      const appendNextMessage = () => {
+        if (currentIdx >= newMsgs.length) {
+          setStaggerTypingAgentId(null);
+          focusInput();
+          return;
+        }
+
+        const msg = newMsgs[currentIdx];
+        const delay = msg.sender_type === 'buddy'
+          ? Math.random() * (1500 - 500) + 500  // 500-1500ms
+          : Math.random() * (2000 - 800) + 800; // 800-2000ms
+
+        setStaggerTypingAgentId(msg.sender_type || null);
+
+        setTimeout(() => {
+          setMessages((prev) => [...prev, {
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          }]);
+          currentIdx++;
+          appendNextMessage();
+        }, delay);
+      };
+
+      appendNextMessage();
+
     } catch (err) {
       console.error('Failed to connect specialist:', err);
+      setConnectingSpecialistId(null);
     }
   };
 
-  const handleDisconnectSpecialist = async () => {
+  const handleDisconnectSpecialist = async (specialistId: string) => {
     if (!activeConversationId) return;
     const token = api.getToken();
     if (!token) return;
 
+    setRemovingSpecialistId(specialistId);
+
     try {
       const newMsgs = await api.disconnectSpecialist(activeConversationId, token);
-      setMessages((prev) => [...prev, ...newMsgs]);
+      
+      // Update conversations first
       await loadConversations();
-      focusInput();
+      
+      setRemovingSpecialistId(null);
+
+      // Show "<Agent Name> left the conversation." toast banner for 2 seconds
+      const specName = agentSidebarConfig[specialistId]?.name || specialistId;
+      setTempSystemEvent({ text: `${specName} left the conversation.`, id: Date.now().toString() });
+      setTimeout(() => {
+        setTempSystemEvent(null);
+      }, 2000);
+
+      // Sequentially stagger appending the disconnect messages (farewell from Buddy)
+      let currentIdx = 0;
+      const appendNextMessage = () => {
+        if (currentIdx >= newMsgs.length) {
+          setStaggerTypingAgentId(null);
+          focusInput();
+          return;
+        }
+
+        const msg = newMsgs[currentIdx];
+        setStaggerTypingAgentId('buddy');
+
+        setTimeout(() => {
+          setMessages((prev) => [...prev, {
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          }]);
+          currentIdx++;
+          appendNextMessage();
+        }, 800); // 800ms delay for farewell message typing
+      };
+
+      appendNextMessage();
+
     } catch (err) {
       console.error('Failed to disconnect specialist:', err);
+      setRemovingSpecialistId(null);
     }
   };
 
@@ -493,18 +578,30 @@ export default function ChatPage() {
                               boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
                             }}
                           >
-                            <span>{specInfo.emoji}</span>
-                            <span>{specInfo.name}</span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDisconnectSpecialist();
-                              }}
-                              className="ml-1 p-0.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors cursor-pointer text-[10px] leading-none font-bold"
-                              title="Disconnect Specialist"
-                            >
-                              ✕
-                            </button>
+                            {removingSpecialistId === specId ? (
+                              <span className="flex items-center gap-0.5">
+                                Removing {specInfo.name}
+                                <span className="animate-bounce">.</span>
+                                <span className="animate-bounce [animation-delay:0.2s]">.</span>
+                                <span className="animate-bounce [animation-delay:0.4s]">.</span>
+                              </span>
+                            ) : (
+                              <>
+                                <span>{specInfo.emoji}</span>
+                                <span>{specInfo.name}</span>
+                                <button
+                                  disabled={removingSpecialistId !== null}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDisconnectSpecialist(specId);
+                                  }}
+                                  className="ml-1 p-0.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors cursor-pointer text-[10px] leading-none font-bold"
+                                  title="Disconnect Specialist"
+                                >
+                                  ✕
+                                </button>
+                              </>
+                            )}
                           </div>
                         );
                       })}
@@ -633,14 +730,33 @@ export default function ChatPage() {
                             </p>
                             <div className="flex gap-3 w-full justify-center">
                               <button
+                                disabled={connectingSpecialistId !== null}
                                 onClick={() => handleConnectSpecialist(suggestedSpec)}
-                                className="px-5 py-2 bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 text-white rounded-xl text-xs font-semibold shadow-lg shadow-sky-500/10 cursor-pointer transition-all duration-200"
+                                className={`px-5 py-2 rounded-xl text-xs font-semibold shadow-lg transition-all duration-200 ${
+                                  connectingSpecialistId !== null
+                                    ? 'bg-sky-500/50 text-white/70 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 text-white shadow-sky-500/10 cursor-pointer'
+                                }`}
                               >
-                                Connect
+                                {connectingSpecialistId === suggestedSpec ? (
+                                  <span className="flex items-center gap-0.5">
+                                    Connecting {agentSidebarConfig[suggestedSpec]?.name || suggestedSpec}
+                                    <span className="animate-bounce">.</span>
+                                    <span className="animate-bounce [animation-delay:0.2s]">.</span>
+                                    <span className="animate-bounce [animation-delay:0.4s]">.</span>
+                                  </span>
+                                ) : (
+                                  'Connect'
+                                )}
                               </button>
                               <button
+                                disabled={connectingSpecialistId !== null}
                                 onClick={() => setDismissedSuggestions((prev) => [...prev, message.id])}
-                                className="px-5 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-[var(--text-secondary)] rounded-xl text-xs font-semibold cursor-pointer transition-all duration-200"
+                                className={`px-5 py-2 border rounded-xl text-xs font-semibold transition-all duration-200 ${
+                                  connectingSpecialistId !== null
+                                    ? 'bg-white/0 border-white/5 text-[var(--text-muted)] cursor-not-allowed'
+                                    : 'bg-white/5 hover:bg-white/10 border-white/10 text-[var(--text-secondary)] cursor-pointer'
+                                }`}
                               >
                                 Not Now
                               </button>
@@ -651,8 +767,23 @@ export default function ChatPage() {
                     );
                   })}
                   <AnimatePresence>
+                    {tempSystemEvent && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="flex justify-center my-4"
+                      >
+                        <span className="px-4 py-1.5 rounded-full text-xs font-medium bg-white/5 border border-white/10 text-[var(--text-secondary)] shadow-sm backdrop-blur-md">
+                          {tempSystemEvent.text}
+                        </span>
+                      </motion.div>
+                    )}
                     {((isLoading && !isStreaming) || streamPlaceholder) && (
-                      <TypingIndicator agentId={activeAgentId} />
+                      <TypingIndicator agentId={typingAgentId || activeAgentId} />
+                    )}
+                    {staggerTypingAgentId && (
+                      <TypingIndicator agentId={staggerTypingAgentId} />
                     )}
                   </AnimatePresence>
                 </>

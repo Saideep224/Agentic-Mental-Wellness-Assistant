@@ -7,15 +7,17 @@ import * as api from '@/api';
 
 interface UseChatOptions {
   conversationId: string | null;
+  activeSpecialistId?: string | null;
   onSpecialistAction?: (action: 'invited' | 'removed', specialistId: string) => void;
 }
 
-export function useChat({ conversationId, onSpecialistAction }: UseChatOptions) {
+export function useChat({ conversationId, activeSpecialistId, onSpecialistAction }: UseChatOptions) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [streamPlaceholder, setStreamPlaceholder] = useState<string | null>(null);
+  const [typingAgentId, setTypingAgentId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   // Load messages for current conversation
@@ -148,6 +150,7 @@ export function useChat({ conversationId, onSpecialistAction }: UseChatOptions) 
       setMessages((prev) => [...prev, userMessage]);
       setIsLoading(true);
       setIsStreaming(false);
+      setTypingAgentId(activeSpecialistId || 'buddy');
 
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
@@ -175,6 +178,7 @@ export function useChat({ conversationId, onSpecialistAction }: UseChatOptions) 
           eventSourceRef.current.close();
           eventSourceRef.current = null;
         }
+        setTypingAgentId(null);
       };
 
       const processBurst = async (messageId: string) => {
@@ -314,6 +318,7 @@ export function useChat({ conversationId, onSpecialistAction }: UseChatOptions) 
                 setStreamPlaceholder(null);
                 isMessageCreated = true;
                 currentSenderType = data.specialist_id;
+                setTypingAgentId(data.specialist_id);
                 
                 const messageId = generateId();
                 activeBubbleId = `${messageId}-0`;
@@ -350,6 +355,7 @@ export function useChat({ conversationId, onSpecialistAction }: UseChatOptions) 
                   buddyBubbleSpawned = true;
                   isMessageCreated = true;
                   currentSenderType = 'buddy';
+                  setTypingAgentId('buddy');
                   
                   const messageId = generateId();
                   activeBubbleId = `${messageId}-0`;
@@ -382,6 +388,7 @@ export function useChat({ conversationId, onSpecialistAction }: UseChatOptions) 
                   if (burstQueue.length === 0 && !isProcessingBurst) {
                     clearInterval(finalize);
                     setIsStreaming(false);
+                    setTypingAgentId(null);
                     
                     setStreamPlaceholder(null);
                     const finalMessageId = data.message_id || activeBubbleId;
@@ -414,7 +421,7 @@ export function useChat({ conversationId, onSpecialistAction }: UseChatOptions) 
                             moodScore: data.mood_score,
                             emotionScore: data.emotion_score,
                             stressScore: data.stress_score,
-                            anxietyScore: data.anxiety_score,
+                            anxiety_score: data.anxiety_score,
                           };
                         }
                         return msg;
@@ -434,6 +441,7 @@ export function useChat({ conversationId, onSpecialistAction }: UseChatOptions) 
                 setIsLoading(false);
                 setIsStreaming(false);
                 setStreamPlaceholder(null);
+                setTypingAgentId(null);
                 setError(data.content || 'Stream error');
                 
                 if (!isMessageCreated) {
@@ -536,6 +544,7 @@ export function useChat({ conversationId, onSpecialistAction }: UseChatOptions) 
     isLoading,
     isStreaming,
     streamPlaceholder,
+    typingAgentId,
     error,
     sendMessage,
     loadMessages,

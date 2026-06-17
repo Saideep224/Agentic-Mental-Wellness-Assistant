@@ -67,6 +67,16 @@ def map_model_label_to_wellness_emotion(label: str) -> str:
     """Maps typical text classification model labels to the 7 supported wellness emotions."""
     lbl = label.lower().strip()
     
+    # Handle index-based or generic label IDs (e.g., LABEL_0, LABEL_1, etc.)
+    if lbl.startswith("label_"):
+        idx_str = lbl.replace("label_", "")
+        if idx_str.isdigit():
+            idx = int(idx_str)
+            # Mapping for bhadresh-savani/bert-base-uncased-emotion (6 labels):
+            # 0: sadness, 1: joy, 2: love, 3: anger, 4: fear, 5: surprise
+            bhadresh_map = {0: "sadness", 1: "joy", 2: "love", 3: "anger", 4: "fear", 5: "surprise"}
+            lbl = bhadresh_map.get(idx, lbl)
+
     # Supported categories: anxiety, stress, sadness, frustration, happiness, neutral, loneliness
     if lbl in ["joy", "love", "happiness", "happy", "relief"]:
         return "Happy"
@@ -113,8 +123,11 @@ class EmotionService:
             classifier = get_local_classifier()
             if classifier is not None:
                 try:
+                    logger.info(f"TEXT SENT TO MENTALBERT (Local): '{message}'")
                     # Run inference locally
                     predictions = classifier(message)
+                    logger.info(f"Raw Model Predictions: {predictions}")
+                    
                     if predictions and len(predictions) > 0:
                         pred = predictions[0]
                         detected_label = pred.get("label", "Neutral")
@@ -139,16 +152,19 @@ class EmotionService:
         # 2. Fallback: Execute classification call via LLM simulating MentalBERT
         try:
             client = get_chat_client()
+            logger.info(f"TEXT SENT TO MENTALBERT (LLM Simulator): '{message}'")
+            messages = [
+                {"role": "system", "content": MENTALBERT_EMOTION_CLASSIFIER_PROMPT},
+                {"role": "user", "content": f"User message: {message}"},
+            ]
             response = await client.chat.completions.create(
                 model=settings.llm_model,
-                messages=[
-                    {"role": "system", "content": MENTALBERT_EMOTION_CLASSIFIER_PROMPT},
-                    {"role": "user", "content": f"User message: {message}"},
-                ],
+                messages=messages,
                 temperature=0.1,
                 response_format={"type": "json_object"},
             )
             raw = response.choices[0].message.content.strip()
+            logger.info(f"LLM Raw Output: {raw}")
             result = json.loads(raw)
             
             detected_emotion = result.get("detected_emotion", "Neutral")
@@ -175,8 +191,28 @@ class EmotionService:
             }
 
         except Exception as e:
-            logger.error(f"Error in classify_emotion_mentalbert: {e}", exc_info=True)
-            return {"detected_emotion": "Neutral", "confidence_score": 0.5}
+            logger.error(f"Error in classify_emotion_mentalbert: {e}. Falling back to local rule-based simulation.", exc_info=True)
+            try:
+                from app.services.mentalbert_service import mentalbert_service
+                scores = mentalbert_service.predict(message)
+                try:
+                    import torch
+                    if torch.is_tensor(scores):
+                        scores = scores.tolist()[0]
+                except Exception:
+                    pass
+                
+                emotions = ["happy", "neutral", "stress", "anxiety", "sadness", "frustration", "loneliness"]
+                max_idx = scores.index(max(scores)) if scores else 1
+                primary = emotions[max_idx].capitalize()
+                confidence = max(scores) if scores else 0.5
+                
+                logger.info(f"[Fallback Simulator] Mapped failed API call to simulated emotion: '{primary}' (confidence: {confidence})")
+                await self._save_emotion_log(db, user_id, message, primary, confidence)
+                return {"detected_emotion": primary, "confidence_score": confidence}
+            except Exception as fallback_err:
+                logger.error(f"Fallback simulator also failed: {fallback_err}", exc_info=True)
+                return {"detected_emotion": "Neutral", "confidence_score": 0.5}
 
     async def _save_emotion_log(
         self, db: AsyncSession, user_id: str, message: str, emotion: str, confidence: float

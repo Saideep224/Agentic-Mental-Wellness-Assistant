@@ -159,7 +159,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
                 {"role": "user", "content": user_content},
             ],
             temperature=0.2,
-            max_tokens=1000,
+            max_tokens=4000,
             response_format={"type": "json_object"},
         )
         from app.utils.helpers import safe_json_parse
@@ -595,7 +595,9 @@ async def response_agent_node(state: AgentState) -> dict:
 async def preprocessing_node(state: AgentState) -> dict:
     """Run cognitive analysis and memory retrieval sequentially to prevent SQLAlchemy session concurrency issues."""
     cog_res = await cognitive_analyzer_agent(state)
-    mem_res = await memory_agent_node(state)
+    # Merge cog_res into state for memory_agent_node to see the updated detected_emotion
+    updated_state = {**state, **cog_res}
+    mem_res = await memory_agent_node(updated_state)
     return {**cog_res, **mem_res}
 
 def build_graph() -> StateGraph:

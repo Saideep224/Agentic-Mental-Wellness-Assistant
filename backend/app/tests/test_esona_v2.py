@@ -463,6 +463,112 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res_crisis["safety_agent"]["crisis_detected"], True)
         await self.db.rollback()
 
+    async def test_specialist_connection_flow(self):
+        """Test `/connect-specialist` and `/disconnect-specialist` endpoint logic directly."""
+        from app.routes.conversations import connect_specialist, disconnect_specialist, ConnectSpecialistRequest
+        from app.models.conversation import Message
+        from sqlalchemy import select
+
+        # Mock the body
+        body = ConnectSpecialistRequest(specialist_id="maya")
+
+        # 1. Connect Dr. Maya
+        res = await connect_specialist(
+            conversation_id=self.conv_id,
+            body=body,
+            current_user=self.user,
+            db=self.db
+        )
+
+        # Connect should return 7 messages (4 Buddy, 3 Specialist)
+        self.assertEqual(len(res), 7)
+        self.assertEqual(res[0].sender_type, "buddy")
+        self.assertEqual(res[0].content, "hey 😊")
+        self.assertEqual(res[4].sender_type, "maya")
+        self.assertEqual(res[4].content, f"hey {self.user.name} 👋")
+
+        # 2. Check DB does not have any system join message
+        db_messages_result = await self.db.execute(
+            select(Message).where(Message.conversation_id == self.conv_id)
+        )
+        db_messages = db_messages_result.scalars().all()
+        # Ensure none of them are system messages
+        system_msgs = [m for m in db_messages if m.sender_type == "system"]
+        self.assertEqual(len(system_msgs), 0)
+
+        # 3. Test connecting again - should return empty list
+        res_dup = await connect_specialist(
+            conversation_id=self.conv_id,
+            body=body,
+            current_user=self.user,
+            db=self.db
+        )
+        self.assertEqual(len(res_dup), 0)
+
+        # 4. Disconnect specialist
+        res_disc = await disconnect_specialist(
+            conversation_id=self.conv_id,
+            current_user=self.user,
+            db=self.db
+        )
+        # Should return 1 message (Buddy's farewell)
+        self.assertEqual(len(res_disc), 1)
+        self.assertEqual(res_disc[0].sender_type, "buddy")
+        self.assertIn("disconnected", res_disc[0].content)
+
+        # Verify no system leave message is in DB
+        db_messages_result = await self.db.execute(
+            select(Message).where(Message.conversation_id == self.conv_id)
+        )
+        db_messages = db_messages_result.scalars().all()
+        system_msgs = [m for m in db_messages if m.sender_type == "system"]
+        self.assertEqual(len(system_msgs), 0)
+
+        await self.db.rollback()
+
+    def test_buddy_intervention_logic(self):
+        """Test Buddy's selective silence/intervention check helper."""
+        from app.routes.chat import check_buddy_intervention
+
+        # A. Direct Address
+        should_int, reason = check_buddy_intervention("hey buddy", "maya", "hello", {})
+        self.assertTrue(should_int)
+        self.assertEqual(reason, "mention")
+
+        # B. Confusion
+        should_int, reason = check_buddy_intervention("i am confused", "maya", "hello", {})
+        self.assertTrue(should_int)
+        self.assertEqual(reason, "confusion")
+
+        # C. Technical jargon
+        should_int, reason = check_buddy_intervention("okay", "maya", "let's look at the fixed expenses and budget baseline", {})
+        self.assertTrue(should_int)
+        self.assertEqual(reason, "technical")
+
+        # D. Intense emotion
+        cog_res = {
+            "emotion_agent": {
+                "stress": 0.8,
+                "anxiety": 0.2,
+                "sadness": 0.1
+            }
+        }
+        should_int, reason = check_buddy_intervention("yes", "maya", "hello", cog_res)
+        self.assertTrue(should_int)
+        self.assertEqual(reason, "emotion")
+
+        # E. Casual/no intervention
+        cog_res_casual = {
+            "emotion_agent": {
+                "stress": 0.2,
+                "anxiety": 0.2,
+                "sadness": 0.2
+            }
+        }
+        should_int, reason = check_buddy_intervention("yes", "maya", "hello there", cog_res_casual)
+        self.assertFalse(should_int)
+        self.assertIsNone(reason)
+
 
 if __name__ == "__main__":
     unittest.main()

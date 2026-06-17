@@ -250,9 +250,7 @@ async def connect_specialist(
 ):
     """Connect a specialist to the conversation and generate their context-shared greeting."""
     from app.agents.specialist_registry import SPECIALIST_REGISTRY
-    from app.services.specialist_service import specialist_service
-    from app.chatbot.pipeline import run_agent_graph
-    from app.routes.chat import _build_conversation_history, _get_emotional_profile_dict
+    from datetime import datetime, timezone, timedelta
 
     result = await db.execute(
         select(Conversation).where(
@@ -269,84 +267,80 @@ async def connect_specialist(
     if not spec_info:
         raise HTTPException(status_code=400, detail=f"Specialist '{specialist_id}' not found.")
 
-    # Append specialist to active_specialists
+    # Check if already active
     active = list(conv.active_specialists or [])
-    if specialist_id not in active:
-        active.append(specialist_id)
-        conv.active_specialists = active
-        db.add(conv)
+    if specialist_id in active:
+        return []
 
-    # Save join message
-    system_msg = Message(
-        conversation_id=conversation_id,
-        user_id=current_user.id,
-        role="assistant",
-        content=f"System: {spec_info['name']} has joined the conversation.",
-        sender_type="system"
-    )
-    db.add(system_msg)
+    # Add to active specialists list
+    active.append(specialist_id)
+    conv.active_specialists = active
+    db.add(conv)
 
-    # Find last user message for context
-    last_user_msg_result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation_id, Message.role == "user")
-        .order_by(Message.created_at.desc())
-        .limit(1)
-    )
-    last_user_msg = last_user_msg_result.scalar_one_or_none()
-    user_message = last_user_msg.content if last_user_msg else "Hello, I need some help."
+    # Mapping for the staggered greetings
+    specialist_map = {
+        "lex": {"name": "Lex", "pronoun": "him", "topic": "legal situation"},
+        "maya": {"name": "Dr. Maya", "pronoun": "her", "topic": "health"},
+        "ray": {"name": "Officer Ray", "pronoun": "him", "topic": "safety"},
+        "techie": {"name": "Techie", "pronoun": "him", "topic": "technical issues"},
+        "mentor": {"name": "Mentor", "pronoun": "them", "topic": "studies"},
+        "finance": {"name": "Finance Coach", "pronoun": "him", "topic": "finances"},
+        "fitness": {"name": "Fitness Coach", "pronoun": "him", "topic": "fitness"},
+    }
 
-    history = await _build_conversation_history(db, conversation_id)
-    emotional_profile = await _get_emotional_profile_dict(db, current_user.id, current_user.name)
+    spec_data = specialist_map.get(specialist_id, {"name": spec_info["name"], "pronoun": "them", "topic": "situation"})
+    spec_name = spec_data["name"]
+    pronoun = spec_data["pronoun"]
+    topic = spec_data["topic"]
+    user_name = current_user.name or "there"
 
-    # Run cognitive graph on last message to gather context (memories, relationships)
-    cog_res = await run_agent_graph(
-        user_message=user_message,
-        user_id=str(current_user.id),
-        conversation_history=history,
-        emotional_profile=emotional_profile,
-        conversation_id=conversation_id,
-        db=db
-    )
+    # Generate Buddy's 4 intro messages
+    buddy_contents = [
+        "hey 😊",
+        f"i think {spec_name} can explain this better than me",
+        f"i gave {pronoun} the context already",
+        f"{spec_name}, {user_name} has been worried about their {topic} lately"
+    ]
 
-    # Generate specialist greeting
-    spec_res = await specialist_service.generate_specialist_response(
-        db=db,
-        user_id=str(current_user.id),
-        specialist_id=specialist_id,
-        user_message=user_message,
-        conversation_history=history,
-        cog_res=cog_res
-    )
+    # Generate Specialist's 3 greeting messages
+    spec_contents = [
+        f"hey {user_name} 👋",
+        "Buddy told me a little about what's going on",
+        "can you tell me how long this has been happening?"
+    ]
 
-    # Save greeting message
-    spec_msg = Message(
-        conversation_id=conversation_id,
-        user_id=current_user.id,
-        role="assistant",
-        content=spec_res["response"],
-        sender_type=specialist_id
-    )
-    db.add(spec_msg)
+    base_time = datetime.now(timezone.utc)
+    messages_created = []
 
-    # Buddy follow-up message
-    buddy_content = f"I've connected you with {spec_info['name']} to help with the {spec_info['role'].lower()} aspect of things. I'll stay here to help translate or if you need any emotional support!"
-    buddy_msg = Message(
-        conversation_id=conversation_id,
-        user_id=current_user.id,
-        role="assistant",
-        content=buddy_content,
-        sender_type="buddy"
-    )
-    db.add(buddy_msg)
+    # Save Buddy's messages
+    for idx, content in enumerate(buddy_contents):
+        msg = Message(
+            conversation_id=conversation_id,
+            user_id=current_user.id,
+            role="assistant",
+            content=content,
+            sender_type="buddy",
+            created_at=base_time + timedelta(seconds=idx)
+        )
+        db.add(msg)
+        messages_created.append(msg)
+
+    # Save Specialist's messages
+    for idx, content in enumerate(spec_contents):
+        msg = Message(
+            conversation_id=conversation_id,
+            user_id=current_user.id,
+            role="assistant",
+            content=content,
+            sender_type=specialist_id,
+            created_at=base_time + timedelta(seconds=len(buddy_contents) + idx)
+        )
+        db.add(msg)
+        messages_created.append(msg)
 
     await db.commit()
 
-    return [
-        MessageResponse.model_validate(system_msg),
-        MessageResponse.model_validate(spec_msg),
-        MessageResponse.model_validate(buddy_msg)
-    ]
+    return [MessageResponse.model_validate(m) for m in messages_created]
 
 
 @router.post("/conversations/{conversation_id}/disconnect-specialist", response_model=list[MessageResponse])
@@ -356,8 +350,6 @@ async def disconnect_specialist(
     db: AsyncSession = Depends(get_db),
 ):
     """Disconnect all specialists from the conversation."""
-    from app.agents.specialist_registry import SPECIALIST_REGISTRY
-
     result = await db.execute(
         select(Conversation).where(
             Conversation.id == conversation_id,
@@ -376,20 +368,7 @@ async def disconnect_specialist(
     conv.active_specialists = []
     db.add(conv)
 
-    messages_created = []
-    for spec_id in active:
-        spec_info = SPECIALIST_REGISTRY.get(spec_id)
-        name = spec_info["name"] if spec_info else spec_id.capitalize()
-        system_msg = Message(
-            conversation_id=conversation_id,
-            user_id=current_user.id,
-            role="assistant",
-            content=f"System: {name} has left the conversation.",
-            sender_type="system"
-        )
-        db.add(system_msg)
-        messages_created.append(system_msg)
-
+    # Save Buddy farewell message (but NO system leave message)
     buddy_msg = Message(
         conversation_id=conversation_id,
         user_id=current_user.id,
@@ -398,9 +377,9 @@ async def disconnect_specialist(
         sender_type="buddy"
     )
     db.add(buddy_msg)
-    messages_created.append(buddy_msg)
 
     await db.commit()
 
-    return [MessageResponse.model_validate(m) for m in messages_created]
+    return [MessageResponse.model_validate(buddy_msg)]
+
 

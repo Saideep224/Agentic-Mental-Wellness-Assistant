@@ -94,7 +94,13 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             close_temp_db = True
         try:
             from app.services.emotion_service import emotion_service
-            emotion_res = await emotion_service.classify_emotion_mentalbert(temp_db, user_id, user_message)
+            emotion_res = await emotion_service.classify_emotion_mentalbert(
+                temp_db,
+                user_id,
+                user_message,
+                conversation_id=state.get("conversation_id"),
+                history=history
+            )
             detected_emotion = emotion_res.get("detected_emotion", "Neutral")
             confidence_score = emotion_res.get("confidence_score", 1.0)
             
@@ -578,7 +584,8 @@ async def response_agent_node(state: AgentState) -> dict:
         "emotion_analysis": state.get("emotion_analysis", {}),
         "personality_analysis": state.get("personality_analysis", {}),
         "context_analysis": state.get("context_analysis", {}),
-        "recommendations": state.get("recommendations", [])
+        "recommendations": state.get("recommendations", []),
+        "detected_emotion_confidence": state.get("detected_emotion_confidence", 1.0)
     }
 
     return {

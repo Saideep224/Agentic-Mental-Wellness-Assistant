@@ -43,6 +43,8 @@ Analyze for the following categories using the four logical agents:
    - underlying_need: the deeper, unspoken need behind their words (one sentence)
    - what_user_needs: validation, advice, distraction, listening, encouragement
    - conversational_energy: energetic, calm, frantic, exhausted, sarcastic, playful
+   - topic: core topic of conversation ("relationship" | "finance" | "legal" | "health" | "academic" | "tech" | "general"). Breakups, heartbreak, conflicts, and family fights are strictly "relationship".
+   - specialist_recommendation: suggested specialist ID if the user needs expert support ("relationship" | "finance" | "lex" | "maya" | "mentor" | "techie" | "fitness" | null). Select null if Buddy should keep talking or if the topic is not a clear specialist domain.
 7. COPING RECOMMENDATIONS:
    - 1 to 3 personalized, highly actionable coping suggestions ONLY if they would be helpful (e.g., for emotional/crisis/check_in states). Keep them specific. Avoid generic platitudes.
 8. MEMORY EXTRACTION:
@@ -91,7 +93,9 @@ Respond with ONLY a valid JSON object matching this schema:
     "inferred_causes": ["string"],
     "underlying_need": "string",
     "what_user_needs": "validation" | "advice" | "distraction" | "listening" | "encouragement",
-    "conversational_energy": "string"
+    "conversational_energy": "string",
+    "topic": "relationship" | "finance" | "legal" | "health" | "academic" | "tech" | "general" | null,
+    "specialist_recommendation": "relationship" | "finance" | "lex" | "maya" | "mentor" | "techie" | "fitness" | null
   },
   "recommendations": ["string"],
   "memory_extraction": {

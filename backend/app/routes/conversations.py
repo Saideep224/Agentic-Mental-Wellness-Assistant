@@ -286,6 +286,7 @@ async def connect_specialist(
         "mentor": {"name": "Mentor", "pronoun": "them", "topic": "studies"},
         "finance": {"name": "Finance Coach", "pronoun": "him", "topic": "finances"},
         "fitness": {"name": "Fitness Coach", "pronoun": "him", "topic": "fitness"},
+        "relationship": {"name": "Relationship Coach", "pronoun": "them", "topic": "relationship"},
     }
 
     spec_data = specialist_map.get(specialist_id, {"name": spec_info["name"], "pronoun": "them", "topic": "situation"})

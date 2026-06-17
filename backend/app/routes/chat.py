@@ -135,33 +135,97 @@ Title:"""
         return "✨ Soft check-in"
 
 
-def detect_specialist_recommendation(message: str, agent_analysis: dict) -> str | None:
-    """Detect if the message suggests a need for a specialist agent based on keyword indicators or agent analysis."""
+def detect_specialist_recommendation(message: str, agent_analysis: dict, history: list = None) -> str | None:
+    """Detect if the message suggests a need for a specialist agent based on cognitive analysis and context."""
+    if not agent_analysis:
+        return None
+
+    import re
+
+    # 1. Enforce Turn Delay Rules
+    # We count user turns in the conversation history to let Buddy chat first.
+    user_turns = 0
+    if history:
+        user_turns = sum(1 for m in history if m.get("role") == "user")
+
+    # The current incoming user message is +1 turn.
+    total_user_turns = user_turns + 1
+
+    # 2. Extract semantic classification from LLM-derived agent_analysis
+    ctx = agent_analysis.get("context_analysis", {})
+    suggested = ctx.get("specialist_recommendation")
+    topic = ctx.get("topic")
+
+    # 3. Double-guard: Boundary-aware keyword overrides to fix false keyword routing
     msg_lower = message.lower()
     
-    # Keyword sets for the 7 specialists
-    keywords = {
-        "lex": ["legal", "lawyer", "court", "sue", "property dispute", "land dispute", "contract", "police case", "family property", "agreement", "lease", "tenant", "advocate", "litigation"],
-        "maya": ["health", "symptom", "pain", "medical", "doctor", "disease", "illness", "headache", "chest pain", "diagnosis", "health anxiety", "sick", "infection", "cough", "fever", "physician"],
-        "ray": ["hacked", "stalker", "cyber", "scam", "blackmail", "harass", "threat", "bully", "online safety", "scammed", "stole my account", "compromised", "phishing", "leak"],
-        "techie": ["code", "bug", "programming", "git", "database error", "broken phone", "windows update", "server down", "software crash", "tech support", "ide", "laptop", "computer", "compiler"],
-        "mentor": ["exam", "study", "failing class", "test stress", "academic pressure", "semester", "syllabus", "procrastinating study", "homework", "grades", "school", "college", "university", "midterm"],
-        "finance": ["money", "budget", "finance", "debt", "loan", "broke", "credit card", "bills", "rent", "cost of living", "salary", "student loan", "bankrupt", "expenses", "saving"],
-        "fitness": ["workout", "exercise", "weight loss", "nutrition", "diet", "gym", "fitness", "calories", "posture", "muscle", "active habits", "cardio", "sleep schedule", "stretching", "running"]
+    # Check for relationship overrides first (e.g. "broke up", "broken up" should never route to finance)
+    is_relationship = False
+    if re.search(r'\b(broke\s+up|broken\s+up|split\s+up|dumped|my\s+ex|my\s+boyfriend|my\s+girlfriend|left\s+me|broken\s+heart|heartbreak|had\s+a\s+fight)\b', msg_lower):
+        is_relationship = True
+        topic = "relationship"
+        suggested = "relationship"
+
+    # Fallback keyword matching (only if LLM suggestion is not present)
+    if not suggested:
+        keywords = {
+            "lex": ["legal", "lawyer", "court", "sue", "property dispute", "land dispute", "contract", "police case", "family property", "agreement", "lease", "tenant", "advocate", "litigation"],
+            "maya": ["health", "symptom", "pain", "medical", "doctor", "disease", "illness", "headache", "chest pain", "diagnosis", "health anxiety", "sick", "infection", "cough", "fever", "physician"],
+            "ray": ["hacked", "stalker", "cyber", "scam", "blackmail", "harass", "threat", "bully", "online safety", "scammed", "stole my account", "compromised", "phishing", "leak"],
+            "techie": ["code", "bug", "programming", "git", "database error", "broken phone", "windows update", "server down", "software crash", "tech support", "ide", "laptop", "computer", "compiler"],
+            "mentor": ["exam", "study", "failing class", "test stress", "academic pressure", "semester", "syllabus", "procrastinating study", "homework", "grades", "school", "college", "university", "midterm"],
+            "fitness": ["workout", "exercise", "weight loss", "nutrition", "diet", "gym", "fitness", "calories", "posture", "muscle", "active habits", "cardio", "sleep schedule", "stretching", "running"]
+        }
+        
+        # Match financial keywords carefully (excluding "broke" if it is a breakup)
+        finance_keywords = ["money", "budget", "finance", "debt", "loan", "credit card", "bills", "rent", "cost of living", "salary", "student loan", "bankrupt", "expenses", "saving"]
+        if "broke" in msg_lower and not is_relationship:
+            finance_keywords.append("broke")
+
+        keywords["finance"] = finance_keywords
+
+        for spec_id, words in keywords.items():
+            if any(re.search(rf'\b{re.escape(w)}\b', msg_lower) for w in words):
+                suggested = spec_id
+                if spec_id == "relationship":
+                    topic = "relationship"
+                break
+
+    # If still no specialist suggestion, return None
+    if not suggested:
+        return None
+
+    # Map semantic categories to specialist IDs
+    category_to_spec = {
+        "relationship": "relationship",
+        "finance": "finance",
+        "legal": "lex",
+        "health": "maya",
+        "academic": "mentor",
+        "tech": "techie",
+        "fitness": "fitness"
     }
-    
-    for spec_id, words in keywords.items():
-        if any(w in msg_lower for w in words):
-            return spec_id
-            
-    # Also check inferred causes from cognitive analyzer
-    causes = agent_analysis.get("context_analysis", {}).get("inferred_causes", [])
-    causes_str = " ".join([str(c) for c in causes]).lower()
-    for spec_id, words in keywords.items():
-        if any(w in causes_str for w in words):
-            return spec_id
-            
-    return None
+    spec_id = category_to_spec.get(suggested, suggested)
+
+    # 4. Enforce turns threshold delay
+    if spec_id == "relationship" or topic == "relationship":
+        # For relationship, require at least 3 total user turns (current + history)
+        if total_user_turns < 3:
+            logger.info(f"[Specialist Routing] Delayed relationship coach recommendation (turns: {total_user_turns}/3)")
+            return None
+    else:
+        # For other specialists, require at least 2 total user turns
+        if total_user_turns < 2:
+            logger.info(f"[Specialist Routing] Delayed specialist '{spec_id}' recommendation (turns: {total_user_turns}/2)")
+            return None
+
+    # 5. Enforce routing confidence threshold (0.75)
+    confidence = agent_analysis.get("detected_emotion_confidence", 1.0)
+    if confidence < 0.75:
+        logger.info(f"[Specialist Routing] Specialist recommendation '{spec_id}' below confidence threshold: {confidence} < 0.75")
+        return None
+
+    return spec_id
 
 
 async def _get_or_create_conversation(
@@ -716,7 +780,7 @@ async def send_message(
 
             # Check if Buddy should recommend a specialist (only on Buddy chat, when no specialist is active)
             if not specialist_id and conversation.agent_id == "buddy":
-                suggested_specialist = detect_specialist_recommendation(body.message, agent_analysis)
+                suggested_specialist = detect_specialist_recommendation(body.message, agent_analysis, history)
                 if suggested_specialist:
                     from app.agents.specialist_registry import SPECIALIST_REGISTRY
                     spec_info = SPECIALIST_REGISTRY[suggested_specialist]
@@ -1086,7 +1150,7 @@ async def generate_and_persist_sse_response(
 
             # Check if Buddy should recommend a specialist
             if not specialist_id and conversation and conversation.agent_id == "buddy":
-                suggested_specialist = detect_specialist_recommendation(message, agent_analysis)
+                suggested_specialist = detect_specialist_recommendation(message, agent_analysis, history)
                 if suggested_specialist:
                     from app.agents.specialist_registry import SPECIALIST_REGISTRY
                     spec_info = SPECIALIST_REGISTRY[suggested_specialist]

@@ -7,6 +7,7 @@ from app.services.mentor_service import mentor_service
 from app.services.tech_service import tech_service
 from app.services.finance_service import finance_service
 from app.services.fitness_service import fitness_service
+from app.services.relationship_service import relationship_service
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,14 @@ class AIRouter:
             )
         elif agent_id == "fitness":
             return await fitness_service.generate_response(
+                db=db,
+                user_id=user_id,
+                user_message=user_message,
+                conversation_history=conversation_history,
+                cog_res=cog_res
+            )
+        elif agent_id == "relationship":
+            return await relationship_service.generate_response(
                 db=db,
                 user_id=user_id,
                 user_message=user_message,

@@ -3,6 +3,7 @@ Emotion Service – handles MentalBERT sequence classification for user emotions
 and logs results in the emotion_logs table.
 """
 
+import re
 import json
 import logging
 import uuid
@@ -34,6 +35,43 @@ Output ONLY a valid JSON object matching this schema:
   "detected_emotion": "Happy" | "Neutral" | "Stress" | "Anxiety" | "Sadness" | "Frustration" | "Loneliness",
   "confidence_score": float
 }"""
+
+MENTALBERT_EMOTION_CLASSIFIER_CONTEXT_PROMPT = """You are the MentalBERT Sequence Classification Model, a domain-specific BERT classifier fine-tuned on psychological texts and mental health support forums.
+Your task is to classify the user's message into one of seven emotional categories.
+
+Target Categories:
+- Happy (positive affect, contentment, relief, cheerfulness)
+- Neutral (standard greetings, informational, casual questions, small talk without strong emotion)
+- Stress (overwhelmed, burnout, pressure, having too much to do, exhaustion)
+- Anxiety (fear, worry, overthinking, panic, dread of the future)
+- Sadness (grief, sorrow, hurt, disappointment, feeling low)
+- Frustration (anger, annoyance, irritation, resentment)
+- Loneliness (isolation, feeling left out, having no one to talk to, feeling abandoned)
+
+To make a highly accurate classification, you must analyze:
+1. Normalized text content (ignoring word elongation).
+2. Emoji Analysis: Emojis represent direct emotional markers. Map:
+   - 😭 -> Sadness / Distress
+   - 💔 -> Sadness / Heartbreak
+   - 😡 -> Frustration
+   - 🥺 -> Anxiety / Vulnerability
+   - 😂 -> Happy / Joy
+   - ❤️ -> Happy / Affection
+   Note: Heartbreak and deep emotional distress should be classified under the 'Sadness' category (or 'Anxiety' if fear/panic is dominant).
+3. Conversation Context: The history of the current interaction.
+4. Past Conversation Context: The summary of previous sessions.
+
+Input Details provided:
+- Normalized message: {normalized_message}
+- Detected Emojis: {emoji_summary}
+- Recent history context: {recent_context}
+- Past session summary context: {past_summary}
+
+Output ONLY a valid JSON object matching this schema:
+{{
+  "detected_emotion": "Happy" | "Neutral" | "Stress" | "Anxiety" | "Sadness" | "Frustration" | "Loneliness",
+  "confidence_score": float
+}}"""
 
 
 _local_classifier = None
@@ -94,11 +132,108 @@ def map_model_label_to_wellness_emotion(label: str) -> str:
         return "Neutral"
 
 
+def normalize_stretched_words(text: str) -> str:
+    if not text:
+        return text
+    # Specific common stretched words
+    text = re.sub(r'\b(bro)o+\b', r'\1', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(up)p+\b', r'\1', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(no)o+\b', r'\1', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(please)e+\b', r'\1', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(so)o+\b', r'\1', text, flags=re.IGNORECASE)
+    
+    # General de-stretching for letters:
+    # Reduce 3+ 'o' and 'e' to 2 (e.g. goood -> good, pleaseeee -> pleasee)
+    text = re.sub(r'([oOeE])\1{2,}', r'\1\1', text)
+    # Reduce any other letter repeating 3+ times to 1 (e.g. lll -> l, ppp -> p)
+    text = re.sub(r'([a-zA-Z])\1{2,}', r'\1', text)
+    return text
+
+
+def extract_emojis(text: str) -> dict:
+    if not text:
+        return {}
+    target_emojis = ["😭", "💔", "😡", "🥺", "😂", "❤️"]
+    counts = {}
+    for emo in target_emojis:
+        c = text.count(emo)
+        if c > 0:
+            counts[emo] = c
+    return counts
+
+
+def boost_local_predictions(predictions: Any, emoji_counts: dict) -> tuple[str, float]:
+    scores = {
+        "Happy": 0.0,
+        "Neutral": 0.0,
+        "Stress": 0.0,
+        "Anxiety": 0.0,
+        "Sadness": 0.0,
+        "Frustration": 0.0,
+        "Loneliness": 0.0
+    }
+    
+    pred_list = []
+    if isinstance(predictions, dict):
+        pred_list = [predictions]
+    elif isinstance(predictions, list):
+        if len(predictions) > 0 and isinstance(predictions[0], list):
+            pred_list = predictions[0]
+        else:
+            pred_list = predictions
+            
+    for pred in pred_list:
+        matched = map_model_label_to_wellness_emotion(pred.get("label", ""))
+        scores[matched] = max(scores[matched], float(pred.get("score", 0.0)))
+        
+    sadness_boost = (emoji_counts.get("😭", 0) * 0.4) + (emoji_counts.get("💔", 0) * 0.5)
+    frustration_boost = emoji_counts.get("😡", 0) * 0.4
+    anxiety_boost = emoji_counts.get("🥺", 0) * 0.3
+    happy_boost = (emoji_counts.get("😂", 0) * 0.3) + (emoji_counts.get("❤️", 0) * 0.3)
+    
+    scores["Sadness"] += sadness_boost
+    scores["Frustration"] += frustration_boost
+    scores["Anxiety"] += anxiety_boost
+    scores["Happy"] += happy_boost
+    
+    total_boost = sadness_boost + frustration_boost + anxiety_boost + happy_boost
+    if total_boost > 0:
+        scores["Neutral"] = max(0.0, scores["Neutral"] - total_boost)
+        
+    best_emotion = "Neutral"
+    best_score = 0.0
+    for emo, score in scores.items():
+        if score > best_score:
+            best_score = score
+            best_emotion = emo
+            
+    best_score = min(1.0, best_score)
+    return best_emotion, best_score
+
+
+async def _get_conversation_summary(db: AsyncSession, user_id: str, conversation_id: str) -> str | None:
+    try:
+        from app.models.memory import Memory
+        from sqlalchemy import select
+        result = await db.execute(
+            select(Memory).where(Memory.user_id == (uuid.UUID(user_id) if isinstance(user_id, str) else user_id))
+        )
+        memories = result.scalars().all()
+        for m in memories:
+            meta = m.metadata_json or {}
+            if meta.get("source") == "conversation_summary" and meta.get("conversation_id") == str(conversation_id):
+                return m.memory_summary
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to fetch conversation summary in emotion service: {e}")
+    return None
+
+
 class EmotionService:
     """Manages emotion classification and logs results to the database."""
 
     async def classify_emotion_mentalbert(
-        self, db: AsyncSession, user_id: str, message: str
+        self, db: AsyncSession, user_id: str, message: str, conversation_id: str = None, history: list = None
     ) -> Dict[str, Any]:
         """
         Classifies the message into one of the 7 specified emotions,
@@ -118,25 +253,26 @@ class EmotionService:
                 "confidence_score": 0.95
             }
 
+        # Extract emojis and normalize message stretching before model evaluation
+        emoji_counts = extract_emojis(message)
+        normalized_message = normalize_stretched_words(message)
+
         # 1. Attempt local classification if configured
         if settings.USE_LOCAL_EMOTION_MODEL:
             classifier = get_local_classifier()
             if classifier is not None:
                 try:
-                    logger.info(f"TEXT SENT TO MENTALBERT (Local): '{message}'")
-                    # Run inference locally
-                    predictions = classifier(message)
+                    logger.info(f"TEXT SENT TO MENTALBERT (Local): '{normalized_message}'")
+                    # Run inference locally on normalized text
+                    predictions = classifier(normalized_message)
                     logger.info(f"Raw Model Predictions: {predictions}")
                     
                     if predictions and len(predictions) > 0:
-                        pred = predictions[0]
-                        detected_label = pred.get("label", "Neutral")
-                        confidence_score = float(pred.get("score", 0.8))
-                        
-                        matched_emotion = map_model_label_to_wellness_emotion(detected_label)
+                        # Apply emoji boosting
+                        matched_emotion, confidence_score = boost_local_predictions(predictions, emoji_counts)
                         
                         logger.info(
-                            f"[Local MentalBERT] Classified message: '{message[:40]}...' as "
+                            f"[Local MentalBERT with Boost] Classified message: '{message[:40]}...' as "
                             f"'{matched_emotion}' (confidence: {confidence_score})"
                         )
                         
@@ -152,9 +288,36 @@ class EmotionService:
         # 2. Fallback: Execute classification call via LLM simulating MentalBERT
         try:
             client = get_chat_client()
-            logger.info(f"TEXT SENT TO MENTALBERT (LLM Simulator): '{message}'")
+            logger.info(f"TEXT SENT TO MENTALBERT (LLM Simulator): '{normalized_message}'")
+            
+            # Emoji context string
+            if emoji_counts:
+                emoji_summary = ", ".join(f"{emo} (count: {count})" for emo, count in emoji_counts.items())
+            else:
+                emoji_summary = "None"
+                
+            # Recent history context
+            recent_context = "None"
+            if history:
+                last_messages = history[-6:]
+                recent_context = "\n".join(
+                    f"{m.get('role', 'user')}: {m.get('content', '')}" for m in last_messages
+                )
+                
+            # Past session summary
+            past_summary = "None"
+            if conversation_id and db:
+                past_summary = await _get_conversation_summary(db, user_id, conversation_id) or "None"
+                
+            prompt = MENTALBERT_EMOTION_CLASSIFIER_CONTEXT_PROMPT.format(
+                normalized_message=normalized_message,
+                emoji_summary=emoji_summary,
+                recent_context=recent_context,
+                past_summary=past_summary
+            )
+            
             messages = [
-                {"role": "system", "content": MENTALBERT_EMOTION_CLASSIFIER_PROMPT},
+                {"role": "system", "content": prompt},
                 {"role": "user", "content": f"User message: {message}"},
             ]
             response = await client.chat.completions.create(
@@ -194,13 +357,31 @@ class EmotionService:
             logger.error(f"Error in classify_emotion_mentalbert: {e}. Falling back to local rule-based simulation.", exc_info=True)
             try:
                 from app.services.mentalbert_service import mentalbert_service
-                scores = mentalbert_service.predict(message)
+                scores = mentalbert_service.predict(normalized_message)
                 try:
                     import torch
                     if torch.is_tensor(scores):
                         scores = scores.tolist()[0]
                 except Exception:
                     pass
+                
+                # Apply emoji boosts to rule-based fallback list
+                # 0: happy, 1: neutral, 2: stress, 3: anxiety, 4: sadness, 5: frustration, 6: loneliness
+                sadness_boost = (emoji_counts.get("😭", 0) * 0.4) + (emoji_counts.get("💔", 0) * 0.5)
+                frustration_boost = emoji_counts.get("😡", 0) * 0.4
+                anxiety_boost = emoji_counts.get("🥺", 0) * 0.3
+                happy_boost = (emoji_counts.get("😂", 0) * 0.3) + (emoji_counts.get("❤️", 0) * 0.3)
+                
+                if len(scores) >= 7:
+                    scores[0] += happy_boost
+                    scores[2] += sadness_boost * 0.3
+                    scores[3] += anxiety_boost
+                    scores[4] += sadness_boost
+                    scores[5] += frustration_boost
+                    
+                    total_boost = sadness_boost + frustration_boost + anxiety_boost + happy_boost
+                    if total_boost > 0:
+                        scores[1] = max(0.0, scores[1] - total_boost)
                 
                 emotions = ["happy", "neutral", "stress", "anxiety", "sadness", "frustration", "loneliness"]
                 max_idx = scores.index(max(scores)) if scores else 1
@@ -235,3 +416,4 @@ class EmotionService:
 
 # Export singleton instance
 emotion_service = EmotionService()
+

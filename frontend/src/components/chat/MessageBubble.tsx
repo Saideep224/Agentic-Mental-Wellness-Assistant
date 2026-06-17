@@ -81,6 +81,7 @@ const agentConfig: Record<string, { emoji: string; name: string; gradient: strin
   mentor: { emoji: '📚', name: 'Mentor', gradient: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)', border: 'rgba(139, 92, 246, 0.3)' },
   finance: { emoji: '💰', name: 'Finance Coach', gradient: 'linear-gradient(135deg, #db2777 0%, #be185d 100%)', border: 'rgba(236, 72, 153, 0.3)' },
   fitness: { emoji: '🏋️', name: 'Fitness Coach', gradient: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)', border: 'rgba(20, 184, 166, 0.3)' },
+  relationship: { emoji: '💜', name: 'Relationship Coach', gradient: 'linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)', border: 'rgba(168, 85, 247, 0.3)' },
 };
 
 export default function MessageBubble({ message }: MessageBubbleProps) {

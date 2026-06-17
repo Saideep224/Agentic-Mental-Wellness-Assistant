@@ -569,6 +569,69 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(should_int)
         self.assertIsNone(reason)
 
+    def test_text_normalization(self):
+        """Verify text normalization correctly reduces elongation."""
+        from app.services.emotion_service import normalize_stretched_words
+        self.assertEqual(normalize_stretched_words("brooooo"), "bro")
+        self.assertEqual(normalize_stretched_words("uppp"), "up")
+        self.assertEqual(normalize_stretched_words("noooo"), "no")
+        self.assertEqual(normalize_stretched_words("pleaseeee"), "please")
+        # Ensure standard double-letter words are preserved (e.g. good, sleep, feel)
+        self.assertEqual(normalize_stretched_words("goood"), "good")
+        self.assertEqual(normalize_stretched_words("sleeeep"), "sleep")
+
+    def test_emoji_boosting(self):
+        """Verify emoji boosting applies correct weights and overrides Neutral."""
+        from app.services.emotion_service import boost_local_predictions, extract_emojis
+        
+        # 1. Test emoji counts
+        counts = extract_emojis("we just had a fight and got broke uppp 😭😭😭💔")
+        self.assertEqual(counts.get("😭"), 3)
+        self.assertEqual(counts.get("💔"), 1)
+
+        # 2. Test predictions boost override
+        preds = [{"label": "joy", "score": 0.1}, {"label": "sadness", "score": 0.2}, {"label": "neutral", "score": 0.7}]
+        best_emotion, score = boost_local_predictions(preds, counts)
+        self.assertEqual(best_emotion, "Sadness")
+        self.assertEqual(score, 1.0)
+
+    def test_relationship_coach_routing_delay(self):
+        """Verify relationship coach routing is delayed under turns threshold."""
+        from app.routes.chat import detect_specialist_recommendation
+        
+        agent_analysis = {
+            "detected_emotion_confidence": 0.85,
+            "context_analysis": {
+                "topic": "relationship",
+                "specialist_recommendation": "relationship"
+            }
+        }
+        
+        # Turn 1: 0 user messages in history, total turns = 1. Should be delayed (return None)
+        res1 = detect_specialist_recommendation("we got broke uppp", agent_analysis, history=[])
+        self.assertIsNone(res1)
+        
+        # Turn 2: 1 user message in history, total turns = 2. Should be delayed (return None)
+        history_2 = [{"role": "user", "content": "hello"}]
+        res2 = detect_specialist_recommendation("we got broke uppp", agent_analysis, history_2)
+        self.assertIsNone(res2)
+        
+        # Turn 3: 2 user messages in history, total turns = 3. Should recommend (return "relationship")
+        history_3 = [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"}, {"role": "user", "content": "we had a fight"}]
+        res3 = detect_specialist_recommendation("we got broke uppp", agent_analysis, history_3)
+        self.assertEqual(res3, "relationship")
+
+        # Verify confidence threshold: if confidence < 0.75, returns None
+        low_confidence_analysis = {
+            "detected_emotion_confidence": 0.60,
+            "context_analysis": {
+                "topic": "relationship",
+                "specialist_recommendation": "relationship"
+            }
+        }
+        res_low_conf = detect_specialist_recommendation("we got broke uppp", low_confidence_analysis, history_3)
+        self.assertIsNone(res_low_conf)
+
 
 if __name__ == "__main__":
     unittest.main()

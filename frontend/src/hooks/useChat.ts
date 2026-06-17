@@ -104,6 +104,77 @@ export function useChat({ conversationId, activeSpecialistId, onSpecialistAction
         }
       } else {
         setMessages(splitMsgs);
+
+        // Session greeting check for returning users (last message > 4 hours old)
+        const user = api.getStoredUser();
+        const onboardingCompleted = user?.onboardingCompleted ?? false;
+        
+        if (onboardingCompleted && splitMsgs.length > 0) {
+          const lastMsg = splitMsgs[splitMsgs.length - 1];
+          if (lastMsg.role === 'assistant') {
+            const lastMsgTime = new Date(lastMsg.timestamp).getTime();
+            const now = new Date().getTime();
+            const hoursPassed = (now - lastMsgTime) / (1000 * 60 * 60);
+
+            if (hoursPassed > 4) {
+              // Trigger session greeting check
+              setTypingAgentId('buddy');
+              setIsLoading(true);
+              try {
+                const response = await api.getFirstMessage(conversationId, token);
+                const responseText = response.response;
+                if (responseText) {
+                  const detectedEmotion = response.emotionDetected;
+                  const moodScore = response.moodScore;
+                  const parts = responseText.split('|||').map(p => p.trim()).filter(Boolean);
+
+                  let currentList = [...splitMsgs];
+                  for (let i = 0; i < parts.length; i++) {
+                    setTypingAgentId('buddy');
+                    const messageId = `${generateId()}-${i}`;
+                    const partMessage: Message = {
+                      id: messageId,
+                      role: 'assistant',
+                      content: '',
+                      timestamp: new Date(),
+                      sender_type: 'buddy',
+                      emotionDetected: i === parts.length - 1 ? detectedEmotion : undefined,
+                      moodScore: i === parts.length - 1 ? moodScore : undefined,
+                    };
+
+                    currentList.push(partMessage);
+                    setMessages([...currentList]);
+
+                    const fullText = parts[i];
+                    let currentText = '';
+                    const chars = Array.from(fullText);
+                    for (let charIdx = 0; charIdx < chars.length; charIdx++) {
+                      currentText += chars[charIdx];
+                      setMessages((prev) =>
+                        prev.map((msg) => (msg.id === messageId ? { ...msg, content: currentText } : msg))
+                      );
+                      let delay = Math.floor(Math.random() * 8) + 2;
+                      if (['.', '!', '?'].includes(chars[charIdx])) delay = 100;
+                      else if ([',', ';', ':'].includes(chars[charIdx])) delay = 50;
+                      await new Promise((resolve) => setTimeout(resolve, delay));
+                    }
+                    partMessage.content = fullText;
+                    currentList = currentList.map((msg) => msg.id === messageId ? { ...msg, content: fullText } : msg);
+                    
+                    if (i < parts.length - 1) {
+                      await new Promise((resolve) => setTimeout(resolve, 200));
+                    }
+                  }
+                }
+              } catch (sessionErr) {
+                console.error('Failed to load session greeting:', sessionErr);
+              } finally {
+                setTypingAgentId(null);
+                setIsLoading(false);
+              }
+            }
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to load messages:', err);

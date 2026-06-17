@@ -59,16 +59,6 @@ async def list_conversations(
         )
         db.add(conv)
         await db.flush()
-
-        # Add greeting message
-        msg = Message(
-            conversation_id=conv.id,
-            user_id=current_user.id,
-            role="assistant",
-            content=buddy_info[2],
-            sender_type="buddy"
-        )
-        db.add(msg)
         await db.commit()
 
     # 2. Fetch only Buddy conversations for the user

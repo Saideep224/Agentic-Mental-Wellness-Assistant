@@ -632,6 +632,67 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         res_low_conf = detect_specialist_recommendation("we got broke uppp", low_confidence_analysis, history_3)
         self.assertIsNone(res_low_conf)
 
+    @patch("app.utils.llm.generate_chat_completion_with_fallback")
+    async def test_personalized_first_message_system(self, mock_llm):
+        """Verify personalized first message system handles new and returning users correctly."""
+        # Setup mock LLM response
+        mock_llm.return_value = "hey Bob 👋 ||| how's the coding goal going today?"
+
+        # 1. Test first-time user: onboarding_completed is False
+        self.user.onboarding_completed = False
+        await self.db.commit()
+        await self.db.refresh(self.user)
+
+        from app.routes.chat import generate_first_message
+        res1 = await generate_first_message(self.conv_id, self.user, self.db)
+        self.assertIn("before we start, i'd love to get to know you a little better", res1["response"])
+        self.assertIn("i'm Buddy", res1["response"])
+
+        # 2. Test returning user within 4 hours session limit: onboarding_completed is True
+        self.user.onboarding_completed = True
+        await self.db.commit()
+        await self.db.refresh(self.user)
+
+        # Clear old onboarding messages to simulate a returning user with messages
+        from app.models import Message
+        from sqlalchemy import delete
+        await self.db.execute(delete(Message).where(Message.conversation_id == self.conv_id))
+        await self.db.commit()
+
+        # Add a recent message from assistant
+        recent_msg = Message(
+            conversation_id=self.conv_id,
+            user_id=self.user_id,
+            role="assistant",
+            content="I am here for you.",
+            created_at=datetime.now(timezone.utc)
+        )
+        self.db.add(recent_msg)
+        await self.db.commit()
+
+        # Call endpoint - should NOT generate a new greeting (return empty response)
+        res_recent = await generate_first_message(self.conv_id, self.user, self.db)
+        self.assertEqual(res_recent["response"], "")
+
+        # 3. Test returning user after 4 hours session limit: onboarding_completed is True
+        from datetime import timedelta
+        await self.db.execute(delete(Message).where(Message.conversation_id == self.conv_id))
+        await self.db.commit()
+
+        old_msg = Message(
+            conversation_id=self.conv_id,
+            user_id=self.user_id,
+            role="assistant",
+            content="I am here for you.",
+            created_at=datetime.now(timezone.utc) - timedelta(hours=5)
+        )
+        self.db.add(old_msg)
+        await self.db.commit()
+
+        # Call endpoint - should generate a new greeting!
+        res_old = await generate_first_message(self.conv_id, self.user, self.db)
+        self.assertEqual(res_old["response"], "hey Bob 👋 ||| how's the coding goal going today?")
+
 
 if __name__ == "__main__":
     unittest.main()

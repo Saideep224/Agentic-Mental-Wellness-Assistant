@@ -291,7 +291,11 @@ async def _build_conversation_history(
         )
         messages = result.scalars().all()
         history = [
-            {"role": m.role.value, "content": m.content}
+            {
+                "role": m.role.value,
+                "content": m.content,
+                "agent_analysis": m.agent_analysis or {}
+            }
             for m in reversed(messages)
         ]
         # Update in-memory fallback cache
@@ -649,7 +653,17 @@ async def send_message(
 
         # --- Intent-based specialist routing ---
         current_specialists: list = list(conversation.active_specialists or [])
-        specialist_action, action_target = detect_specialist_action(body.message, current_specialists)
+
+        # Extract pending specialist from last assistant message
+        pending_specialist = None
+        if history:
+            for msg in reversed(history):
+                if msg.get("role") == "assistant":
+                    analysis = msg.get("agent_analysis", {})
+                    pending_specialist = analysis.get("suggested_specialist")
+                    break
+
+        specialist_action, action_target = detect_specialist_action(body.message, current_specialists, pending_specialist)
         specialist_action_event = None
         if specialist_action == "invite" and action_target:
             if action_target not in current_specialists:
@@ -1658,10 +1672,10 @@ async def generate_first_message(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Generate and save a personalized first greeting message in an empty conversation,
-    based on the user's personality profile, mood patterns, and past memories.
+    Generate and save a personalized greeting check-in message, time-aware and context-priority-based,
+    for the user conversation when they open the chat.
     """
-    # 1. Verify conversation exists and is empty
+    # 1. Verify conversation exists
     result = await db.execute(
         select(Conversation).where(
             Conversation.id == conversation_id,
@@ -1674,144 +1688,184 @@ async def generate_first_message(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found",
         )
-        
-    msg_count_res = await db.execute(
-        select(func.count(Message.id)).where(Message.conversation_id == conversation_id)
+
+    # 2. Get message count and messages
+    history_res = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.desc())
+        .limit(6)
     )
-    msg_count = msg_count_res.scalar() or 0
-    if msg_count > 0:
-        # Conversation is not empty, return the first message already in it
-        first_msg_res = await db.execute(
-            select(Message)
-            .where(Message.conversation_id == conversation_id)
-            .order_by(Message.created_at.asc())
-            .limit(1)
-        )
-        first_msg = first_msg_res.scalar_one_or_none()
-        if first_msg:
+    history_msgs = list(history_res.scalars().all())
+    msg_count = len(history_msgs)
+
+    # 3. Handle non-onboarded users
+    if not current_user.onboarding_completed:
+        if msg_count == 0:
+            logger.info(f"[FIRST MESSAGE] New user {current_user.id}. Sending welcome + onboarding intro.")
+            reply = "hey 👋 ||| i'm Buddy ||| before we start, i'd love to get to know you a little better 😊"
+            assistant_msg = Message(
+                conversation_id=conversation.id,
+                user_id=current_user.id,
+                role=MessageRole.assistant,
+                content=reply,
+                emotion_detected="neutral",
+                mood_score=0.5,
+                agent_analysis={}
+            )
+            db.add(assistant_msg)
+            conversation.updated_at = datetime.now(timezone.utc)
+            await db.commit()
+            return {
+                "response": reply,
+                "emotionDetected": "neutral",
+                "moodScore": 0.5,
+            }
+        else:
+            # Already has onboarding history, return the first message
+            history_msgs.reverse()
+            first_msg = history_msgs[0]
             return {
                 "response": first_msg.content,
-                "emotionDetected": first_msg.emotion_detected,
-                "moodScore": first_msg.mood_score,
+                "emotionDetected": first_msg.emotion_detected or "neutral",
+                "moodScore": first_msg.mood_score or 0.5,
             }
-            
-    # 2. New user greeting — always a warm welcome, never an onboarding question
-    if not current_user.onboarding_completed:
-        logger.info(f"[FIRST MESSAGE] New user {current_user.id}. Sending welcoming greeting instead of onboarding Q1.")
-        user_name = current_user.name or ""
-        name_part = f", {user_name}" if user_name else ""
-        reply = f"Hey{name_part}! I'm Esona 💙 ||| How are you feeling today? You can tell me anything — I'm here for you. ||| No pressure, just chat whenever you're ready."
 
-        assistant_msg = Message(
-            conversation_id=conversation.id,
-            user_id=current_user.id,
-            role=MessageRole.assistant,
-            content=reply,
-            emotion="Neutral",
-            mood_score=0.5,
-            agent_analysis={}
-        )
-        db.add(assistant_msg)
-        conversation.updated_at = datetime.now(timezone.utc)
-        await db.commit()
+    # 4. Handle onboarded users
+    # Check if this is a new session (msg_count == 0 OR (last_msg is assistant AND > 4 hours old))
+    should_generate = False
+    if msg_count == 0:
+        should_generate = True
+    else:
+        last_msg = history_msgs[0]  # Since it's ordered by desc, the first one is the newest
+        if last_msg.role == "assistant":
+            last_msg_time = last_msg.created_at
+            if last_msg_time.tzinfo is None:
+                last_msg_time = last_msg_time.replace(tzinfo=timezone.utc)
+            time_diff = datetime.now(timezone.utc) - last_msg_time
+            if time_diff.total_seconds() > 4 * 3600:
+                should_generate = True
 
+    if not should_generate:
         return {
-            "response": reply,
-            "emotionDetected": "Neutral",
+            "response": "",
+            "emotionDetected": "neutral",
             "moodScore": 0.5,
         }
 
-    # 2. Gather context
-    # Profile
-    profile = await _get_emotional_profile_dict(db, current_user.id, current_user.name)
+    # 5. Gather rich context for dynamic personalized check-in
     user_name = current_user.name or "friend"
-    personality_str = json.dumps(profile.get("personality_profile", {}))
-    interests_str = json.dumps(profile.get("interests", {}))
     
+    # Fetch UserPersonalProfile data
     from app.services.profile_service import profile_service
-    legacy_context = await profile_service.build_profile_context(db, current_user.id)
-    personalization_block = await profile_service.build_personalization_prompt_block(db, current_user.id)
-    profile_context = f"{legacy_context}\n{personalization_block}"
+    personal_profile = await profile_service.get_profile(db, current_user.id)
     
-    # Recent Mood logs
-    mood_result = await db.execute(
-        select(MoodLog)
-        .where(MoodLog.user_id == current_user.id)
-        .order_by(MoodLog.created_at.desc())
-        .limit(5)
-    )
-    mood_logs = mood_result.scalars().all()
-    recent_moods = [f"Mood: {m.detected_emotion} (score: {m.mood_score}, stress: {m.stress})" for m in mood_logs]
-    recent_moods_str = "\n".join(recent_moods) if recent_moods else "No recent mood logs."
+    profession = "unknown"
+    goals = []
+    interests = []
+    stress_triggers = []
     
-    # Recent Memories
+    if personal_profile:
+        profession = personal_profile.profession or "unknown"
+        goals = personal_profile.goals or []
+        interests = personal_profile.interests or personal_profile.hobbies or []
+        stress_triggers = personal_profile.stress_triggers or []
+
+    # Fetch Knowledge Graph Relations
+    from app.services.knowledge_graph_service import knowledge_graph_service
+    relations = await knowledge_graph_service.retrieve_relationships(db, current_user.id)
+    relations_list = [f"({r.subject}, {r.predicate}, {r.object})" for r in relations[:20]]
+    relations_str = "\n".join(relations_list) if relations_list else "No knowledge graph relationships."
+
+    # Fetch Memories (excluding conversation summaries)
     from app.models.memory import Memory
     memory_result = await db.execute(
         select(Memory)
         .where(Memory.user_id == current_user.id)
         .order_by(Memory.created_at.desc())
-        .limit(5)
+        .limit(10)
     )
     memories = memory_result.scalars().all()
-    memories_list = [f"- {m.memory_summary} (Patterns: {m.behavior_patterns})" for m in memories if m.metadata_json.get("source") != "conversation_summary"]
+    memories_list = [
+        f"- {m.memory_summary} (Patterns: {m.behavior_patterns})"
+        for m in memories
+        if (m.metadata_json or {}).get("source") != "conversation_summary"
+    ]
     memories_str = "\n".join(memories_list) if memories_list else "No past memories recorded."
 
-    # Preferred texting style
-    reply_style = profile.get("personality_profile", {}).get("reply_style", {})
-    style_preference = (
-        f"Paragraph preference: {reply_style.get('paragraph_preference', 'short')}, "
-        f"Emoji usage: {reply_style.get('emoji_usage', 'medium')}, "
-        f"Tone: {reply_style.get('communication_style', 'gentle')}"
-    )
+    # Fetch last 6 messages
+    history_msgs.reverse()  # oldest first
+    recent_messages_str = "\n".join(
+        f"{m.role}: {m.content}" for m in history_msgs
+    ) if history_msgs else "No recent messages."
 
-    # 3. Create prompt
-    prompt = f"""You are Esona, a deeply supportive, emotionally intelligent AI wellness companion for students.
-Your job is to generate a personalized first greeting message (opening check-in) for the user.
-Avoid repeating the exact same message every time. Be creative, casual, warm, and mirror a human texting style.
+    # Time-aware calculation (Indian local offset UTC+5:30)
+    from datetime import timedelta
+    local_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    hour = local_now.hour
+    if 5 <= hour < 12:
+        time_of_day = "Morning"
+    elif 12 <= hour < 17:
+        time_of_day = "Afternoon"
+    else:
+        time_of_day = "Night"
 
-============================================
-{profile_context}
-============================================
-USER PROFILE & CONTEXT (LEGACY):
+    # 6. Build LLM prompt
+    prompt = f"""You are Buddy, the user's close friend and empathetic wellness companion.
+Your task is to generate a highly personalized, warm, and natural first greeting message (check-in) for the user.
+Every session check-in must feel unique, caring, and reflect that you remember their life, goals, and interests.
+
+=== TIME-AWARE RULES ===
+Current time of day is: {time_of_day}
+- Morning (5am-12pm): Include a morning-oriented friendly greeting like "good morning ☀️" or "morning!".
+- Afternoon (12pm-5pm): Use a casual greeting like "hey 👋" or "hey there".
+- Night (5pm-5am): Check in with something like "still awake? 😭" or "long day?" or "hey, how was your day?" depending on the context.
+
+=== CONTEXT PRIORITY ORDER ===
+You must check the user's context and select the highest priority topic available:
+1. Active Emotional Concerns: If recent messages or memories show they are going through a tough time (e.g. breakup, high anxiety, loneliness), ask how they are holding up today.
+2. Recent Discussions: If they recently mentioned a specific event, exam, meeting, or project, ask how it went.
+3. Goals: Reference one of their goals (e.g., finding an internship, coding, learning Japanese, fitness) and ask for updates.
+4. Hobbies/Interests: Ask about one of their hobbies or interests (e.g. video editing, gaming, anime) in a friendly way.
+5. General Greeting: If no specific context exists, just check in on how their day is going.
+
+=== BEHAVIOR RULES ===
+1. NEVER introduce yourself (DO NOT say "I'm Buddy" or "Hi, I'm Buddy" or "Hi, I'm Esona"). The user already knows you.
+2. Speak like a close friend texting — informal, lowercase-friendly, warm, using natural emojis.
+3. STRICT LENGTH LIMIT: Under no circumstances exceed 2 short messages.
+4. You MUST split your thoughts using the delimiter " ||| " (with spaces around it) into exactly 1 or 2 parts. Each part should be a single short line.
+   - Example 1: "hey {user_name} 👋 ||| how's the Esona project going?"
+   - Example 2: "still awake? 😭 ||| how did that meeting go?"
+   - Example 3: "good morning ☀️ ||| how are you holding up after yesterday?"
+5. Do NOT ask generic robotic assistant questions like "How can I help you today?".
+
+USER DETAILS:
 - Name: {user_name}
-- Personality: {personality_str}
-- Interests: {interests_str}
-- Style Preference: {style_preference}
-- Recent Mood Logs:
-{recent_moods_str}
-- Relevant Memories / Past Context:
+- Profession: {profession}
+- Goals: {goals}
+- Hobbies/Interests: {interests}
+- Stress Triggers: {stress_triggers}
+- Recent Memories:
 {memories_str}
+- Knowledge Graph Relationships:
+{relations_str}
+- Recent Conversation Messages:
+{recent_messages_str}
 
-============================================
-BEHAVIOR & GREETING VARIATION RULES:
-1. Make your greeting feel natural, warm, and highly personalized.
-2. DO NOT sound like a therapy assistant. Ban robotic templates ("I understand...", "How can I help you today?").
-3. Choose one of the following variation themes depending on context:
-   - "Supportive Check-in": If recent mood logs show high stress/anxiety/sadness, check in on how they are feeling now.
-   - "Continuation Check-in": If memories exist, reference a topic they discussed recently (e.g. studies, exams, sleep, a friend) naturally.
-   - "Warm Opening": If there are no recent stress triggers or memories, greet them warmly, reference one of their interests, and ask how their day is going.
-4. COZY CHAT START: Since the user has completed onboarding, greet them using their name and some of their profile/onboarding context naturally.
-   - For example: "Hey Sai 👋 I remember you're a college student. How's everything going today?" or "Hey Bob! How has work been lately?"
-   - Do NOT ask any onboarding or personalization questions in this initial greeting. Keep it warm and welcoming.
-5. You MUST split your response into 2 to 3 separate human-like thoughts using the delimiter " ||| " (with spaces around it).
+Response:"""
 
-First Message:"""
-
-    # 4. Generate first message
     try:
         from app.utils.llm import generate_chat_completion_with_fallback
         raw_response = await generate_chat_completion_with_fallback(
             messages=[{"role": "system", "content": prompt}],
             temperature=0.75,
-            max_tokens=300
+            max_tokens=150
         )
     except Exception as e:
         logger.error(f"Failed to generate personalized first message: {e}", exc_info=True)
-        raw_response = f"Hey {user_name}! 👋 ||| Just checking in to see how you're doing today. ||| What's on your mind?"
+        raw_response = f"hey {user_name} 👋 ||| just wanted to check in and see how you're doing today."
 
-    # 5. Save message to DB
-    logger.info(f"[TYPE LOG] generate_first_message: conversation_id type: {type(conversation.id)}, value: {conversation.id}")
-    logger.info(f"[TYPE LOG] generate_first_message: user_id type: {type(current_user.id)}, value: {current_user.id}")
+    # 7. Save greeting to DB
     assistant_msg = Message(
         conversation_id=conversation.id,
         user_id=current_user.id,

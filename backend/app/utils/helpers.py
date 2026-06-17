@@ -79,7 +79,7 @@ def get_speculative_transition(message: str) -> str:
     return "typing"
 
 
-def detect_specialist_action(message: str, active_specialists: list[str]) -> tuple[str | None, str | None]:
+def detect_specialist_action(message: str, active_specialists: list[str], pending_specialist: str | None = None) -> tuple[str | None, str | None]:
     """
     Analyzes user message for specialist invite/removal intent.
     Returns: (action, specialist_id)
@@ -118,23 +118,14 @@ def detect_specialist_action(message: str, active_specialists: list[str]) -> tup
                 return "remove", active_specialists[0]
                 
     # 2. Check for invite intent
-    invite_triggers = [
-        "connect", "invite", "add", "call", "bring in", "summon", 
-        "get", "talk to", "need", "ask", "chat with", "consult"
-    ]
+    confirm_words = ["yes", "sure", "okay", "connect", "bring them in", "add them", "invite them", "yeah", "ok", "yep", "go ahead", "do it", "bring him in", "bring her in", "add him", "add her", "invite him", "invite her", "please", "pls"]
     
-    is_invite = any(trigger in msg for trigger in invite_triggers)
-    
-    if is_invite or any(kw in msg for spec_list in spec_keywords.values() for kw in spec_list):
-        # Find which specialist they are referring to
-        for spec_id, keywords in spec_keywords.items():
-            if any(kw in msg for kw in keywords):
-                # Only invite if they aren't already active
-                if spec_id not in active_specialists:
-                    # Let's verify it's a positive intent (not "don't connect Lex")
-                    if not is_removal:
-                        return "invite", spec_id
-                        
+    if pending_specialist:
+        # Check if message contains confirmation
+        is_confirm = any(word in msg.split() for word in confirm_words) or (msg in ["y", "ok"])
+        if is_confirm and not is_removal:
+            return "invite", pending_specialist
+
     return None, None
 
 

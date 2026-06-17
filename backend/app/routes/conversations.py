@@ -285,19 +285,17 @@ async def connect_specialist(
     topic = spec_data["topic"]
     user_name = current_user.name or "there"
 
-    # Generate Buddy's 4 intro messages
+    # Generate Buddy's intro messages
     buddy_contents = [
         "hey 😊",
-        f"i think {spec_name} can explain this better than me",
-        f"i gave {pronoun} the context already",
-        f"{spec_name}, {user_name} has been worried about their {topic} lately"
+        f"i think {spec_name} can help here",
+        "i've already shared the context"
     ]
 
-    # Generate Specialist's 3 greeting messages
+    # Generate Specialist's greeting messages
     spec_contents = [
         f"hey {user_name} 👋",
-        "Buddy told me a little about what's going on",
-        "can you tell me how long this has been happening?"
+        "what's been going on?"
     ]
 
     base_time = datetime.now(timezone.utc)

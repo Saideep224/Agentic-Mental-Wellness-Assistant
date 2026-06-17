@@ -9,7 +9,7 @@ SPECIALIST_REGISTRY = {
         "name": "Lex",
         "emoji": "⚖️",
         "role": "Legal Support",
-        "preferred_model": "gemini-2.5-flash",
+        "preferred_model": "gpt-4o",
         "status": "online",
         "greeting": "Good to be here. I'm Lex — Legal Support. Walk me through the situation and I'll identify your options.",
         "system_prompt": (
@@ -98,7 +98,7 @@ SPECIALIST_REGISTRY = {
         "name": "Officer Ray",
         "emoji": "👮",
         "role": "Safety & Cyber Support",
-        "preferred_model": "gpt-4o-mini",
+        "preferred_model": "gpt-4o",
         "status": "online",
         "greeting": "Officer Ray here. What's the situation? Tell me what happened — I'll tell you exactly what to do.",
         "system_prompt": (
@@ -144,7 +144,7 @@ SPECIALIST_REGISTRY = {
         "name": "Techie",
         "emoji": "💻",
         "role": "Technical Support",
-        "preferred_model": "deepseek-chat",
+        "preferred_model": "openrouter/anthropic/claude-3.5-sonnet",
         "status": "online",
         "greeting": "Hey! Techie here. What's broken? Share the error and we'll debug it together.",
         "system_prompt": (
@@ -280,7 +280,7 @@ SPECIALIST_REGISTRY = {
         "name": "Fitness Coach",
         "emoji": "🏋️",
         "role": "Fitness Support",
-        "preferred_model": "gemini-2.5-flash",
+        "preferred_model": "gemini-2.5-pro",
         "status": "online",
         "greeting": "Let's go! 💪 I'm your Fitness Coach. What are we working on — building strength, losing weight, or just getting more active?",
         "system_prompt": (
@@ -325,7 +325,7 @@ SPECIALIST_REGISTRY = {
         "name": "Relationship Coach",
         "emoji": "💜",
         "role": "Relationship Support",
-        "preferred_model": "gpt-4o",
+        "preferred_model": "gemini-2.5-pro",
         "status": "online",
         "greeting": "Hey, I'm your Relationship Coach 💜 I'm here to help you navigate conflicts, heartbreak, or any relationship issues. Let's talk about what's on your mind.",
         "system_prompt": (

@@ -171,7 +171,7 @@ def detect_specialist_recommendation(message: str, agent_analysis: dict, history
         keywords = {
             "lex": ["legal", "lawyer", "court", "sue", "property dispute", "land dispute", "contract", "police case", "family property", "agreement", "lease", "tenant", "advocate", "litigation"],
             "maya": ["health", "symptom", "pain", "medical", "doctor", "disease", "illness", "headache", "chest pain", "diagnosis", "health anxiety", "sick", "infection", "cough", "fever", "physician"],
-            "ray": ["hacked", "stalker", "cyber", "scam", "blackmail", "harass", "threat", "bully", "online safety", "scammed", "stole my account", "compromised", "phishing", "leak"],
+            "ray": ["hacked", "stalker", "cyber", "scam", "blackmail", "harass", "threat", "bully", "online safety", "scammed", "stole my account", "compromised", "phishing", "leak", "police"],
             "techie": ["code", "bug", "programming", "git", "database error", "broken phone", "windows update", "server down", "software crash", "tech support", "ide", "laptop", "computer", "compiler"],
             "mentor": ["exam", "study", "failing class", "test stress", "academic pressure", "semester", "syllabus", "procrastinating study", "homework", "grades", "school", "college", "university", "midterm"],
             "fitness": ["workout", "exercise", "weight loss", "nutrition", "diet", "gym", "fitness", "calories", "posture", "muscle", "active habits", "cardio", "sleep schedule", "stretching", "running"]
@@ -746,9 +746,9 @@ async def send_message(
                 if should_intervene:
                     # 3. Inject specialist response into Buddy's graph as system note and dialog turn
                     if reason == "technical":
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend."
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend. Do NOT introduce the specialist or say you connected them (you already did). Just briefly add your emotional support."
                     else:
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts. Do NOT introduce the specialist or say you connected them (you already did). Just briefly add your emotional support."
                     
                     updated_history = history + [
                         {"role": "system", "content": system_note},
@@ -798,7 +798,10 @@ async def send_message(
                 if suggested_specialist:
                     from app.agents.specialist_registry import SPECIALIST_REGISTRY
                     spec_info = SPECIALIST_REGISTRY[suggested_specialist]
-                    rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
+                    if suggested_specialist == "ray":
+                        rec_suffix = "\n\nOfficer Ray can help with reporting, cybercrime and complaint procedures. want me to bring him in?"
+                    else:
+                        rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
                     full_response += rec_suffix
                     agent_analysis["suggested_specialist"] = suggested_specialist
 
@@ -1032,7 +1035,17 @@ async def generate_and_persist_sse_response(
 
             # --- Intent-based specialist routing (SSE path) ---
             current_specialists: list = list((conversation.active_specialists if conversation else None) or [])
-            specialist_action, action_target = detect_specialist_action(message, current_specialists)
+
+            # Extract pending specialist from last assistant message
+            pending_specialist = None
+            if history:
+                for msg in reversed(history):
+                    if msg.get("role") == "assistant":
+                        analysis = msg.get("agent_analysis", {})
+                        pending_specialist = analysis.get("suggested_specialist")
+                        break
+
+            specialist_action, action_target = detect_specialist_action(message, current_specialists, pending_specialist)
             sse_specialist_action_event = None
             if conversation:
                 if specialist_action == "invite" and action_target:
@@ -1116,9 +1129,9 @@ async def generate_and_persist_sse_response(
                 if should_intervene:
                     # 3. Inject specialist response into Buddy's graph as system note and dialog turn
                     if reason == "technical":
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend."
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend. Do NOT introduce the specialist or say you connected them (you already did). Just briefly add your emotional support."
                     else:
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts. Do NOT introduce the specialist or say you connected them (you already did). Just briefly add your emotional support."
                     
                     updated_history = history + [
                         {"role": "system", "content": system_note},
@@ -1168,7 +1181,10 @@ async def generate_and_persist_sse_response(
                 if suggested_specialist:
                     from app.agents.specialist_registry import SPECIALIST_REGISTRY
                     spec_info = SPECIALIST_REGISTRY[suggested_specialist]
-                    rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
+                    if suggested_specialist == "ray":
+                        rec_suffix = "\n\nOfficer Ray can help with reporting, cybercrime and complaint procedures. want me to bring him in?"
+                    else:
+                        rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
                     full_response += rec_suffix
                     agent_analysis["suggested_specialist"] = suggested_specialist
 

@@ -20,26 +20,28 @@ KNOWLEDGE_GRAPH_EXTRACTION_PROMPT = """You are a Knowledge Graph Relationship Ex
 Extract semantic triples representing facts about the user from the user's message.
 
 Instructions:
-1. Identify facts about the user's preferences, hobbies, interests, goals, stress triggers, coping mechanisms, profession, support system, or communication style.
+1. Identify facts about the user's current situation, thoughts, emotions, and life details.
 2. Format them as (subject, predicate, object) triples.
 3. The subject MUST be "{user_name}".
-4. The predicate should be a singular term representing the relationship type. Use camelCase or UPPERCASE:
-   - Likes (for preferences, interests, favorites)
-   - Goal (for aspirations, targets, focus areas)
-   - StressTrigger (for stressors, anxieties, fears)
-   - Hobby (for active recreational pastimes)
-   - CommunicationStyle (for texting preferences)
-   - Profession (for jobs or student states)
-   - CopingMechanism (for anxiety reduction or grounding methods)
-   - SupportSystem (for trusted contacts)
-5. The object should be a short, clean, capitalized entity or phrase (e.g. "Anime", "Internship", "Exams", "Editing", "Friendly").
+4. The predicate should be a singular term representing the relationship type. You MUST use one of these exact predicates:
+   - Emotion (the user's current or stated emotional state, e.g. Anger, Sadness, Joy)
+   - Person (any person mentioned in the user's life, e.g. Girlfriend, Father, Boss, Friend)
+   - Relationship (the type of relationship, e.g. Toxic, Married, Distant, Boyfriend)
+   - Goal (aspirations, targets, focus areas, e.g. Find Job, Pass Exam, Stay Calm)
+   - Problem (issues, struggles, stressors, e.g. Financial Distress, Sleep Issues, Toxic Girlfriend)
+   - LifeEvent (significant life events, e.g. Breakup, Graduation, Job Loss, New Job)
+   - Health (physical or mental health states/symptoms, e.g. Chronic Pain, Anxiety, ADHD)
+   - Finance (financial status, issues, or goals, e.g. Debt, Broke, Save Money)
+   - Education (educational details, e.g. CS Student, College, University, Exams)
+5. The object should be a short, clean, capitalized entity or phrase (e.g. "Toxic Girlfriend", "Anxiety", "CS Student", "Breakup").
 6. Provide a confidence score between 0.0 and 1.0 for each relationship.
 
 Output ONLY a valid JSON object matching this schema:
 {{
   "relations": [
-    {{"subject": "{user_name}", "predicate": "Likes", "object": "Anime", "confidence": 0.95}},
-    {{"subject": "{user_name}", "predicate": "Hobby", "object": "Editing", "confidence": 0.90}}
+    {{"subject": "{user_name}", "predicate": "Problem", "object": "Toxic Girlfriend", "confidence": 0.95}},
+    {{"subject": "{user_name}", "predicate": "Finance", "object": "Lost All Money", "confidence": 0.90}},
+    {{"subject": "{user_name}", "predicate": "Emotion", "object": "Anger", "confidence": 0.85}}
   ]
 }}
 """

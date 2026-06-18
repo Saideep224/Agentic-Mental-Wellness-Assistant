@@ -82,50 +82,9 @@ def get_speculative_transition(message: str) -> str:
 def detect_specialist_action(message: str, active_specialists: list[str], pending_specialist: str | None = None) -> tuple[str | None, str | None]:
     """
     Analyzes user message for specialist invite/removal intent.
-    Returns: (action, specialist_id)
-    where action can be 'invite', 'remove', or None.
+    DISABLED: Automatic expert switching is disabled. Buddy never auto-connects.
+    Always returns (None, None).
     """
-    msg = (message or "").lower().strip()
-    
-    # Define mapping of keywords to specialist IDs
-    spec_keywords = {
-        "lex": ["lex", "lawyer", "legal", "attorney"],
-        "maya": ["maya", "doctor", "dr. maya", "dr maya", "physician", "health support", "med"],
-        "ray": ["ray", "officer ray", "officer", "cop", "security", "safety", "cyber"],
-        "techie": ["techie", "tech", "programmer", "developer", "coding", "debugger"],
-        "mentor": ["mentor", "study", "academic", "tutor", "class"],
-        "finance": ["finance", "money", "budget", "financial"],
-        "fitness": ["fitness", "workout", "gym", "trainer", "exercise"]
-    }
-    
-    # 1. Check for removal intent
-    removal_triggers = [
-        "remove", "disconnect", "leave", "go away", "don't need", "dont need",
-        "can leave", "ask to leave", "thanks", "thank you", "goodbye", "bye", "dismiss"
-    ]
-    
-    is_removal = any(trigger in msg for trigger in removal_triggers)
-    
-    if is_removal:
-        # Check if they mention an active specialist
-        for spec_id in active_specialists:
-            keywords = spec_keywords.get(spec_id, [spec_id])
-            if any(kw in msg for kw in keywords):
-                return "remove", spec_id
-        # Fallback: if they just say "disconnect all" or "remove specialist" or "can leave"
-        if "specialist" in msg or "specialists" in msg or "disconnect" in msg or "remove" in msg or "leave" in msg:
-            if active_specialists:
-                return "remove", active_specialists[0]
-                
-    # 2. Check for invite intent
-    confirm_words = ["yes", "sure", "okay", "connect", "bring them in", "add them", "invite them", "yeah", "ok", "yep", "go ahead", "do it", "bring him in", "bring her in", "add him", "add her", "invite him", "invite her", "please", "pls"]
-    
-    if pending_specialist:
-        # Check if message contains confirmation
-        is_confirm = any(word in msg.split() for word in confirm_words) or (msg in ["y", "ok"])
-        if is_confirm and not is_removal:
-            return "invite", pending_specialist
-
     return None, None
 
 

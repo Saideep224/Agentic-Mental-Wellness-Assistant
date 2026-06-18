@@ -61,11 +61,10 @@ async def list_conversations(
         await db.flush()
         await db.commit()
 
-    # 2. Fetch only Buddy conversations for the user
+    # 2. Fetch all conversations for the user (both Buddy and specialists)
     conv_query = await db.execute(
         select(Conversation).where(
-            Conversation.user_id == current_user.id,
-            Conversation.agent_id == "buddy"
+            Conversation.user_id == current_user.id
         )
     )
     all_convs = conv_query.scalars().all()
@@ -140,9 +139,18 @@ async def create_conversation(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new empty conversation."""
-    logger.info("[CONVERSATION CREATE] user_id=%s title=%s", current_user.id, body.title)
+    agent_id = body.agent_id or "buddy"
+    title = body.title
+    
+    # Auto-set title based on agent name if it's default or not specified
+    if agent_id != "buddy" and (not title or title == "New Conversation" or title == "New Chat"):
+        from app.agents.specialist_registry import SPECIALIST_REGISTRY
+        if agent_id in SPECIALIST_REGISTRY:
+            title = SPECIALIST_REGISTRY[agent_id]["name"]
+            
+    logger.info("[CONVERSATION CREATE] user_id=%s title=%s agent_id=%s", current_user.id, title, agent_id)
     try:
-        conv = Conversation(user_id=current_user.id, title=body.title, agent_id="buddy")
+        conv = Conversation(user_id=current_user.id, title=title, agent_id=agent_id)
         db.add(conv)
         await db.flush()
         await db.commit()

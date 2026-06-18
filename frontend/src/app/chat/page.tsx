@@ -200,57 +200,26 @@ export default function ChatPage() {
   }, [mounted]);
 
   const handleConnectSpecialist = async (specialistId: string) => {
-    if (!activeConversationId) return;
     const token = api.getToken();
     if (!token) return;
 
     setConnectingSpecialistId(specialistId);
 
     try {
-      const newMsgs = await api.connectSpecialist(activeConversationId, specialistId, token);
-      
-      // Update conversations first
-      await loadConversations();
-      
-      setConnectingSpecialistId(null);
-      
-      // Show "<Agent Name> joined." toast banner for 2 seconds
-      const specName = agentSidebarConfig[specialistId]?.name || specialistId;
-      setTempSystemEvent({ text: `${specName} joined.`, id: Date.now().toString() });
-      setTimeout(() => {
-        setTempSystemEvent(null);
-      }, 2000);
-
-      // Sequentially stagger appending the connect messages
-      let currentIdx = 0;
-      const appendNextMessage = () => {
-        if (currentIdx >= newMsgs.length) {
-          setStaggerTypingAgentId(null);
-          focusInput();
-          return;
-        }
-
-        const msg = newMsgs[currentIdx];
-        const delay = msg.sender_type === 'buddy'
-          ? Math.random() * (1500 - 500) + 500  // 500-1500ms
-          : Math.random() * (2000 - 800) + 800; // 800-2000ms
-
-        setStaggerTypingAgentId(msg.sender_type || null);
-
-        setTimeout(() => {
-          setMessages((prev) => [...prev, {
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          }]);
-          currentIdx++;
-          appendNextMessage();
-        }, delay);
-      };
-
-      appendNextMessage();
-
+      // Find if a conversation with this expert already exists in state
+      const existingConv = conversations.find(c => c.agent_id === specialistId);
+      if (existingConv) {
+        setActiveConversationId(existingConv.id);
+      } else {
+        // If it does not exist, create it via API
+        const config = agentSidebarConfig[specialistId] || { name: specialistId };
+        const res = await api.createConversation(token, config.name, specialistId);
+        setConversations((prev) => [res, ...prev]);
+        setActiveConversationId(res.id);
+      }
     } catch (err) {
-      console.error('Failed to connect specialist:', err);
+      console.error('Failed to open expert conversation:', err);
+    } finally {
       setConnectingSpecialistId(null);
     }
   };
@@ -402,8 +371,15 @@ export default function ChatPage() {
                 {/* Contacts list */}
                 <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                   {(() => {
-                    const buddyConvo = conversations.find((c) => c.agent_id === 'buddy');
-                    const specialists = conversations.filter((c) => c.agent_id && c.agent_id !== 'buddy');
+                    const buddyConvos = conversations.filter((c) => c.agent_id === 'buddy' || !c.agent_id);
+                    
+                    const EXPERTS_LIST = [
+                      { id: 'maya', name: 'Dr. Maya', role: 'Health Support', emoji: '👨‍⚕️', gradient: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'rgba(16, 185, 129, 0.3)' },
+                      { id: 'finance', name: 'Finance Coach', role: 'Financial Support', emoji: '💰', gradient: 'linear-gradient(135deg, #db2777 0%, #be185d 100%)', border: 'rgba(236, 72, 153, 0.3)' },
+                      { id: 'mentor', name: 'Career Coach', role: 'Career Support', emoji: '📚', gradient: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)', border: 'rgba(139, 92, 246, 0.3)' },
+                      { id: 'relationship', name: 'Relationship Coach', role: 'Relationship Support', emoji: '💜', gradient: 'linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)', border: 'rgba(168, 85, 247, 0.3)' },
+                      { id: 'lex', name: 'Legal Advisor', role: 'Legal Support', emoji: '⚖️', gradient: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)', border: 'rgba(245, 158, 11, 0.3)' },
+                    ];
 
                     const renderContactItem = (convo: Conversation) => {
                       const info = agentSidebarConfig[convo.agent_id || 'buddy'] || {
@@ -479,18 +455,99 @@ export default function ChatPage() {
                       );
                     };
 
+                    const renderStaticExpertItem = (expert: typeof EXPERTS_LIST[0]) => {
+                      // Check if a conversation for this expert already exists
+                      const existingConv = conversations.find((c) => c.agent_id === expert.id);
+                      const isActive = existingConv ? activeConversationId === existingConv.id : false;
+                      
+                      const handleSelect = async () => {
+                        if (existingConv) {
+                          setActiveConversationId(existingConv.id);
+                        } else {
+                          // Create conversation on demand
+                          try {
+                            const token = getToken();
+                            if (!token) return;
+                            const res = await api.createConversation(token, expert.name, expert.id);
+                            setConversations((prev) => [res, ...prev]);
+                            setActiveConversationId(res.id);
+                          } catch (err) {
+                            console.error('Failed to create expert conversation:', err);
+                          }
+                        }
+                      };
+
+                      return (
+                        <div
+                          key={expert.id}
+                          onClick={handleSelect}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer border"
+                          style={{
+                            background: isActive
+                              ? 'rgba(56, 189, 248, 0.08)'
+                              : 'transparent',
+                            borderColor: isActive
+                              ? 'rgba(56, 189, 248, 0.15)'
+                              : 'transparent',
+                          }}
+                        >
+                          {/* Avatar */}
+                          <div className="relative flex-shrink-0">
+                            <div
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-lg select-none"
+                              style={{
+                                background: expert.gradient,
+                                boxShadow: isActive ? `0 0 10px ${expert.border}` : 'none',
+                              }}
+                            >
+                              {expert.emoji}
+                            </div>
+                            <div 
+                              className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-[#090d1a] bg-emerald-500"
+                              title="Online"
+                            />
+                          </div>
+
+                          {/* Details */}
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-semibold text-xs text-[var(--text-primary)] truncate">
+                                {expert.name}
+                              </span>
+                              {existingConv?.lastMessageTimestamp && (
+                                <span className="text-[9px] text-[var(--text-muted)] flex-shrink-0">
+                                  {formatDate(existingConv.lastMessageTimestamp)}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[9px] text-[var(--text-muted)] font-medium -mt-0.5">
+                              {expert.role}
+                            </span>
+                            {existingConv?.lastMessage ? (
+                              <p className="text-[11px] text-[var(--text-muted)] truncate mt-0.5 leading-tight">
+                                {existingConv.lastMessage}
+                              </p>
+                            ) : (
+                              <p className="text-[11px] text-[var(--text-muted)] italic truncate mt-0.5 leading-tight opacity-50">
+                                Tap to open chat
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    };
+
                     return (
                       <>
-                        {buddyConvo && renderContactItem(buddyConvo)}
+                        <div className="mb-2 px-3 text-[10px] font-bold tracking-wider uppercase text-sky-400 select-none opacity-80">
+                          My Chats:
+                        </div>
+                        {buddyConvos.map((c) => renderContactItem(c))}
 
-                        {specialists.length > 0 && (
-                          <>
-                            <div className="mt-5 mb-2 px-3 text-[10px] font-bold tracking-wider uppercase text-sky-400 select-none opacity-80">
-                              Suggested Support Agents:
-                            </div>
-                            {specialists.map((c) => renderContactItem(c))}
-                          </>
-                        )}
+                        <div className="mt-5 mb-2 px-3 text-[10px] font-bold tracking-wider uppercase text-sky-400 select-none opacity-80">
+                          Experts:
+                        </div>
+                        {EXPERTS_LIST.map((expert) => renderStaticExpertItem(expert))}
                       </>
                     );
                   })()}
@@ -741,13 +798,13 @@ export default function ChatPage() {
                               >
                                 {connectingSpecialistId === suggestedSpec ? (
                                   <span className="flex items-center gap-0.5">
-                                    Connecting {agentSidebarConfig[suggestedSpec]?.name || suggestedSpec}
+                                    Opening {agentSidebarConfig[suggestedSpec]?.name || suggestedSpec}
                                     <span className="animate-bounce">.</span>
                                     <span className="animate-bounce [animation-delay:0.2s]">.</span>
                                     <span className="animate-bounce [animation-delay:0.4s]">.</span>
                                   </span>
                                 ) : (
-                                  'Connect'
+                                  'Open Chat'
                                 )}
                               </button>
                               <button

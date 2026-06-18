@@ -68,8 +68,12 @@ export async function getConversationMessages(conversationId: string, token: str
   }));
 }
 
-export async function createConversation(token: string): Promise<Conversation> {
-  const data = await apiPost<any>('/api/chat/conversations', {}, token);
+export async function createConversation(
+  token: string,
+  title?: string,
+  agentId?: string
+): Promise<Conversation> {
+  const data = await apiPost<any>('/api/chat/conversations', { title, agent_id: agentId }, token);
   return {
     id: data.id,
     title: data.title,

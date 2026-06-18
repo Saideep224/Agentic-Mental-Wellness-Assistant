@@ -354,6 +354,15 @@ async def _get_emotional_profile_dict(
                 "personality_profile": profile.personality_profile or {},
             })
             
+        # Dynamically load / restore onboarding & profile facts from Supabase (crucial for personalization persistence)
+        try:
+            from app.services.profile_service import profile_service
+            p_data = await profile_service.get_personalization_data(db, user_id)
+            if p_data and "raw" in p_data:
+                profile_dict["personality_profile"] = p_data["raw"]
+        except Exception as p_err:
+            logger.warning(f"Failed to fetch consolidated personalization data: {p_err}")
+
         # Update in-memory fallback cache
         _profile_cache[str(user_id)] = profile_dict
         return profile_dict

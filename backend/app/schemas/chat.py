@@ -66,6 +66,7 @@ class ConversationResponse(BaseModel):
 class ConversationCreateRequest(BaseModel):
     """Body for POST /api/chat/conversations."""
     title: str = Field(default="New Conversation", max_length=512)
+    agent_id: str | None = Field(default="buddy", max_length=50)
 
 
 class ConversationUpdateRequest(BaseModel):

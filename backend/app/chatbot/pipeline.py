@@ -52,7 +52,7 @@ _RESPONSE_CACHE_SIZE = 20
 
 # ── Helper: Retrieve Conversation Summary ─────────────────────
 async def _get_conversation_summary(db: AsyncSession, user_id: str, conversation_id: str) -> str | None:
-    """Query the memories table for a conversation summary memory with a 600ms timeout."""
+    """Query the memories table for a conversation summary memory with a 3.0s timeout."""
     try:
         from app.models.memory import Memory
         
@@ -67,7 +67,7 @@ async def _get_conversation_summary(db: AsyncSession, user_id: str, conversation
                     return m.memory_summary
             return None
 
-        return await asyncio.wait_for(_query(), timeout=0.6)
+        return await asyncio.wait_for(_query(), timeout=3.0)
     except Exception as e:
         logger.warning(f"Failed to fetch conversation summary (timeout or error): {e}")
     return None
@@ -91,7 +91,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             from app.agents import memory_agent
             result = await asyncio.wait_for(
                 memory_agent.retrieve_context(db, user_id, user_message, limit=5),
-                timeout=0.8
+                timeout=3.0
             )
             memories = result.get("memories", [])
             patterns = result.get("emotional_patterns", {})
@@ -112,6 +112,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     # 1. Run MentalBERT Emotion Classification and save to db (happens inside the service)
     detected_emotion = "Neutral"
     confidence_score = 1.0
+    blended_scores = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     if user_id:
         from app.database import async_session_maker
         close_temp_db = False
@@ -132,6 +133,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             )
             detected_emotion = emotion_res.get("detected_emotion", "Neutral")
             confidence_score = emotion_res.get("confidence_score", 1.0)
+            blended_scores = emotion_res.get("blended_scores", [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
             
             # Run Profile Fact Extraction and update db
             try:
@@ -249,25 +251,10 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     # Execute logical agents to format their states
     p_data = personality_agent.analyze(analysis)
     
-    from app.services.mentalbert_service import mentalbert_service
-    if mentalbert_service.initialized:
-        emotion_scores = mentalbert_service.predict(user_message)
-        e_data = emotion_agent.analyze(emotion_scores)
-        detected_emotion = e_data.get("primary_emotion", "Neutral").capitalize()
-        probs_list = []
-        try:
-            import torch
-            if torch.is_tensor(emotion_scores):
-                probs_list = emotion_scores.tolist()[0]
-        except Exception:
-            pass
-        if not probs_list and isinstance(emotion_scores, list):
-            probs_list = emotion_scores
-        confidence_score = max(probs_list) if probs_list else 1.0
-    else:
-        # Fall back to high-quality LLM-based agent analysis
-        e_data = emotion_agent.analyze(analysis)
-        # detected_emotion and confidence_score remain synced with emotion_service results
+    # Pass the hybrid blended scores list directly to the emotion agent to format e_data
+    e_data = emotion_agent.analyze(blended_scores)
+    # Ensure detected_emotion is aligned with e_data primary emotion
+    detected_emotion = e_data.get("primary_emotion", "Neutral").capitalize()
         
     b_data = behavior_agent.analyze(analysis)
     g_data = growth_agent.analyze(analysis)
@@ -356,7 +343,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
 
 # ── 2. Memory Agent ───────────────────────────────────────────
 async def memory_agent_node(state: AgentState) -> dict:
-    """Use Memory Agent to recall context and emotional patterns from DB with an 800ms timeout."""
+    """Use Memory Agent to recall context and emotional patterns from DB with an 3.0s timeout."""
     user_message = state.get("user_message", "")
     user_id = state.get("user_id", "")
 
@@ -367,10 +354,10 @@ async def memory_agent_node(state: AgentState) -> dict:
         close_db = True
 
     try:
-        # Retrieve memories and patterns using the memory agent (limit top 5 to optimize tokens) with an 800ms timeout
+        # Retrieve memories and patterns using the memory agent (limit top 5 to optimize tokens) with a 3.0s timeout
         result = await asyncio.wait_for(
             memory_agent.retrieve_context(db, user_id, user_message, limit=5),
-            timeout=0.8
+            timeout=3.0
         )
         retrieved_memories = result.get("memories", [])
         patterns = result.get("emotional_patterns", {})

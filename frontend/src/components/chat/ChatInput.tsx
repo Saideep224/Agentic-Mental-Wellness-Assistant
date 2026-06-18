@@ -110,6 +110,9 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
         <p className="text-center mt-2 text-[10px] sm:text-xs" style={{ color: 'var(--text-muted)' }}>
           Press Enter to send · Shift+Enter for new line
         </p>
+        <p className="text-center mt-1.5 text-[9px] sm:text-[10px] opacity-75 max-w-xl mx-auto leading-normal" style={{ color: 'var(--text-muted)' }}>
+          Note: Esona is an AI wellness companion, not a licensed therapist or crisis counselor. If you are in distress or danger, please contact professional emergency services or helplines.
+        </p>
       </motion.div>
     );
   }

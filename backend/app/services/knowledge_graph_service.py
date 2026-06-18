@@ -64,6 +64,20 @@ class KnowledgeGraphService:
             )
             raw = response.choices[0].message.content.strip()
             parsed = json.loads(raw)
+            
+            # --- USER DIAGNOSTIC LOGS ---
+            log_entities = []
+            for ent in parsed.get("entities", []):
+                log_entities.append({
+                    "name": ent.get("entity") or ent.get("name") or "",
+                    "type": ent.get("type") or ""
+                })
+            log_relations = parsed.get("relationships", []) or parsed.get("relations", [])
+            print("MESSAGE:", message)
+            print("EXTRACTED ENTITIES:", log_entities)
+            print("EXTRACTED RELATIONS:", log_relations)
+            # -----------------------------
+            
             if "relations" in parsed:
                 return parsed["relations"]
             return {
@@ -72,6 +86,9 @@ class KnowledgeGraphService:
                 "events": parsed.get("events", [])
             }
         except Exception as e:
+            print("MESSAGE:", message)
+            print("EXTRACTED ENTITIES:", [])
+            print("EXTRACTED RELATIONS:", [])
             logger.error(f"Failed to extract relationships from message: {e}", exc_info=True)
             return {"entities": [], "relationships": [], "events": []}
 
@@ -145,7 +162,30 @@ class KnowledgeGraphService:
             if not res2.scalars().first():
                 db.add(KnowledgeGraphRelation(user_id=user_id, subject=event_val, predicate="emotion", object=emotion_val))
                 
-        await db.commit()
+        print("Saving to knowledge_graph...")
+        try:
+            await db.commit()
+            
+            stmt = select(KnowledgeGraphRelation).where(KnowledgeGraphRelation.user_id == user_id)
+            res = await db.execute(stmt)
+            inserted = res.scalars().all()
+            data_list = []
+            for r in inserted:
+                data_list.append({
+                    "id": str(r.id),
+                    "user_id": str(r.user_id),
+                    "subject": r.subject,
+                    "predicate": r.predicate,
+                    "object": r.object,
+                    "confidence": r.confidence,
+                    "created_at": r.created_at.isoformat() if r.created_at else None
+                })
+            print("DATA:", data_list)
+            print("ERROR: null")
+        except Exception as e:
+            print("DATA: null")
+            print("ERROR:", str(e))
+            raise e
 
     async def retrieve_full_graph_context(self, db: AsyncSession, user_id: uuid.UUID) -> str:
         """Fetch all stored graph relationships, entities, and events for a user and format as text."""
@@ -214,7 +254,30 @@ class KnowledgeGraphService:
                     object=obj,
                     confidence=conf
                 ))
-        await db.commit()
+        print("Saving to knowledge_graph...")
+        try:
+            await db.commit()
+            
+            stmt = select(KnowledgeGraphRelation).where(KnowledgeGraphRelation.user_id == user_id)
+            res = await db.execute(stmt)
+            inserted = res.scalars().all()
+            data_list = []
+            for r in inserted:
+                data_list.append({
+                    "id": str(r.id),
+                    "user_id": str(r.user_id),
+                    "subject": r.subject,
+                    "predicate": r.predicate,
+                    "object": r.object,
+                    "confidence": r.confidence,
+                    "created_at": r.created_at.isoformat() if r.created_at else None
+                })
+            print("DATA:", data_list)
+            print("ERROR: null")
+        except Exception as e:
+            print("DATA: null")
+            print("ERROR:", str(e))
+            raise e
 
     async def retrieve_relationships(self, db: AsyncSession, user_id: uuid.UUID) -> List[KnowledgeGraphRelation]:
         try:

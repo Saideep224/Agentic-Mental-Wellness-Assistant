@@ -129,6 +129,21 @@ async def create_tables() -> None:
     IMPORTANT: create_all uses checkfirst=True semantics — it NEVER drops existing tables.
     Only new tables and columns are added. Existing data is always preserved.
     """
+    # Import all models to ensure they are registered with Base before running create_all
+    from app.models import (
+        User,
+        Conversation,
+        Message,
+        UserProfile,
+        UserPersonalProfile,
+        UserAnswer,
+        Memory,
+        MoodLog,
+        EmotionLog,
+        KnowledgeGraphRelation,
+        UserEntity,
+        UserRelationship,
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

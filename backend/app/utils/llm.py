@@ -102,7 +102,10 @@ async def generate_chat_completion_with_fallback(
     # Add the selected first provider
     if first_provider_key and first_provider_key in all_possible_providers:
         p_info = all_possible_providers[first_provider_key]
-        p_model = preferred_model if preferred_model and first_provider_key in preferred_model.lower() else p_info[3]
+        if preferred_model and preferred_model.lower() in ["gemini", "openai", "deepseek", "openrouter", "ollama"]:
+            p_model = p_info[3]
+        else:
+            p_model = preferred_model if preferred_model and first_provider_key in preferred_model.lower() else p_info[3]
         providers.append((p_info[0], p_info[1], p_info[2], p_model))
 
     # Add other providers as fallbacks

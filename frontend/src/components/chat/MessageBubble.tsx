@@ -88,7 +88,7 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const senderType = message.sender_type || (isUser ? 'user' : 'buddy');
   const config = agentConfig[senderType];
-  const emotionDisplay = getEmotionDisplay(message.emotionDetected, message.emotionScore, message.moodScore);
+  const emotionDisplay = isUser ? getEmotionDisplay(message.emotionDetected, message.emotionScore, message.moodScore) : null;
 
   if (senderType === 'system') {
     return (

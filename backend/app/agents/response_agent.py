@@ -31,7 +31,7 @@ class ResponseAgent:
                     messages=messages,
                     temperature=current_temp,
                     max_tokens=max_tokens,
-                    preferred_model=None,
+                    preferred_model="gemini",
                 )
                 
                 # Parse reasoning and clean text

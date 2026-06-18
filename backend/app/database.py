@@ -124,46 +124,67 @@ async def get_db() -> AsyncSession:  # type: ignore[misc]
 
 
 async def create_tables() -> None:
-    """Create all tables (used during app startup / dev) and run migrations."""
+    """Create all tables (used during app startup / dev) and run migrations.
+    
+    IMPORTANT: create_all uses checkfirst=True semantics — it NEVER drops existing tables.
+    Only new tables and columns are added. Existing data is always preserved.
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        
+
     from sqlalchemy import text
     try:
         async with engine.begin() as conn:
             if settings.is_postgres:
+                # ── V1 columns ──────────────────────────────────────────────
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS emotion_score double precision;"))
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS stress_score double precision;"))
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS anxiety_score double precision;"))
                 await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS university text;"))
-                # V2 columns
+                # ── V2 columns ──────────────────────────────────────────────
                 await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS agent_id text DEFAULT 'buddy';"))
                 await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS active_specialists jsonb DEFAULT '[]';"))
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS sender_type text DEFAULT 'user';"))
+                # ── V2.1 mood / emotion columns ─────────────────────────────
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS mood_score double precision;"))
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS detected_emotion text;"))
+                # ── emotion_logs table columns ─────────────────────────────
+                await conn.execute(text("ALTER TABLE emotion_logs ADD COLUMN IF NOT EXISTS confidence_score double precision;"))
+                # ── memories table columns ─────────────────────────────────
+                await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS metadata_json jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS importance_score double precision DEFAULT 0.5;"))
+                await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS expires_at timestamp with time zone;"))
+                # ── knowledge_graph_relations columns ─────────────────────
+                await conn.execute(text("ALTER TABLE knowledge_graph_relations ADD COLUMN IF NOT EXISTS confidence double precision DEFAULT 1.0;"))
+                # ── user_personal_profiles columns ────────────────────────
+                await conn.execute(text("ALTER TABLE user_personal_profiles ADD COLUMN IF NOT EXISTS personality_json jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personal_profiles ADD COLUMN IF NOT EXISTS last_analyzed_at timestamp with time zone;"))
             else:
-                for col in ["emotion_score", "stress_score", "anxiety_score"]:
+                # SQLite: try/except each individually since SQLite doesn't support IF NOT EXISTS for columns
+                _sqlite_add_cols = [
+                    ("chat_messages", "emotion_score", "FLOAT"),
+                    ("chat_messages", "stress_score", "FLOAT"),
+                    ("chat_messages", "anxiety_score", "FLOAT"),
+                    ("chat_messages", "mood_score", "FLOAT"),
+                    ("chat_messages", "detected_emotion", "VARCHAR(100)"),
+                    ("chat_messages", "sender_type", "VARCHAR(50) DEFAULT 'user'"),
+                    ("user_profile", "university", "VARCHAR(255)"),
+                    ("conversations", "agent_id", "VARCHAR(50) DEFAULT 'buddy'"),
+                    ("conversations", "active_specialists", "JSON DEFAULT '[]'"),
+                    ("emotion_logs", "confidence_score", "FLOAT"),
+                    ("memories", "metadata_json", "JSON DEFAULT '{}'"),
+                    ("memories", "importance_score", "FLOAT DEFAULT 0.5"),
+                    ("memories", "expires_at", "DATETIME"),
+                    ("knowledge_graph_relations", "confidence", "FLOAT DEFAULT 1.0"),
+                    ("user_personal_profiles", "personality_json", "JSON DEFAULT '{}'"),
+                    ("user_personal_profiles", "last_analyzed_at", "DATETIME"),
+                ]
+                for table, col, col_type in _sqlite_add_cols:
                     try:
-                        await conn.execute(text(f"ALTER TABLE chat_messages ADD COLUMN {col} FLOAT;"))
+                        await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type};"))
                     except Exception:
-                        pass
-                try:
-                    await conn.execute(text("ALTER TABLE user_profile ADD COLUMN university VARCHAR(255);"))
-                except Exception:
-                    pass
-                # V2 columns (SQLite)
-                try:
-                    await conn.execute(text("ALTER TABLE conversations ADD COLUMN agent_id VARCHAR(50) DEFAULT 'buddy';"))
-                except Exception:
-                    pass
-                try:
-                    await conn.execute(text("ALTER TABLE conversations ADD COLUMN active_specialists JSON DEFAULT '[]';"))
-                except Exception:
-                    pass
-                try:
-                    await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN sender_type VARCHAR(50) DEFAULT 'user';"))
-                except Exception:
-                    pass
-        logger.info("[Migration] Database columns checked/added successfully.")
+                        pass  # Column already exists — safe to ignore
+        logger.info("[Migration] Database columns checked/added successfully. All user data preserved.")
     except Exception as migration_err:
         logger.error(f"[Migration Warning] Failed to run database alter migrations: {migration_err}")
 

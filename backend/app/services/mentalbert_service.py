@@ -18,6 +18,179 @@ except ImportError:
     HAS_TORCH_TRANSFORMERS = False
 
 
+# ── Emotion keyword dictionaries ────────────────────────────────────────────
+# Phrase-level patterns (checked first, before single words)
+EMOTION_PHRASES = {
+    "frustration": [
+        "lost all my money", "she ruined", "he ruined", "they ruined",
+        "toxic relationship", "toxic person", "toxic girl", "toxic guy",
+        "broke up", "break up", "broke my heart", "cheated on me",
+        "she cheated", "he cheated", "wasted my time", "ruined everything",
+        "sick of her", "sick of him", "sick of them", "done with her",
+        "done with him", "i hate my", "i hate this", "so unfair",
+        "makes me mad", "makes me angry", "makes me furious",
+        "can't stand", "fed up", "driving me crazy", "annoying me",
+        "pissing me off", "pissed off",
+    ],
+    "sadness": [
+        "broke up with me", "she left me", "he left me", "they left me",
+        "lost a friend", "lost my job", "lost everything", "miss her",
+        "miss him", "miss them", "crying myself", "feel so empty",
+        "feeling empty", "no one cares", "nobody cares", "feel hopeless",
+        "feel worthless", "feel like nothing", "broken heart", "heartbroken",
+        "grieving", "in grief", "in mourning", "lost someone",
+    ],
+    "stress": [
+        "lost all my money", "financial issue", "finance issue", "money problems",
+        "money problem", "can't pay", "can't afford", "can not afford",
+        "debt problem", "struggling financially", "financial stress",
+        "financial crisis", "running out of money", "no money left",
+        "drowning in debt", "behind on bills", "behind on rent",
+        "so much to do", "too much work", "overwhelmed with", "burned out",
+        "burnt out", "can't keep up", "falling behind", "deadline pressure",
+    ],
+    "anxiety": [
+        "panic attack", "having a panic", "can't breathe", "heart is racing",
+        "overthinking everything", "what if everything", "scared of the future",
+        "terrified of", "dread the", "worst case scenario",
+    ],
+    "loneliness": [
+        "feel so alone", "completely alone", "all alone", "no one to talk to",
+        "nobody to talk to", "nobody understands me", "no one understands me",
+        "isolated from", "cut off from", "left out of", "left me out",
+        "no friends left", "have no friends",
+    ],
+}
+
+# Single-word/token patterns (checked after phrase matching)
+EMOTION_KEYWORDS = {
+    "frustration": [
+        # Strong anger words
+        "bloody", "damn", "damm", "fuck", "shit", "crap", "toxic", "hate",
+        "furious", "livid", "enraged", "outraged", "disgusted", "disgusting",
+        "infuriated", "irritated", "irritating", "annoyed", "annoying",
+        "frustrated", "frustrating", "mad", "angry", "rage", "hatred",
+        "betrayed", "betrayal", "backstabbed", "disrespected",
+        "cheated", "lied", "deceived", "manipulated", "manipulative",
+        "abusive", "abuse", "controlling", "manipulator", "narcissist",
+        # Relationship-conflict words
+        "ruined", "destroyed", "wrecked",
+    ],
+    "sadness": [
+        "sad", "sadness", "cry", "crying", "cried", "tears", "weeping",
+        "depressed", "depression", "hurt", "pain", "painful", "grief",
+        "grieving", "gloomy", "miserable", "misery", "heartbreak",
+        "heartbroken", "devastated", "devastation", "shattered",
+        "hopeless", "hopelessness", "worthless", "useless", "failure",
+        "down", "low", "unhappy", "upset", "disappointed", "disappointment",
+        "broken", "empty", "numb", "lost", "alone", "abandoned",
+        "rejected", "rejection", "unloved", "unwanted", "insignificant",
+        "suffering", "suffer", "suffered", "aching", "aches",
+    ],
+    "stress": [
+        "stress", "stressed", "stressful", "overwhelmed", "overwhelm",
+        "exhausted", "exhaustion", "burnout", "burned", "burnt",
+        "tired", "fatigue", "drained", "depleted", "overloaded",
+        "deadline", "pressure", "behind", "falling", "struggling",
+        "swamped", "buried", "suffocating",
+        # Financial stress keywords
+        "suffering", "finance", "financial", "money", "broke", "debt",
+        "loan", "bills", "salary", "income", "afford", "afford",
+        "bankruptcy", "bankrupt", "poverty", "poor", "unpaid",
+        "eviction", "evicted", "homeless", "starving",
+    ],
+    "anxiety": [
+        "anxious", "anxiety", "worry", "worried", "worrying",
+        "panic", "panicking", "scared", "terrified", "terrifying",
+        "frightened", "frightening", "fear", "fearful", "afraid",
+        "dread", "dreading", "uneasy", "unease", "nervous", "nervousness",
+        "overthink", "overthinking", "overthought", "intrusive",
+        "catastrophizing", "worst", "dreaded",
+    ],
+    "loneliness": [
+        "lonely", "loneliness", "alone", "isolated", "isolation",
+        "abandoned", "excluded", "left out", "invisible", "forgotten",
+        "disconnected", "disconnection", "no one", "nobody", "friendless",
+        "unwanted", "ostracized",
+    ],
+    "happy": [
+        "happy", "happiness", "joy", "joyful", "excited", "excitement",
+        "glad", "cheerful", "delighted", "thrilled", "ecstatic", "elated",
+        "pleased", "grateful", "thankful", "blessed", "wonderful",
+        "amazing", "great", "fantastic", "excellent", "good", "positive",
+        "smile", "smiling", "laugh", "laughing", "love", "loved",
+        "enjoying", "enjoy", "fun", "awesome", "brilliant",
+    ],
+}
+
+# Topic/context detection keywords
+TOPIC_KEYWORDS = {
+    "relationship": [
+        "gf", "girlfriend", "bf", "boyfriend", "partner", "spouse",
+        "wife", "husband", "ex", "dating", "relationship", "marriage",
+        "married", "engaged", "breakup", "divorce", "cheating",
+    ],
+    "financial": [
+        "money", "finance", "financial", "debt", "loan", "salary",
+        "income", "bills", "rent", "mortgage", "broke", "bankrupt",
+        "afford", "poverty", "job", "career", "unemployed",
+    ],
+    "academic": [
+        "exam", "test", "assignment", "homework", "study", "studying",
+        "grade", "college", "university", "school", "class", "professor",
+        "teacher", "deadline", "project",
+    ],
+    "health": [
+        "sick", "ill", "illness", "disease", "hospital", "doctor",
+        "medicine", "pain", "surgery", "diagnosis", "treatment",
+        "symptoms", "fever", "injury",
+    ],
+    "work": [
+        "work", "job", "boss", "manager", "colleague", "office",
+        "workplace", "fired", "promotion", "career", "project",
+        "meeting", "deadline", "workload",
+    ],
+}
+
+
+def _score_text(text_lower: str) -> dict:
+    """
+    Score text against emotion keyword dictionaries.
+    Returns a dict of {emotion: score} where score > 0 means the emotion was detected.
+    Multi-word phrases are weighted higher than single-word matches.
+    """
+    raw_scores = {
+        "happy": 0.0,
+        "neutral": 0.0,
+        "stress": 0.0,
+        "anxiety": 0.0,
+        "sadness": 0.0,
+        "frustration": 0.0,
+        "loneliness": 0.0,
+    }
+
+    # Phase 1: Phrase matching (weight 0.6 per phrase hit)
+    for emotion, phrases in EMOTION_PHRASES.items():
+        for phrase in phrases:
+            if phrase in text_lower:
+                raw_scores[emotion] += 0.6
+
+    # Phase 2: Single keyword matching (weight 0.15 per word hit)
+    words_in_text = set(text_lower.split())
+    for emotion, keywords in EMOTION_KEYWORDS.items():
+        for kw in keywords:
+            if " " not in kw:
+                # single token
+                if kw in words_in_text or kw in text_lower:
+                    raw_scores[emotion] += 0.15
+            else:
+                # short phrase in keyword list
+                if kw in text_lower:
+                    raw_scores[emotion] += 0.3
+
+    return raw_scores
+
+
 class MentalBERTService:
     def __init__(self):
         self.classifier = None
@@ -110,12 +283,12 @@ class MentalBERTService:
                     return torch.tensor([scores])
                 return scores
             except Exception as local_err:
-                logger.error(f"Error during local MentalBERT prediction: {local_err}. Using API simulation fallback.")
+                logger.error(f"Error during local MentalBERT prediction: {local_err}. Using rule-based fallback.")
 
-        # Fallback: rule-based simulation to get accurate scores
+        # ── Rule-based fallback (expanded keyword system) ──────────────────
         text_lower = text.lower()
         
-        # Check crisis override keywords
+        # Check crisis override keywords first
         crisis_keywords = [
             "suicide", "self-harm", "kill myself", "want to die", "end my life", 
             "end it all", "hurting myself", "hurt myself", "painful to exist", 
@@ -125,27 +298,37 @@ class MentalBERTService:
         if any(keyword in text_lower for keyword in crisis_keywords):
             # 0: happy, 1: neutral, 2: stress, 3: anxiety, 4: sadness, 5: frustration, 6: loneliness
             scores = [0.0, 0.05, 0.15, 0.0, 0.75, 0.0, 0.05]
-        # Mapping: 0: happy, 1: neutral, 2: stress, 3: anxiety, 4: sadness, 5: frustration, 6: loneliness
         else:
-            scores = [0.1, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2]
+            # Run the expanded keyword scoring system
+            raw = _score_text(text_lower)
             
-            if any(w in text_lower for w in ["happy", "good", "great", "smile", "excited", "glad", "relief", "joy", "cheerful"]):
-                scores = [0.8, 0.1, 0.05, 0.05, 0.0, 0.0, 0.0]
-            elif any(w in text_lower for w in ["anxious", "anxiety", "worry", "worried", "panic", "scared", "terrified", "frightened", "fear", "afraid"]):
-                scores = [0.0, 0.1, 0.3, 0.8, 0.2, 0.1, 0.1]
-            elif any(w in text_lower for w in ["stress", "stressed", "overwhelm", "exhausted", "burnout", "tired", "busy", "pressure"]):
-                scores = [0.0, 0.1, 0.8, 0.3, 0.2, 0.1, 0.1]
-            elif any(w in text_lower for w in ["sad", "sadness", "cry", "hurt", "pain", "down", "unhappy", "depressed", "depression", "grief", "gloomy"]):
-                scores = [0.0, 0.1, 0.2, 0.2, 0.8, 0.1, 0.2]
-            elif any(w in text_lower for w in ["lonely", "loneliness", "alone", "isolated", "isolation", "abandoned"]):
-                scores = [0.0, 0.1, 0.1, 0.2, 0.3, 0.1, 0.8]
-            elif any(w in text_lower for w in ["angry", "frustrated", "annoyed", "mad", "hate", "furious", "irritated", "rage", "pissed"]):
-                scores = [0.0, 0.1, 0.2, 0.1, 0.1, 0.8, 0.1]
+            # Map named emotions to index positions
+            # 0: happy, 1: neutral, 2: stress, 3: anxiety, 4: sadness, 5: frustration, 6: loneliness
+            scores = [
+                raw["happy"],
+                0.0,             # neutral starts at 0 — must earn its score
+                raw["stress"],
+                raw["anxiety"],
+                raw["sadness"],
+                raw["frustration"],
+                raw["loneliness"],
+            ]
+            
+            total_emotion_score = sum(scores)
+            
+            if total_emotion_score < 0.05:
+                # Truly no emotion detected — safe to return neutral
+                scores[1] = 1.0
+            else:
+                # Some emotion was detected — give neutral a small base to allow normalization
+                scores[1] = 0.02
 
         # Normalize scores to sum to 1.0
         total = sum(scores)
         if total > 0:
             scores = [s / total for s in scores]
+
+        logger.info(f"[Rule-Based Fallback] Scores: {dict(zip(['happy','neutral','stress','anxiety','sadness','frustration','loneliness'], [round(s,3) for s in scores]))}")
 
         if HAS_TORCH_TRANSFORMERS:
             import torch

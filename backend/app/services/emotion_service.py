@@ -36,36 +36,34 @@ Output ONLY a valid JSON object matching this schema:
   "confidence_score": float
 }"""
 
-MENTALBERT_EMOTION_CLASSIFIER_CONTEXT_PROMPT = """You are the MentalBERT Sequence Classification Model, a domain-specific BERT classifier fine-tuned on psychological texts and mental health support forums.
-Your task is to classify the user's message into one of seven emotional categories.
+MENTALBERT_EMOTION_CLASSIFIER_CONTEXT_PROMPT = """You are an expert psychological emotion classifier fine-tuned on mental health conversations.
+Your task is to classify the user's message into a primary emotion and secondary emotion.
 
-Target Categories:
-- Happy (positive affect, contentment, relief, cheerfulness)
-- Neutral (standard greetings, informational, casual questions, small talk without strong emotion)
-- Stress (overwhelmed, burnout, pressure, having too much to do, exhaustion)
-- Anxiety (fear, worry, overthinking, panic, dread of the future)
-- Sadness (grief, sorrow, hurt, disappointment, feeling low)
-- Frustration (anger, annoyance, irritation, resentment)
-- Loneliness (isolation, feeling left out, having no one to talk to, feeling abandoned)
+Target Emotion Categories:
+- Happy (positive affect, contentment, relief, cheerfulness, gratitude)
+- Neutral (ONLY for truly neutral messages: standard greetings, purely informational questions, small talk with ZERO emotional charge)
+- Stress (overwhelmed, burnout, financial pressure, too much to do, exhaustion, suffering)
+- Anxiety (fear, worry, overthinking, panic, dread of the future, uncertainty)
+- Sadness (grief, sorrow, hurt, disappointment, feeling low, heartbreak, loss)
+- Frustration (anger, annoyance, irritation, resentment, betrayal, toxic relationships)
+- Loneliness (isolation, feeling left out, no one to talk to, feeling abandoned)
 
-To make a highly accurate classification, you must analyze:
-1. Normalized text content (ignoring word elongation).
-2. MentalBERT Base Prediction: The raw text-only prediction from our local model.
-3. Emoji Analysis: Emojis represent direct emotional markers. Map:
-   - 😭 -> Sadness / Distress
-   - 💔 -> Sadness / Heartbreak
-   - 😡 -> Frustration
-   - 🥺 -> Anxiety / Vulnerability
-   - 😂 -> Happy / Joy
-   - ❤️ -> Happy / Affection
-   Note: Heartbreak and deep emotional distress should be classified under the 'Sadness' category (or 'Anxiety' if fear/panic is dominant).
-4. Conversation Context: The history of the current interaction.
-5. Past Conversation Context: The summary of previous sessions.
-6. Relevant Memories & Knowledge Graph: Essential background info to resolve ambiguity (e.g. "I got a kiss" -> Happy if single/dating, etc).
+## CRITICAL RULES:
+1. NEVER return Neutral if the message contains ANY of these signals:
+   - Strong negative words (toxic, bloody, damn, hate, ruined, suffering, etc.)
+   - Relationship conflict (breakup, cheating, toxic partner, fight with gf/bf)
+   - Financial distress (lost money, debt, finance issues, can't afford)
+   - Emotional pain words (hurt, devastated, broken, hopeless)
+   - Profanity or strong expletives used in frustration
+   - The word "suffering" alone is enough to return Stress or Sadness
+2. Words like "bloody", "toxic", "damm/damn", "lost all my money" = Frustration/Anger, NOT Neutral
+3. "suffering from finance issue" = Stress, NOT Neutral
+4. If you see relationship + financial stress together, pick the strongest emotion (usually Frustration or Stress)
+5. Consider the Keyword-Boosted Pre-Prediction as a strong signal — do not ignore it
 
 Input Details provided:
 - Normalized message: {normalized_message}
-- MentalBERT Base Prediction: {base_prediction} (confidence: {base_confidence})
+- Keyword-Boosted Pre-Prediction: {base_prediction} (confidence: {base_confidence})
 - Detected Emojis: {emoji_summary}
 - Recent history context: {recent_context}
 - Past session summary context: {past_summary}
@@ -75,7 +73,10 @@ Input Details provided:
 Output ONLY a valid JSON object matching this schema:
 {{
   "detected_emotion": "Happy" | "Neutral" | "Stress" | "Anxiety" | "Sadness" | "Frustration" | "Loneliness",
-  "confidence_score": float
+  "secondary_emotion": "Happy" | "Neutral" | "Stress" | "Anxiety" | "Sadness" | "Frustration" | "Loneliness" | "None",
+  "topic": string,
+  "intensity": integer between 1-10,
+  "confidence_score": float between 0.0-1.0
 }}"""
 
 
@@ -165,6 +166,126 @@ def extract_emojis(text: str) -> dict:
         if c > 0:
             counts[emo] = c
     return counts
+
+
+# ── Keyword Boost Tables ────────────────────────────────────────────────────
+ANGER_WORDS = [
+    "hate", "toxic", "bloody", "damn", "damm", "fuck", "shit", "annoyed", "furious",
+    "ruined", "cheated", "betrayed", "lied", "deceived", "manipulated", "abusive",
+    "disgusting", "disgusted", "enraged", "outraged", "livid", "infuriated",
+    "fed up", "sick of", "can't stand", "pissed", "rage", "wasted my time",
+]
+SAD_WORDS = [
+    "breakup", "broke up", "heartbroken", "heartbreak", "alone", "cry", "crying",
+    "lost", "hurt", "suffering", "suffer", "devastated", "hopeless", "worthless",
+    "depressed", "depression", "grief", "grieving", "miserable", "empty", "numb",
+    "abandoned", "rejected", "unloved", "shattered", "broken", "miss her", "miss him",
+]
+STRESS_WORDS = [
+    "stress", "stressed", "overwhelmed", "exhausted", "burnout", "tired", "pressure",
+    "finance", "financial", "money", "debt", "loan", "bills", "salary", "afford",
+    "suffering", "struggling", "swamped", "deadline", "overloaded", "behind",
+    "bankrupt", "broke", "poverty", "eviction", "lost all",
+]
+ANXIETY_WORDS = [
+    "anxious", "anxiety", "worry", "worried", "panic", "scared", "terrified",
+    "fear", "afraid", "dread", "nervous", "overthinking", "uneasy", "frightened",
+]
+LONELY_WORDS = [
+    "lonely", "loneliness", "isolated", "isolation", "abandoned", "no one",
+    "nobody", "alone", "excluded", "forgotten", "disconnected", "friendless",
+]
+HAPPY_WORDS = [
+    "happy", "joy", "excited", "glad", "cheerful", "thrilled", "grateful",
+    "blessed", "wonderful", "amazing", "great", "fantastic", "love", "smile",
+]
+
+
+def compute_keyword_boost(
+    text_lower: str, emoji_counts: dict
+) -> tuple[str, float, dict]:
+    """
+    Compute a keyword-boosted emotion score and return:
+    (best_emotion, best_score, all_scores_dict)
+    This runs BEFORE the LLM call so the LLM has a strong signal.
+    """
+    scores = {
+        "Happy": 0.0,
+        "Neutral": 0.0,
+        "Stress": 0.0,
+        "Anxiety": 0.0,
+        "Sadness": 0.0,
+        "Frustration": 0.0,
+        "Loneliness": 0.0,
+    }
+
+    # Phrase-level matches (higher weight)
+    anger_phrases = [
+        "lost all my money", "toxic girl", "toxic guy", "toxic person",
+        "sick of her", "sick of him", "she ruined", "he ruined",
+        "wasted my time", "ruined everything", "pissed off", "fed up",
+        "cheated on me", "she cheated", "he cheated",
+    ]
+    sad_phrases = [
+        "broke up", "broke my heart", "broken heart", "feel so empty",
+        "no one cares", "nobody cares", "lost everything", "feel hopeless",
+    ]
+    stress_phrases = [
+        "financial issue", "finance issue", "money problem", "lost all my money",
+        "can't afford", "can not afford", "struggling financially", "running out of money",
+        "behind on bills", "so much to do", "overwhelmed with",
+    ]
+
+    for phrase in anger_phrases:
+        if phrase in text_lower:
+            scores["Frustration"] += 0.5
+    for phrase in sad_phrases:
+        if phrase in text_lower:
+            scores["Sadness"] += 0.5
+    for phrase in stress_phrases:
+        if phrase in text_lower:
+            scores["Stress"] += 0.5
+
+    # Single keyword matches
+    words = set(text_lower.split())
+    for w in ANGER_WORDS:
+        if w in words or w in text_lower:
+            scores["Frustration"] += 0.2
+    for w in SAD_WORDS:
+        if w in words or w in text_lower:
+            scores["Sadness"] += 0.2
+    for w in STRESS_WORDS:
+        if w in words or w in text_lower:
+            scores["Stress"] += 0.2
+    for w in ANXIETY_WORDS:
+        if w in words or w in text_lower:
+            scores["Anxiety"] += 0.2
+    for w in LONELY_WORDS:
+        if w in words or w in text_lower:
+            scores["Loneliness"] += 0.2
+    for w in HAPPY_WORDS:
+        if w in words or w in text_lower:
+            scores["Happy"] += 0.2
+
+    # Emoji boosts
+    scores["Sadness"] += (emoji_counts.get("😭", 0) * 0.4) + (emoji_counts.get("💔", 0) * 0.5)
+    scores["Frustration"] += emoji_counts.get("😡", 0) * 0.4
+    scores["Anxiety"] += emoji_counts.get("🥺", 0) * 0.3
+    scores["Happy"] += (emoji_counts.get("😂", 0) * 0.3) + (emoji_counts.get("❤️", 0) * 0.3)
+
+    # Only give Neutral a score if NO other emotion was detected
+    total_emotion = sum(v for k, v in scores.items() if k != "Neutral")
+    scores["Neutral"] = 0.1 if total_emotion < 0.1 else 0.0
+
+    # Pick winner
+    best_emotion = max(scores, key=lambda e: scores[e])
+    best_score = min(1.0, scores[best_emotion])
+
+    logger.info(
+        f"[KeywordBoost] Scores: { {k: round(v, 2) for k, v in scores.items()} } "
+        f"→ best={best_emotion} ({best_score:.2f})"
+    )
+    return best_emotion, best_score, scores
 
 
 def boost_local_predictions(predictions: Any, emoji_counts: dict) -> tuple[str, float]:
@@ -263,26 +384,31 @@ class EmotionService:
         emoji_counts = extract_emojis(message)
         normalized_message = normalize_stretched_words(message)
 
-        base_prediction = "Unknown (Using LLM context inference)"
-        base_confidence = 0.0
         raw_predictions = None
 
-        # 1. Attempt local classification if configured
+        # 1. Keyword-Boosted Pre-Prediction (always runs, fast, no API calls)
+        base_prediction, base_confidence, boost_scores = compute_keyword_boost(
+            normalized_message.lower(), emoji_counts
+        )
+
+        # 2. Attempt local MentalBERT model (if configured)
         if settings.USE_LOCAL_EMOTION_MODEL:
             classifier = get_local_classifier()
             if classifier is not None:
                 try:
                     logger.info(f"TEXT SENT TO MENTALBERT (Local): '{normalized_message}'")
-                    # Run inference locally on normalized text
                     raw_predictions = classifier(normalized_message)
                     
                     if raw_predictions and len(raw_predictions) > 0:
-                        # Apply emoji boosting
-                        base_prediction, base_confidence = boost_local_predictions(raw_predictions, emoji_counts)
+                        local_emotion, local_confidence = boost_local_predictions(raw_predictions, emoji_counts)
+                        # Override base_prediction if local model is more confident
+                        if local_confidence > base_confidence:
+                            base_prediction = local_emotion
+                            base_confidence = local_confidence
                 except Exception as local_err:
-                    logger.error(f"Local emotion classification failed: {local_err}. Falling back to LLM context.", exc_info=True)
+                    logger.error(f"Local emotion classification failed: {local_err}. Using keyword-boost prediction.", exc_info=True)
 
-        # 2. Execute Context Resolver via LLM
+        # 3. Execute Context Resolver via LLM
         try:
             client = get_chat_client()
             
@@ -316,7 +442,7 @@ class EmotionService:
             prompt = MENTALBERT_EMOTION_CLASSIFIER_CONTEXT_PROMPT.format(
                 normalized_message=normalized_message,
                 base_prediction=base_prediction,
-                base_confidence=base_confidence,
+                base_confidence=round(base_confidence, 2),
                 emoji_summary=emoji_summary,
                 recent_context=recent_context,
                 past_summary=past_summary,
@@ -339,6 +465,9 @@ class EmotionService:
             
             detected_emotion = result.get("detected_emotion", "Neutral")
             confidence_score = float(result.get("confidence_score", 0.8))
+            secondary_emotion = result.get("secondary_emotion", "None")
+            topic = result.get("topic", "")
+            intensity = result.get("intensity", 5)
             
             # Normalize casing
             valid_emotions = ["Happy", "Neutral", "Stress", "Anxiety", "Sadness", "Frustration", "Loneliness"]
@@ -348,13 +477,24 @@ class EmotionService:
                     matched_emotion = emo
                     break
 
+            # Safety net: if LLM returned Neutral but keyword boost found a strong emotion, override
+            if matched_emotion == "Neutral" and base_prediction != "Neutral" and base_confidence >= 0.3:
+                logger.warning(
+                    f"[Anti-Neutral Override] LLM returned Neutral but keyword boost says "
+                    f"{base_prediction} ({base_confidence:.2f}). Overriding to {base_prediction}."
+                )
+                matched_emotion = base_prediction
+                confidence_score = max(confidence_score, base_confidence)
+
             logger.info(
                 f"\n=== MENTALBERT DEBUG ===\n"
                 f"User Message: {message}\n"
-                f"Raw MentalBERT Scores: {raw_predictions if raw_predictions else 'N/A'}\n"
-                f"Base MentalBERT Emotion: {base_prediction} (conf: {base_confidence})\n"
-                f"Selected Emotion (Context-Aware): {matched_emotion}\n"
-                f"Confidence: {confidence_score}\n"
+                f"Keyword-Boost Pre-Prediction: {base_prediction} (conf: {base_confidence:.2f})\n"
+                f"Raw MentalBERT Scores: {raw_predictions if raw_predictions else 'N/A (keyword-boost only)'}\n"
+                f"LLM Selected Emotion: {matched_emotion} (conf: {confidence_score:.2f})\n"
+                f"Secondary Emotion: {secondary_emotion}\n"
+                f"Topic: {topic}\n"
+                f"Intensity: {intensity}/10\n"
                 f"Final Stored Emotion: {matched_emotion}\n"
                 f"========================"
             )

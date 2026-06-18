@@ -83,6 +83,12 @@ class User(Base):
     knowledge_graph: Mapped[list["KnowledgeGraphRelation"]] = relationship(  # noqa: F821
         "KnowledgeGraphRelation", back_populates="user", cascade="all, delete-orphan"
     )
+    user_entities: Mapped[list["UserEntity"]] = relationship(  # noqa: F821
+        "UserEntity", back_populates="user", cascade="all, delete-orphan"
+    )
+    user_relationships: Mapped[list["UserRelationship"]] = relationship(  # noqa: F821
+        "UserRelationship", back_populates="user", cascade="all, delete-orphan"
+    )
     onboarding_answers: Mapped[list["UserAnswer"]] = relationship(  # noqa: F821
         "UserAnswer", back_populates="user", cascade="all, delete-orphan"
     )

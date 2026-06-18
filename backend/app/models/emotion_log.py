@@ -28,11 +28,28 @@ class EmotionLog(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     detected_emotion: Mapped[str] = mapped_column(String(100), nullable=False)
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
+    secondary_emotion: Mapped[str | None] = mapped_column(String(100), nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 
+    @property
+    def emotion(self) -> str:
+        return self.detected_emotion
+
+    @emotion.setter
+    def emotion(self, value: str):
+        self.detected_emotion = value
+
+    @property
+    def confidence(self) -> float:
+        return self.confidence_score
+
+    @confidence.setter
+    def confidence(self, value: float):
+        self.confidence_score = value
+
     def __repr__(self) -> str:
-        return f"<EmotionLog user={self.user_id} emotion={self.detected_emotion} confidence={self.confidence_score}>"
+        return f"<EmotionLog user={self.user_id} emotion={self.detected_emotion} secondary={self.secondary_emotion} confidence={self.confidence_score}>"

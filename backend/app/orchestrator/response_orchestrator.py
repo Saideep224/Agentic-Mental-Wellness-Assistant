@@ -241,7 +241,9 @@ class ResponseOrchestrator:
 
         # Format Knowledge Graph Context Block
         graph_str = ""
-        if graph_relationships:
+        if isinstance(graph_relationships, str):
+            graph_str = graph_relationships
+        elif graph_relationships:
             graph_str = "\n".join(graph_relationships)
         else:
             graph_str = "No structured graph relationships found."

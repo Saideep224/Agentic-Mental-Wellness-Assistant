@@ -37,20 +37,22 @@ Output ONLY a valid JSON object matching this schema:
 }"""
 
 HYBRID_EMOTION_CLASSIFIER_PROMPT = """You are an expert psychological emotion classifier fine-tuned on mental health conversations.
-Your task is to analyze the user's current message and the conversation context, and output probability distributions for the 7 wellness emotions:
-- Happy (positive affect, contentment, relief, cheerfulness, gratitude)
+Your task is to analyze the user's current message and the conversation context, and output probability distributions for the 9 wellness emotions:
+- Sadness (grief, sorrow, hurt, disappointment, heartbreak, loss)
+- Anger (hostility, outrage, hate, fury, extreme irritation)
+- Fear (panic, fright, threat, dread of danger)
+- Anxiety (worry, overthinking, panic, future dread, stress)
+- Happiness (joy, contentment, relief, cheerfulness)
+- Excitement (anticipation, thrill, high energy positive affect, promotion, good news)
+- Frustration (annoyance, irritation, feeling stuck, toxic conflicts)
+- Loneliness (isolation, feeling abandoned, left out)
 - Neutral (standard greetings, purely informational questions, small talk with ZERO emotional charge)
-- Stress (overwhelmed, burnout, financial pressure, too much to do, exhaustion, suffering)
-- Anxiety (fear, worry, overthinking, panic, dread of the future, uncertainty)
-- Sadness (grief, sorrow, hurt, disappointment, feeling low, heartbreak, loss)
-- Frustration (anger, annoyance, irritation, resentment, betrayal, toxic relationships)
-- Loneliness (isolation, feeling left out, no one to talk to, feeling abandoned)
 
 You must output two separate probability distributions (each summing to 1.0):
 1. `gemini_analysis`: Probability scores (0.0 to 1.0) for the CURRENT MESSAGE ONLY, ignoring any past history.
-   - CRITICAL: Never assign a high Neutral score if the message contains strong emotional words, relationship conflict, or financial issues. For example: "I lost all my money because of my toxic girlfriend" has high Frustration and Sadness, and very low Neutral.
+   - CRITICAL: Never assign a high Neutral score if the message contains strong emotional words, relationship conflict, or financial issues. For example: "I lost all my money because of my toxic girlfriend" has high Frustration/Anger/Sadness, and very low Neutral.
 2. `conversation_context`: Probability scores (0.0 to 1.0) based ONLY on recent history, relevant memories, and knowledge graph context.
-   - For example: if there are relationship problems or financial stress detected in the history, assign higher probability to Frustration, Stress, or Sadness.
+   - For example: if there are relationship problems or financial stress detected in the history, assign higher probability to Frustration, Sadness, Anger, or Anxiety.
 
 Input Details:
 - Current message: "{normalized_message}"
@@ -62,22 +64,26 @@ Input Details:
 Output ONLY a valid JSON object matching this schema:
 {{
   "gemini_analysis": {{
-    "Happy": float,
-    "Neutral": float,
-    "Stress": float,
-    "Anxiety": float,
     "Sadness": float,
+    "Anger": float,
+    "Fear": float,
+    "Anxiety": float,
+    "Happiness": float,
+    "Excitement": float,
     "Frustration": float,
-    "Loneliness": float
+    "Loneliness": float,
+    "Neutral": float
   }},
   "conversation_context": {{
-    "Happy": float,
-    "Neutral": float,
-    "Stress": float,
-    "Anxiety": float,
     "Sadness": float,
+    "Anger": float,
+    "Fear": float,
+    "Anxiety": float,
+    "Happiness": float,
+    "Excitement": float,
     "Frustration": float,
-    "Loneliness": float
+    "Loneliness": float,
+    "Neutral": float
   }},
   "topic": string,
   "intensity": integer between 1-10
@@ -363,12 +369,48 @@ async def _get_conversation_summary(db: AsyncSession, user_id: str, conversation
 class EmotionService:
     """Manages emotion classification and logs results to the database."""
 
+def map_7cat_to_9cat(mb_scores_7: list[float]) -> list[float]:
+    # 7-cat order: ["Happy", "Neutral", "Stress", "Anxiety", "Sadness", "Frustration", "Loneliness"]
+    # 9-cat order: ["Sadness", "Anger", "Fear", "Anxiety", "Happiness", "Excitement", "Frustration", "Loneliness", "Neutral"]
+    scores = [0.0] * 9
+    
+    # Sadness (index 4) -> 9-cat index 0 (Sadness)
+    scores[0] = mb_scores_7[4]
+    # Frustration (index 5) -> 9-cat index 1 (Anger) & index 6 (Frustration)
+    scores[1] = mb_scores_7[5] * 0.3
+    scores[6] = mb_scores_7[5] * 0.7
+    # Anxiety (index 3) -> 9-cat index 2 (Fear) & index 3 (Anxiety)
+    scores[2] = mb_scores_7[3] * 0.3
+    scores[3] = mb_scores_7[3] * 0.7
+    # Stress (index 2) -> 9-cat index 3 (Anxiety) & index 6 (Frustration)
+    scores[3] += mb_scores_7[2] * 0.6
+    scores[6] += mb_scores_7[2] * 0.4
+    # Happy (index 0) -> Happiness (index 4) & Excitement (index 5)
+    scores[4] = mb_scores_7[0] * 0.7
+    scores[5] = mb_scores_7[0] * 0.3
+    # Loneliness (index 6) -> Loneliness (index 7)
+    scores[7] = mb_scores_7[6]
+    # Neutral (index 1) -> Neutral (index 8)
+    scores[8] = mb_scores_7[1]
+    
+    # Normalize to sum = 1.0
+    s_sum = sum(scores)
+    if s_sum > 0:
+        scores = [s / s_sum for s in scores]
+    else:
+        scores = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    return scores
+
+
+class EmotionService:
+    """Manages emotion classification and logs results to the database."""
+
     async def classify_emotion_mentalbert(
         self, db: AsyncSession, user_id: str, message: str, conversation_id: str = None, 
         history: list = None, memories: list = None, graph_relationships: list = None
     ) -> Dict[str, Any]:
         """
-        Classifies the message into one of the 7 specified emotions using a hybrid
+        Classifies the message into one of the 9 specified emotions using a hybrid
         blending formula: 40% MentalBERT, 40% Gemini, 20% Conversation Context.
         Logs it in the emotion_logs table, and returns the result.
         """
@@ -376,7 +418,8 @@ class EmotionService:
             return {
                 "detected_emotion": "Neutral",
                 "confidence_score": 1.0,
-                "blended_scores": [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                "blended_scores": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                "secondary_emotion": None
             }
 
         # Crisis Override Check
@@ -384,11 +427,12 @@ class EmotionService:
         crisis_keywords = ["want to die", "kill myself", "end my life", "suicide"]
         if any(keyword in msg_lower for keyword in crisis_keywords):
             logger.warning(f"[Crisis Override] Crisis detected in message: '{message}'. Overriding to Crisis classification.")
-            await self._save_emotion_log(db, user_id, message, "Crisis", 0.95)
+            await self._save_emotion_log(db, user_id, message, "Crisis", 0.95, None)
             return {
                 "detected_emotion": "Crisis",
                 "confidence_score": 0.95,
-                "blended_scores": [0.0, 0.05, 0.15, 0.0, 0.75, 0.0, 0.05]
+                "blended_scores": [0.15, 0.0, 0.10, 0.65, 0.0, 0.0, 0.05, 0.05, 0.0],
+                "secondary_emotion": "Anxiety"
             }
 
         # Extract emojis and normalize message stretching before model evaluation
@@ -397,32 +441,34 @@ class EmotionService:
 
         # 1. Get MentalBERT/Keyword scores (40%)
         # predict() returns list of 7 floats: Happy, Neutral, Stress, Anxiety, Sadness, Frustration, Loneliness
-        mb_scores = []
+        mb_scores_7 = []
         try:
             from app.services.mentalbert_service import mentalbert_service
-            mb_scores = mentalbert_service.predict(normalized_message)
+            mb_scores_7 = mentalbert_service.predict(normalized_message)
             try:
                 import torch
-                if torch.is_tensor(mb_scores):
-                    mb_scores = mb_scores.tolist()[0]
+                if torch.is_tensor(mb_scores_7):
+                    mb_scores_7 = mb_scores_7.tolist()[0]
             except Exception:
                 pass
         except Exception as mb_err:
             logger.warning(f"MentalBERT predict failed: {mb_err}")
 
-        # Ensure it has exactly 7 elements and sums to 1.0
-        while len(mb_scores) < 7:
-            mb_scores.append(0.0)
-        mb_sum = sum(mb_scores)
+        while len(mb_scores_7) < 7:
+            mb_scores_7.append(0.0)
+        mb_sum = sum(mb_scores_7)
         if mb_sum > 0:
-            mb_scores = [s / mb_sum for s in mb_scores]
+            mb_scores_7 = [s / mb_sum for s in mb_scores_7]
         else:
-            mb_scores = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            mb_scores_7 = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+        # Map 7-emotion MentalBERT scores to 9 emotions
+        mapped_mb_scores = map_7cat_to_9cat(mb_scores_7)
 
         # 2. Get Gemini Analysis (40%) and Conversation Context (20%) via LLM
-        emotions_order = ["Happy", "Neutral", "Stress", "Anxiety", "Sadness", "Frustration", "Loneliness"]
-        gemini_scores = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        context_scores = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        emotions_order = ["Sadness", "Anger", "Fear", "Anxiety", "Happiness", "Excitement", "Frustration", "Loneliness", "Neutral"]
+        gemini_scores = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+        context_scores = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
         topic = ""
         intensity = 5
 
@@ -434,10 +480,10 @@ class EmotionService:
         try:
             client = get_chat_client()
             
-            # Recent history context
+            # Recent history context - analyze last 10 messages
             recent_context = "None"
             if history:
-                last_messages = history[-6:]
+                last_messages = history[-10:]
                 recent_context = "\n".join(
                     f"{m.get('role', 'user')}: {m.get('content', '')}" for m in last_messages
                 )
@@ -472,6 +518,35 @@ class EmotionService:
             raw = response.choices[0].message.content.strip()
             result = json.loads(raw)
             
+            # Legacy compatibility check: if the mock/result contains detected_emotion directly
+            if "detected_emotion" in result:
+                matched_emotion = result["detected_emotion"]
+                confidence_score = result.get("confidence_score", 1.0)
+                secondary_emotion = result.get("secondary_emotion")
+                
+                blended_scores = [0.0] * 9
+                mapped_for_idx = matched_emotion
+                if mapped_for_idx == "Stress":
+                    mapped_for_idx = "Frustration"
+                elif mapped_for_idx == "Happy":
+                    mapped_for_idx = "Happiness"
+                
+                try:
+                    target_idx = emotions_order.index(mapped_for_idx)
+                    blended_scores[target_idx] = confidence_score
+                except ValueError:
+                    blended_scores[8] = confidence_score
+                
+                await self._save_emotion_log(db, user_id, message, matched_emotion, confidence_score, secondary_emotion)
+                return {
+                    "detected_emotion": matched_emotion,
+                    "confidence_score": confidence_score,
+                    "secondary_emotion": secondary_emotion,
+                    "blended_scores": blended_scores,
+                    "topic": "",
+                    "intensity": 5
+                }
+
             gemini_analysis = result.get("gemini_analysis", {})
             conversation_context = result.get("conversation_context", {})
             topic = result.get("topic", "")
@@ -481,7 +556,6 @@ class EmotionService:
             def parse_distribution(dist_dict):
                 scores_list = []
                 for emo in emotions_order:
-                    # try case-insensitive match
                     val = 0.0
                     for k, v in dist_dict.items():
                         if k.lower() == emo.lower():
@@ -491,21 +565,20 @@ class EmotionService:
                 s_sum = sum(scores_list)
                 if s_sum > 0:
                     return [s / s_sum for s in scores_list]
-                return [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
 
             gemini_scores = parse_distribution(gemini_analysis)
             context_scores = parse_distribution(conversation_context)
 
         except Exception as e:
             logger.error(f"Error in Hybrid Classifier LLM call: {e}. Falling back to MentalBERT / Keyword prediction.", exc_info=True)
-            # fallback uses MentalBERT scores as both Gemini and context source
-            gemini_scores = mb_scores
-            context_scores = mb_scores
+            gemini_scores = mapped_mb_scores
+            context_scores = mapped_mb_scores
 
         # Calculate final blended scores
         blended_scores = []
-        for i in range(7):
-            val = 0.40 * mb_scores[i] + 0.40 * gemini_scores[i] + 0.20 * context_scores[i]
+        for i in range(9):
+            val = 0.40 * mapped_mb_scores[i] + 0.40 * gemini_scores[i] + 0.20 * context_scores[i]
             blended_scores.append(val)
 
         # Normalize final blended scores
@@ -513,12 +586,32 @@ class EmotionService:
         if blended_sum > 0:
             blended_scores = [s / blended_sum for s in blended_scores]
         else:
-            blended_scores = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            blended_scores = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
 
-        # Select final winning emotion
-        max_idx = blended_scores.index(max(blended_scores))
-        matched_emotion = emotions_order[max_idx]
-        confidence_score = blended_scores[max_idx]
+        # Select normal winning indices
+        sorted_blended_indices = sorted(range(9), key=lambda i: blended_scores[i], reverse=True)
+        matched_emotion = emotions_order[sorted_blended_indices[0]]
+        confidence_score = blended_scores[sorted_blended_indices[0]]
+        secondary_emotion = emotions_order[sorted_blended_indices[1]] if blended_scores[sorted_blended_indices[1]] >= 0.10 else None
+
+        # MentalBERT confidence check: if < 70%, allow Gemini contextual analysis to override
+        mb_confidence = max(mapped_mb_scores)
+        if mb_confidence < 0.70:
+            # Re-weight Gemini scores: 0.67 * gemini_scores + 0.33 * context_scores
+            gemini_blend = [0.67 * gemini_scores[i] + 0.33 * context_scores[i] for i in range(9)]
+            sorted_gemini_indices = sorted(range(9), key=lambda i: gemini_blend[i], reverse=True)
+            override_emotion = emotions_order[sorted_gemini_indices[0]]
+            override_confidence = gemini_blend[sorted_gemini_indices[0]]
+            override_secondary = emotions_order[sorted_gemini_indices[1]] if gemini_blend[sorted_gemini_indices[1]] >= 0.10 else None
+            
+            logger.info(
+                f"[MentalBERT Override] MentalBERT max confidence {mb_confidence:.2f} < 0.70. "
+                f"Overriding blended winner {matched_emotion} ({confidence_score:.2f}) "
+                f"with Gemini winner {override_emotion} ({override_confidence:.2f})."
+            )
+            matched_emotion = override_emotion
+            confidence_score = override_confidence
+            secondary_emotion = override_secondary
 
         # Safety net: if final is Neutral but keyword boost detected a strong emotion with high confidence
         if matched_emotion == "Neutral" and base_prediction != "Neutral" and base_confidence >= 0.35:
@@ -526,39 +619,50 @@ class EmotionService:
                 f"[Blended Anti-Neutral Override] Final is Neutral but keyword boost says "
                 f"{base_prediction} ({base_confidence:.2f}). Overriding to {base_prediction}."
             )
-            # Re-distribute scores to give base_prediction the top score
             matched_emotion = base_prediction
-            target_idx = emotions_order.index(matched_emotion)
-            # Swap values to preserve sum = 1.0
-            old_val = blended_scores[target_idx]
-            blended_scores[target_idx] = blended_scores[1]
-            blended_scores[1] = old_val
-            confidence_score = blended_scores[target_idx]
+            
+            # Map legacy emotions to index for blended_scores updates
+            mapped_for_idx = matched_emotion
+            if mapped_for_idx == "Stress":
+                mapped_for_idx = "Frustration"
+            elif mapped_for_idx == "Happy":
+                mapped_for_idx = "Happiness"
+                
+            try:
+                target_idx = emotions_order.index(mapped_for_idx)
+                # Swap values to preserve sum = 1.0
+                old_val = blended_scores[target_idx]
+                blended_scores[target_idx] = blended_scores[8]
+                blended_scores[8] = old_val
+                confidence_score = blended_scores[target_idx]
+            except ValueError:
+                pass
 
         logger.info(
             f"\n=== HYBRID EMOTION BLENDER ===\n"
             f"User Message: {message}\n"
-            f"MentalBERT (40%): { {emotions_order[i]: round(mb_scores[i], 2) for i in range(7)} }\n"
-            f"Gemini (40%): { {emotions_order[i]: round(gemini_scores[i], 2) for i in range(7)} }\n"
-            f"Context (20%): { {emotions_order[i]: round(context_scores[i], 2) for i in range(7)} }\n"
-            f"Blended Final: { {emotions_order[i]: round(blended_scores[i], 2) for i in range(7)} }\n"
-            f"Selected: {matched_emotion} (conf: {confidence_score:.2f})\n"
+            f"MentalBERT Mapped (40%): { {emotions_order[i]: round(mapped_mb_scores[i], 2) for i in range(9)} }\n"
+            f"Gemini (40%): { {emotions_order[i]: round(gemini_scores[i], 2) for i in range(9)} }\n"
+            f"Context (20%): { {emotions_order[i]: round(context_scores[i], 2) for i in range(9)} }\n"
+            f"Blended Final: { {emotions_order[i]: round(blended_scores[i], 2) for i in range(9)} }\n"
+            f"Selected: {matched_emotion} (conf: {confidence_score:.2f}) | Secondary: {secondary_emotion}\n"
             f"Topic: {topic} | Intensity: {intensity}/10\n"
             f"========================"
         )
 
-        await self._save_emotion_log(db, user_id, message, matched_emotion, confidence_score)
+        await self._save_emotion_log(db, user_id, message, matched_emotion, confidence_score, secondary_emotion)
 
         return {
             "detected_emotion": matched_emotion,
             "confidence_score": confidence_score,
+            "secondary_emotion": secondary_emotion,
             "blended_scores": blended_scores,
             "topic": topic,
             "intensity": intensity
         }
 
     async def _save_emotion_log(
-        self, db: AsyncSession, user_id: str, message: str, emotion: str, confidence: float
+        self, db: AsyncSession, user_id: str, message: str, emotion: str, confidence: float, secondary_emotion: str | None
     ):
         """Helper to save classification result to the database."""
         try:
@@ -568,6 +672,7 @@ class EmotionService:
                 message=message,
                 detected_emotion=emotion,
                 confidence_score=confidence,
+                secondary_emotion=secondary_emotion
             )
             db.add(emotion_log)
             await db.flush()

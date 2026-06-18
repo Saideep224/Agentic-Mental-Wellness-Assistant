@@ -104,15 +104,15 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             from app.services.knowledge_graph_service import knowledge_graph_service
             import uuid
             user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
-            rels = await knowledge_graph_service.retrieve_relevant_relationships(db, user_uuid, user_message)
-            graph_relationships = [f"- {r.subject} -> {r.predicate} -> {r.object}" for r in rels]
+            graph_relationships = await knowledge_graph_service.retrieve_full_graph_context(db, user_uuid)
         except Exception as e:
             logger.warning(f"KG retrieval early fetch failed: {e}")
+            graph_relationships = "None"
 
     # 1. Run MentalBERT Emotion Classification and save to db (happens inside the service)
     detected_emotion = "Neutral"
     confidence_score = 1.0
-    blended_scores = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    blended_scores = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
     if user_id:
         from app.database import async_session_maker
         close_temp_db = False
@@ -133,7 +133,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             )
             detected_emotion = emotion_res.get("detected_emotion", "Neutral")
             confidence_score = emotion_res.get("confidence_score", 1.0)
-            blended_scores = emotion_res.get("blended_scores", [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            blended_scores = emotion_res.get("blended_scores", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0])
             
             # Run Profile Fact Extraction and update db
             try:
@@ -147,20 +147,28 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
                 from app.services.knowledge_graph_service import knowledge_graph_service
                 import uuid
                 user_name = profile.get("user_name", "User") or "User"
-                extracted_rels = await knowledge_graph_service.extract_relationships(user_message, user_name=user_name)
+                extracted_graph = await knowledge_graph_service.extract_relationships(user_message, user_name=user_name)
                 
-                # Explicitly store non-neutral detected emotion in the Knowledge Graph
+                # Support legacy list format (e.g. from unit test mocks) and normalize to dictionary
+                if isinstance(extracted_graph, list):
+                    extracted_graph = {
+                        "entities": [],
+                        "relationships": [],
+                        "events": [],
+                        "relations": extracted_graph
+                    }
+                
+                # Explicitly store non-neutral detected emotion in the Knowledge Graph events list
                 if detected_emotion and detected_emotion != "Neutral":
-                    extracted_rels.append({
-                        "subject": user_name,
-                        "predicate": "Feels",
-                        "object": detected_emotion,
-                        "confidence": confidence_score
+                    if "events" not in extracted_graph:
+                        extracted_graph["events"] = []
+                    extracted_graph["events"].append({
+                        "event": "current_feeling",
+                        "emotion": detected_emotion
                     })
                 
-                if extracted_rels:
-                    user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
-                    await knowledge_graph_service.store_relationships(temp_db, user_uuid, extracted_rels)
+                user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                await knowledge_graph_service.store_graph_data(temp_db, user_uuid, extracted_graph)
             except Exception as kg_err:
                 logger.error(f"Failed to extract/store knowledge graph relations: {kg_err}", exc_info=True)
 

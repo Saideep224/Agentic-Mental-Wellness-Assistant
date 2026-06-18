@@ -82,6 +82,33 @@ export default function ChatPage() {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
+  const [agentInsights, setAgentInsights] = useState<{
+    current_mood: string;
+    emotion_trend: string;
+    important_topics: string[];
+    recent_stressors: string[];
+  } | null>(null);
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+
+  const fetchAgentInsights = useCallback(async () => {
+    try {
+      setIsLoadingInsights(true);
+      const token = getToken();
+      if (!token) return;
+      const data = await api.apiGet<{
+        current_mood: string;
+        emotion_trend: string;
+        important_topics: string[];
+        recent_stressors: string[];
+      }>('/api/chat/agent-insights', token);
+      setAgentInsights(data);
+    } catch (err) {
+      console.warn('Failed to fetch agent insights:', err);
+    } finally {
+      setIsLoadingInsights(false);
+    }
+  }, []);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -117,6 +144,12 @@ export default function ChatPage() {
       );
     },
   });
+
+  useEffect(() => {
+    if (debugOpen && activeConversationId) {
+      fetchAgentInsights();
+    }
+  }, [debugOpen, activeConversationId, messages.length, fetchAgentInsights]);
 
   // Helper: focus the chat input unless the user is actively editing another field
   const focusInput = useCallback(() => {
@@ -868,12 +901,121 @@ export default function ChatPage() {
                 backdropFilter: 'blur(16px)',
               }}
             >
-              <div className="h-full flex flex-col p-4 w-[380px] overflow-y-auto space-y-4">
+              <div className="h-full flex flex-col p-4 w-[380px] overflow-y-auto space-y-4 animate-fadeIn">
                 <div className="flex items-center gap-2 pb-2 border-b border-white/10">
                   <Terminal size={16} className="text-sky-400" />
                   <h3 className="text-sm font-semibold tracking-wide uppercase text-sky-400">
-                    Live Agent Debug Panel
+                    Agent Insights & Diagnostics
                   </h3>
+                </div>
+
+                {/* Premium Overview Card */}
+                {isLoadingInsights && !agentInsights ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-center">
+                    <Loader2 size={24} className="animate-spin text-sky-400 mb-2" />
+                    <p className="text-xs text-slate-400">Compiling premium insights...</p>
+                  </div>
+                ) : (
+                  <div
+                    className="rounded-2xl p-5 border relative overflow-hidden transition-all duration-500 hover:shadow-[0_8px_32px_rgba(56,189,248,0.15)]"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(30, 41, 59, 0.4) 100%)',
+                      borderColor: 'rgba(56, 189, 248, 0.2)',
+                      backdropFilter: 'blur(12px)',
+                    }}
+                  >
+                    {/* Glow effect */}
+                    <div className="absolute -right-12 -top-12 w-24 h-24 rounded-full bg-sky-500/10 blur-2xl pointer-events-none" />
+                    <div className="absolute -left-12 -bottom-12 w-24 h-24 rounded-full bg-violet-500/10 blur-2xl pointer-events-none" />
+
+                    <h4 className="text-xs font-semibold tracking-wider text-sky-400 uppercase mb-4 flex items-center gap-1.5">
+                      <Sparkles size={12} className="text-sky-400 animate-pulse" />
+                      Wellness Overview
+                    </h4>
+
+                    <div className="space-y-4">
+                      {/* Current Mood & Trend */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+                          <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Current Mood</span>
+                          <span className="text-sm font-bold text-white flex items-center gap-1.5">
+                            {(() => {
+                              const mood = agentInsights?.current_mood || 'Neutral';
+                              let emoji = '😐';
+                              let colorClass = 'text-slate-300';
+                              if (mood.toLowerCase().includes('sad')) { emoji = '😢'; colorClass = 'text-blue-400'; }
+                              else if (mood.toLowerCase().includes('anger') || mood.toLowerCase().includes('angry')) { emoji = '😠'; colorClass = 'text-red-400'; }
+                              else if (mood.toLowerCase().includes('fear') || mood.toLowerCase().includes('anxi')) { emoji = '😰'; colorClass = 'text-amber-400'; }
+                              else if (mood.toLowerCase().includes('happ') || mood.toLowerCase().includes('joy')) { emoji = '😊'; colorClass = 'text-emerald-400'; }
+                              else if (mood.toLowerCase().includes('excit')) { emoji = '🥳'; colorClass = 'text-pink-400'; }
+                              else if (mood.toLowerCase().includes('frust')) { emoji = '😤'; colorClass = 'text-orange-400'; }
+                              else if (mood.toLowerCase().includes('lone')) { emoji = '🥺'; colorClass = 'text-violet-400'; }
+                              return (
+                                <>
+                                  <span>{emoji}</span>
+                                  <span className={colorClass}>{mood}</span>
+                                </>
+                              );
+                            })()}
+                          </span>
+                        </div>
+
+                        <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+                          <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Emotion Trend</span>
+                          <span className="text-sm font-bold text-white flex items-center gap-1.5">
+                            <span className="text-sky-400">✨</span>
+                            <span className="text-slate-200">{agentInsights?.emotion_trend || 'Stable'}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Important Topics */}
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-2">Important Topics</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {agentInsights?.important_topics && agentInsights.important_topics.length > 0 ? (
+                            agentInsights.important_topics.map((topic, i) => (
+                              <span
+                                key={i}
+                                className="text-[10px] px-2.5 py-1 rounded-full border bg-sky-950/20 text-sky-300 border-sky-500/20 font-medium"
+                              >
+                                {topic}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[10px] text-slate-500 italic">None identified yet</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Recent Stressors */}
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-2">Recent Stressors</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {agentInsights?.recent_stressors && agentInsights.recent_stressors.length > 0 && agentInsights.recent_stressors[0] !== 'None Identified Yet' ? (
+                            agentInsights.recent_stressors.map((stressor, i) => (
+                              <span
+                                key={i}
+                                className="text-[10px] px-2.5 py-1 rounded-full border bg-rose-950/20 text-rose-300 border-rose-500/20 font-medium"
+                              >
+                                ⚠️ {stressor}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[10px] px-2.5 py-1 rounded-full border bg-emerald-950/20 text-emerald-300 border-emerald-500/20 font-medium">
+                              ✅ All Clear
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 pb-1 border-b border-white/5">
+                  <h4 className="text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+                    Developer Multi-Agent Logs
+                  </h4>
                 </div>
 
                 {!debugInfo ? (

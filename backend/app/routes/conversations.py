@@ -121,7 +121,8 @@ async def get_conversation_messages(
             Conversation.user_id == current_user.id,
         )
     )
-    if conv_result.scalar_one_or_none() is None:
+    conv = conv_result.scalar_one_or_none()
+    if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     result = await db.execute(
@@ -129,7 +130,27 @@ async def get_conversation_messages(
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at.asc())
     )
-    return [MessageResponse.model_validate(m) for m in result.scalars().all()]
+    messages = list(result.scalars().all())
+
+    # If the conversation is Buddy's conversation and there are 0 messages, generate a personalized welcome message!
+    if (conv.agent_id == "buddy" or not conv.agent_id) and not messages:
+        from app.services.profile_service import profile_service
+        greeting_text = await profile_service.generate_personalized_greeting(db, current_user.id)
+        
+        # Save greeting as a message from Buddy
+        greeting_msg = Message(
+            conversation_id=conversation_id,
+            user_id=current_user.id,
+            role="assistant",
+            content=greeting_text,
+            sender_type="buddy"
+        )
+        db.add(greeting_msg)
+        await db.commit()
+        await db.refresh(greeting_msg)
+        messages = [greeting_msg]
+
+    return [MessageResponse.model_validate(m) for m in messages]
 
 
 @router.post("/conversations", response_model=ConversationResponse, status_code=201)
@@ -297,13 +318,15 @@ async def connect_specialist(
     buddy_contents = [
         "hey 😊",
         f"i think {spec_name} can help here",
-        "i've already shared the context"
+        "i've already shared the context",
+        f"let me bring {pronoun} in"
     ]
 
     # Generate Specialist's greeting messages
     spec_contents = [
         f"hey {user_name} 👋",
-        "what's been going on?"
+        "what's been going on?",
+        f"let's talk about {topic}"
     ]
 
     base_time = datetime.now(timezone.utc)

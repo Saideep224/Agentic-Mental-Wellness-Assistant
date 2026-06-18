@@ -150,6 +150,7 @@ async def create_tables() -> None:
                 await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS detected_emotion text;"))
                 # ── emotion_logs table columns ─────────────────────────────
                 await conn.execute(text("ALTER TABLE emotion_logs ADD COLUMN IF NOT EXISTS confidence_score double precision;"))
+                await conn.execute(text("ALTER TABLE emotion_logs ADD COLUMN IF NOT EXISTS secondary_emotion text;"))
                 # ── memories table columns ─────────────────────────────────
                 await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS metadata_json jsonb DEFAULT '{}';"))
                 await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS importance_score double precision DEFAULT 0.5;"))
@@ -172,6 +173,7 @@ async def create_tables() -> None:
                     ("conversations", "agent_id", "VARCHAR(50) DEFAULT 'buddy'"),
                     ("conversations", "active_specialists", "JSON DEFAULT '[]'"),
                     ("emotion_logs", "confidence_score", "FLOAT"),
+                    ("emotion_logs", "secondary_emotion", "VARCHAR(100)"),
                     ("memories", "metadata_json", "JSON DEFAULT '{}'"),
                     ("memories", "importance_score", "FLOAT DEFAULT 0.5"),
                     ("memories", "expires_at", "DATETIME"),

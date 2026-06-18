@@ -525,6 +525,78 @@ class ProfileService:
             logger.error(f"Failed to extract and update profile facts: {e}", exc_info=True)
             return None
 
+    async def generate_personalized_greeting(self, db: AsyncSession, user_id: uuid.UUID) -> str:
+        try:
+            # 1. Fetch User profile details
+            from app.models.user import User
+            user_stmt = select(User).where(User.id == user_id)
+            user_res = await db.execute(user_stmt)
+            user = user_res.scalar_one_or_none()
+            user_name = user.name if user and user.name else "friend"
+            
+            # Fetch personal profile
+            personal = await self.get_profile(db, user_id)
+            profile_details = ""
+            if personal:
+                profile_details = (
+                    f"Profession: {personal.profession}, Field: {personal.field_of_work}, "
+                    f"Interests: {personal.interests}, Goals: {personal.goals}, "
+                    f"Triggers: {personal.stress_triggers}"
+                )
+
+            # 2. Fetch Onboarding Q&A
+            from app.models.onboarding import UserAnswer
+            ans_stmt = select(UserAnswer).where(UserAnswer.user_id == user_id)
+            ans_res = await db.execute(ans_stmt)
+            answers = ans_res.scalars().all()
+            onboarding_answers = ""
+            if answers:
+                onboarding_answers = "\n".join(f"Q: {a.question_text} | A: {a.answer_text}" for a in answers[:10])
+
+            # 3. Fetch Recent Emotions (last 5 logs)
+            from app.models.emotion_log import EmotionLog
+            emo_stmt = select(EmotionLog).where(EmotionLog.user_id == user_id).order_by(EmotionLog.timestamp.desc()).limit(5)
+            emo_res = await db.execute(emo_stmt)
+            emotions = emo_res.scalars().all()
+            recent_emotions = ", ".join(e.detected_emotion for e in emotions) if emotions else "None"
+
+            # 4. Fetch Knowledge Graph
+            from app.services.knowledge_graph_service import knowledge_graph_service
+            kg = await knowledge_graph_service.retrieve_full_graph_context(db, user_id)
+
+            # Build LLM Prompt
+            client = get_chat_client()
+            prompt = f"""You are Buddy, the user's close friend and empathetic wellness companion.
+Generate a short, warm, welcoming, and highly personalized first message greeting for the user opening their chat.
+Use their name if known.
+Incorporate context from their profile, onboarding answers, recent emotions, and knowledge graph.
+- For example, if they were stressed about exams last week, casually check in on how that's going.
+- Keep it extremely natural, friendly, brief, and conversational (1-2 sentences). Speak like a close college friend. Use abbreviations or casual phrasing naturally.
+
+Context Details:
+- User Name: {user_name}
+- Profile: {profile_details}
+- Onboarding Q&A: {onboarding_answers}
+- Recent Emotions: {recent_emotions}
+- Knowledge Graph: {kg}
+
+Output ONLY the greeting message text."""
+
+            response = await client.chat.completions.create(
+                model=settings.llm_model,
+                messages=[{"role": "system", "content": prompt}],
+                temperature=0.7,
+                max_tokens=150
+            )
+            greeting = response.choices[0].message.content.strip()
+            if greeting:
+                return greeting
+        except Exception as e:
+            logger.error(f"Failed to generate personalized greeting: {e}", exc_info=True)
+            
+        # Fallback greeting
+        return "Hey! I'm Buddy, your personal companion. I'm here to listen, support, and help you navigate whatever is on your mind. How are you feeling today?"
+
 
 # Export standard singleton
 profile_service = ProfileService()

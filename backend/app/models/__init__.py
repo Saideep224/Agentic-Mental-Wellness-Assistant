@@ -11,6 +11,7 @@ from app.models.memory import Memory
 from app.models.mood_log import MoodLog
 from app.models.emotion_log import EmotionLog
 from app.models.knowledge_graph import KnowledgeGraphRelation
+from app.models.user_graph import UserEntity, UserRelationship
 
 __all__ = [
     "User",
@@ -23,4 +24,6 @@ __all__ = [
     "MoodLog",
     "EmotionLog",
     "KnowledgeGraphRelation",
+    "UserEntity",
+    "UserRelationship",
 ]

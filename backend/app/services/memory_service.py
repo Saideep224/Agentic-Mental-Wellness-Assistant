@@ -370,6 +370,112 @@ class MemoryService:
             logger.error(f"Failed to consolidate and reflect memories for user {user_id}: {e}", exc_info=True)
             return None
 
+    async def rebuild_memories_from_history(self, db: AsyncSession, user_id: Any) -> List[Memory]:
+        """
+        Rebuild user memories from past chat messages if user memories are missing.
+        """
+        import uuid
+        user_uuid = uuid.UUID(str(user_id)) if isinstance(user_id, (str, uuid.UUID)) else user_id
+        
+        REBUILD_MEMORIES_PROMPT = """You are the Memory Recovery Agent for Esona, a mental wellness companion.
+Your task is to analyze the user's past chat history with Buddy and reconstruct their lost memories.
+Extract meaningful insights about the user's:
+1. Personality traits, hobbies, communication style, or preferences (e.g., likes supportive validation, studies computer science).
+2. Emotional baseline, patterns, triggers, or stressors (e.g., gets anxious about exams, feels lonely on weekends, recently went through a breakup).
+3. Significant life events (e.g., breakup, career change, exam).
+
+Avoid generic small talk. Only extract distinct, factual, and significant memories.
+
+For each memory, extract:
+- memory_summary: A concise, direct summary (e.g., "Went through a breakup recently and feels sad").
+- memory_type: Must be one of: "personality", "emotion", "event".
+- importance_score: A float between 1.0 (low) and 10.0 (high/critical).
+- behavior_patterns: A JSON object with fields:
+  - trigger: Description of trigger or stressor (or null)
+  - stress_level: 1-10 (or null)
+  - dominant_emotion: One of: Sadness, Anger, Fear, Anxiety, Happiness, Excitement, Frustration, Loneliness, Neutral (or null)
+
+Format the output strictly as a JSON object containing a list of memories:
+{
+  "memories": [
+    {
+      "memory_summary": "...",
+      "memory_type": "...",
+      "importance_score": 7.5,
+      "behavior_patterns": {
+        "trigger": "...",
+        "stress_level": 5,
+        "dominant_emotion": "..."
+      }
+    }
+  ]
+}"""
+
+        try:
+            from app.models.conversation import Message
+            # 1. Fetch all messages for the user
+            stmt = select(Message).where(Message.user_id == user_uuid).order_by(Message.created_at.asc())
+            res = await db.execute(stmt)
+            messages = res.scalars().all()
+            
+            if not messages:
+                logger.info(f"No chat history found for user {user_id} to rebuild memories.")
+                return []
+                
+            # Format history (take at most last 100 messages)
+            recent_messages = messages[-100:]
+            history_lines = []
+            for m in recent_messages:
+                role_name = "User" if m.role == "user" or m.role.value == "user" else "Buddy"
+                history_lines.append(f"{role_name}: {m.content}")
+            history_text = "\n".join(history_lines)
+            
+            # 2. Call LLM to extract memories in bulk
+            client = get_chat_client()
+            response = await client.chat.completions.create(
+                model=settings.llm_model,
+                messages=[
+                    {"role": "system", "content": REBUILD_MEMORIES_PROMPT},
+                    {"role": "user", "content": f"User's past chat history:\n{history_text}"}
+                ],
+                temperature=0.2,
+                response_format={"type": "json_object"}
+            )
+            raw = response.choices[0].message.content.strip()
+            data = json.loads(raw)
+            extracted_memories = data.get("memories", [])
+            
+            saved_memories = []
+            for mem_data in extracted_memories:
+                summary = mem_data.get("memory_summary")
+                if not summary:
+                    continue
+                patterns = mem_data.get("behavior_patterns", {}) or {}
+                m_type = mem_data.get("memory_type", "emotion")
+                imp = mem_data.get("importance_score", 5.0)
+                
+                saved = await self.save_memory(
+                    db=db,
+                    user_id=str(user_uuid),
+                    memory_summary=summary,
+                    behavior_patterns=patterns,
+                    memory_type=m_type,
+                    importance_score=float(imp)
+                )
+                if saved:
+                    saved_memories.append(saved)
+            
+            if saved_memories:
+                await db.flush()
+                logger.info(f"Rebuilt and saved {len(saved_memories)} memories from chat history for user {user_id}")
+            return saved_memories
+        except Exception as e:
+            logger.error(f"Failed to rebuild memories from chat history: {e}", exc_info=True)
+            return []
+
+    async def rebuildMemoriesFromHistory(self, db: AsyncSession, user_id: Any) -> List[Memory]:
+        return await self.rebuild_memories_from_history(db, user_id)
+
     # --- Reusable aliases matching camelCase requirements ---
     async def analyzeMemoryImportance(
         self, user_message: str, history_context: str = ""

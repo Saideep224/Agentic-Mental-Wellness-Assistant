@@ -44,18 +44,29 @@ class EmotionAgent:
             else:
                 probs_list = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-        # Map list: 0: happy, 1: neutral, 2: stress, 3: anxiety, 4: sadness, 5: frustration, 6: loneliness
-        while len(probs_list) < 7:
-            probs_list.append(0.0)
+        # Support both 7-emotion legacy lists and 9-emotion hybrid lists
+        if len(probs_list) == 9:
+            emotions = ["sadness", "anger", "fear", "anxiety", "happy", "excitement", "frustration", "loneliness", "neutral"]
+            max_idx = probs_list.index(max(probs_list))
+            primary = emotions[max_idx]
+            
+            stress = float(probs_list[emotions.index("frustration")]) # Map frustration to stress
+            anxiety = float(probs_list[emotions.index("anxiety")])
+            sadness = float(probs_list[emotions.index("sadness")])
+            burnout = float((stress + sadness) / 2.0)
+        else:
+            # Map list: 0: happy, 1: neutral, 2: stress, 3: anxiety, 4: sadness, 5: frustration, 6: loneliness
+            while len(probs_list) < 7:
+                probs_list.append(0.0)
 
-        emotions = ["happy", "neutral", "stress", "anxiety", "sadness", "frustration", "loneliness"]
-        max_idx = probs_list.index(max(probs_list))
-        primary = emotions[max_idx]
-        
-        stress = float(probs_list[2])
-        anxiety = float(probs_list[3])
-        sadness = float(probs_list[4])
-        burnout = float((stress + sadness) / 2.0)
+            emotions = ["happy", "neutral", "stress", "anxiety", "sadness", "frustration", "loneliness"]
+            max_idx = probs_list.index(max(probs_list))
+            primary = emotions[max_idx]
+            
+            stress = float(probs_list[2])
+            anxiety = float(probs_list[3])
+            sadness = float(probs_list[4])
+            burnout = float((stress + sadness) / 2.0)
         
         return {
             "primary_emotion": primary,

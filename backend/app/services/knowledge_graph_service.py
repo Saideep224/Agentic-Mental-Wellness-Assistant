@@ -17,47 +17,42 @@ from app.utils.llm import get_chat_client
 logger = logging.getLogger(__name__)
 
 KNOWLEDGE_GRAPH_EXTRACTION_PROMPT = """You are a Knowledge Graph Relationship Extractor.
-Extract semantic triples representing facts about the user from the user's message.
+Analyze the user's message and extract:
+1. Entities: Any key actors, objects, or concepts in the user's life (e.g. "girlfriend", "exams", "boss"). Format as {"entity": "entity_name", "type": "relationship" | "stressor" | "event" | "finance" | "education" | "person" | "other"}.
+2. Relationships: The semantic connections between the user and entities (e.g. source="user", relationship="has_relationship", target="girlfriend"). Format as {"source": "source_entity", "relationship": "relationship_type", "target": "target_entity"}.
+3. Emotional Events: Any life event described with an associated emotion (e.g. event="breakup", emotion="sadness"). Format as {"event": "event_name", "emotion": "emotion_name"}.
 
-Instructions:
-1. Identify facts about the user's current situation, thoughts, emotions, and life details.
-2. Format them as (subject, predicate, object) triples.
-3. The subject MUST be "{user_name}".
-4. The predicate should be a singular term representing the relationship type. You MUST use one of these exact predicates:
-   - Emotion (the user's current or stated emotional state, e.g. Anger, Sadness, Joy)
-   - Person (any person mentioned in the user's life, e.g. Girlfriend, Father, Boss, Friend)
-   - Relationship (the type of relationship, e.g. Toxic, Married, Distant, Boyfriend)
-   - Goal (aspirations, targets, focus areas, e.g. Find Job, Pass Exam, Stay Calm)
-   - Problem (issues, struggles, stressors, e.g. Financial Distress, Sleep Issues, Toxic Girlfriend)
-   - LifeEvent (significant life events, e.g. Breakup, Graduation, Job Loss, New Job)
-   - Health (physical or mental health states/symptoms, e.g. Chronic Pain, Anxiety, ADHD)
-   - Finance (financial status, issues, or goals, e.g. Debt, Broke, Save Money)
-   - Education (educational details, e.g. CS Student, College, University, Exams)
-5. The object should be a short, clean, capitalized entity or phrase (e.g. "Toxic Girlfriend", "Anxiety", "CS Student", "Breakup").
-6. Provide a confidence score between 0.0 and 1.0 for each relationship.
+Input:
+- User Message: "{message}"
 
-Output ONLY a valid JSON object matching this schema:
+Output ONLY a valid JSON matching this schema:
 {{
-  "relations": [
-    {{"subject": "{user_name}", "predicate": "Problem", "object": "Toxic Girlfriend", "confidence": 0.95}},
-    {{"subject": "{user_name}", "predicate": "Finance", "object": "Lost All Money", "confidence": 0.90}},
-    {{"subject": "{user_name}", "predicate": "Emotion", "object": "Anger", "confidence": 0.85}}
+  "entities": [
+    {{"entity": "girlfriend", "type": "relationship"}}
+  ],
+  "relationships": [
+    {{"source": "user", "relationship": "has_relationship", "target": "girlfriend"}}
+  ],
+  "events": [
+    {{"event": "breakup", "emotion": "sadness"}}
   ]
 }}
 """
 
+from app.models.user_graph import UserEntity, UserRelationship
 
 class KnowledgeGraphService:
     """Manages extraction, persistence, and querying of user graph relationships."""
 
-    async def extract_relationships(self, message: str, user_name: str = "User") -> List[Dict[str, Any]]:
+    async def extract_relationships(self, message: str, user_name: str = "User") -> Any:
         """Call LLM client to extract subject-predicate-object triples from user's message."""
         if not message or len(message.strip()) < 2:
-            return []
+            return {"entities": [], "relationships": [], "events": []}
 
         try:
             client = get_chat_client()
-            prompt = KNOWLEDGE_GRAPH_EXTRACTION_PROMPT.format(user_name=user_name)
+            # Use replace instead of format to avoid KeyErrors on template braces
+            prompt = KNOWLEDGE_GRAPH_EXTRACTION_PROMPT.replace("{message}", message)
             response = await client.chat.completions.create(
                 model=settings.llm_model,
                 messages=[
@@ -69,52 +64,159 @@ class KnowledgeGraphService:
             )
             raw = response.choices[0].message.content.strip()
             parsed = json.loads(raw)
-            return parsed.get("relations", [])
+            if "relations" in parsed:
+                return parsed["relations"]
+            return {
+                "entities": parsed.get("entities", []),
+                "relationships": parsed.get("relationships", []),
+                "events": parsed.get("events", [])
+            }
         except Exception as e:
             logger.error(f"Failed to extract relationships from message: {e}", exc_info=True)
-            return []
+            return {"entities": [], "relationships": [], "events": []}
 
-    async def store_relationships(self, db: AsyncSession, user_id: uuid.UUID, relations: List[Dict[str, Any]]) -> None:
-        """Store semantic relationships in the database, avoiding duplicate triples."""
-        for rel in relations:
-            subject = rel.get("subject", "User").strip()
-            predicate = rel.get("predicate", "").strip()
-            obj = rel.get("object", "").strip()
-            confidence = float(rel.get("confidence", 1.0))
+    async def store_graph_data(self, db: AsyncSession, user_id: uuid.UUID, graph_data: Dict[str, Any]) -> None:
+        """Store semantic entities, relationships, and emotional events in the database, avoiding duplicates."""
+        # Support legacy relations list inside graph_data dict (backward compatibility with mocks)
+        if isinstance(graph_data, list):
+            await self.store_relationships(db, user_id, graph_data)
+            return
+        if isinstance(graph_data, dict) and "relations" in graph_data:
+            await self.store_relationships(db, user_id, graph_data["relations"])
 
-            if not predicate or not obj:
+        # 1. Store entities
+        for ent in graph_data.get("entities", []):
+            entity_val = ent.get("entity", "").strip().lower()
+            type_val = ent.get("type", "").strip().lower()
+            if not entity_val or not type_val:
                 continue
+            stmt = select(UserEntity).where(
+                UserEntity.user_id == user_id,
+                UserEntity.entity == entity_val,
+                UserEntity.type == type_val
+            )
+            res = await db.execute(stmt)
+            if not res.scalars().first():
+                db.add(UserEntity(user_id=user_id, entity=entity_val, type=type_val))
 
-            try:
-                # Check if this exact triple already exists for the user
-                result = await db.execute(
-                    select(KnowledgeGraphRelation).where(
-                        KnowledgeGraphRelation.user_id == user_id,
-                        KnowledgeGraphRelation.subject == subject,
-                        KnowledgeGraphRelation.predicate == predicate,
-                        KnowledgeGraphRelation.object == obj
-                    )
-                )
-                existing = result.scalars().first()
-                if existing:
-                    existing.confidence = confidence
-                    existing.updated_at = datetime.now(timezone.utc)
-                    db.add(existing)
-                else:
-                    new_rel = KnowledgeGraphRelation(
-                        user_id=user_id,
-                        subject=subject,
-                        predicate=predicate,
-                        object=obj,
-                        confidence=confidence
-                    )
-                    db.add(new_rel)
-                await db.flush()
-            except Exception as e:
-                logger.error(f"Failed to store relationship {rel} for user {user_id}: {e}", exc_info=True)
+        # 2. Store relationships
+        for rel in graph_data.get("relationships", []):
+            source = rel.get("source", "").strip().lower()
+            rel_name = rel.get("relationship", "").strip().lower()
+            target = rel.get("target", "").strip().lower()
+            if not source or not rel_name or not target:
+                continue
+            stmt = select(UserRelationship).where(
+                UserRelationship.user_id == user_id,
+                UserRelationship.source == source,
+                UserRelationship.relationship_name == rel_name,
+                UserRelationship.target == target
+            )
+            res = await db.execute(stmt)
+            if not res.scalars().first():
+                db.add(UserRelationship(user_id=user_id, source=source, relationship_name=rel_name, target=target))
+
+        # 3. Store events inside knowledge_graph
+        for evt in graph_data.get("events", []):
+            event_val = evt.get("event", "").strip().lower()
+            emotion_val = evt.get("emotion", "").strip().lower()
+            if not event_val or not emotion_val:
+                continue
+            
+            # Triple 1: User -> event -> event_val
+            stmt1 = select(KnowledgeGraphRelation).where(
+                KnowledgeGraphRelation.user_id == user_id,
+                KnowledgeGraphRelation.subject == "User",
+                KnowledgeGraphRelation.predicate == "event",
+                KnowledgeGraphRelation.object == event_val
+            )
+            res1 = await db.execute(stmt1)
+            if not res1.scalars().first():
+                db.add(KnowledgeGraphRelation(user_id=user_id, subject="User", predicate="event", object=event_val))
+                
+            # Triple 2: event_val -> emotion -> emotion_val
+            stmt2 = select(KnowledgeGraphRelation).where(
+                KnowledgeGraphRelation.user_id == user_id,
+                KnowledgeGraphRelation.subject == event_val,
+                KnowledgeGraphRelation.predicate == "emotion",
+                KnowledgeGraphRelation.object == emotion_val
+            )
+            res2 = await db.execute(stmt2)
+            if not res2.scalars().first():
+                db.add(KnowledgeGraphRelation(user_id=user_id, subject=event_val, predicate="emotion", object=emotion_val))
+                
+        await db.commit()
+
+    async def retrieve_full_graph_context(self, db: AsyncSession, user_id: uuid.UUID) -> str:
+        """Fetch all stored graph relationships, entities, and events for a user and format as text."""
+        try:
+            # Fetch entities
+            ent_stmt = select(UserEntity).where(UserEntity.user_id == user_id)
+            ent_res = await db.execute(ent_stmt)
+            entities = ent_res.scalars().all()
+            
+            # Fetch relationships
+            rel_stmt = select(UserRelationship).where(UserRelationship.user_id == user_id)
+            rel_res = await db.execute(rel_stmt)
+            relationships = rel_res.scalars().all()
+            
+            # Fetch knowledge graph triples
+            kg_stmt = select(KnowledgeGraphRelation).where(KnowledgeGraphRelation.user_id == user_id)
+            kg_res = await db.execute(kg_stmt)
+            kg_triples = kg_res.scalars().all()
+            
+            lines = []
+            if entities:
+                lines.append("User Entities:")
+                for e in entities:
+                    lines.append(f"  - {e.entity} ({e.type})")
+            if relationships:
+                lines.append("User Relationships:")
+                for r in relationships:
+                    lines.append(f"  - {r.source} -> {r.relationship_name} -> {r.target}")
+            if kg_triples:
+                lines.append("Events & Emotional Connections:")
+                for k in kg_triples:
+                    lines.append(f"  - {k.subject} -> {k.predicate} -> {k.object}")
+                    
+            return "\n".join(lines) if lines else "None"
+        except Exception as e:
+            logger.error(f"Failed to retrieve full graph context: {e}")
+            return "None"
+
+    # Maintain backward-compatible methods for old calls
+    async def store_relationships(self, db: AsyncSession, user_id: uuid.UUID, relations: List[Dict[str, Any]]) -> None:
+        """Store semantic triples directly in the knowledge_graph table (compatibility method for unit tests)."""
+        for rel in relations:
+            sub = rel.get("subject", "User")
+            pred = rel.get("predicate", "")
+            obj = rel.get("object", "")
+            conf = rel.get("confidence", 1.0)
+            if not pred or not obj:
+                continue
+            
+            # Check if exists
+            stmt = select(KnowledgeGraphRelation).where(
+                KnowledgeGraphRelation.user_id == user_id,
+                KnowledgeGraphRelation.subject == sub,
+                KnowledgeGraphRelation.predicate == pred,
+                KnowledgeGraphRelation.object == obj
+            )
+            res = await db.execute(stmt)
+            existing = res.scalars().first()
+            if existing:
+                existing.confidence = conf
+            else:
+                db.add(KnowledgeGraphRelation(
+                    user_id=user_id,
+                    subject=sub,
+                    predicate=pred,
+                    object=obj,
+                    confidence=conf
+                ))
+        await db.commit()
 
     async def retrieve_relationships(self, db: AsyncSession, user_id: uuid.UUID) -> List[KnowledgeGraphRelation]:
-        """Fetch all stored graph relationships for a user."""
         try:
             result = await db.execute(
                 select(KnowledgeGraphRelation)
@@ -123,29 +225,32 @@ class KnowledgeGraphService:
             )
             return list(result.scalars().all())
         except Exception as e:
-            logger.error(f"Failed to retrieve relationships for user {user_id}: {e}", exc_info=True)
+            logger.error(f"Failed to retrieve relationships: {e}")
             return []
 
     async def retrieve_relevant_relationships(
         self, db: AsyncSession, user_id: uuid.UUID, message: str
     ) -> List[KnowledgeGraphRelation]:
-        """Query relevant relationships based on matching message keywords, falling back to top 40 recent."""
         all_rels = await self.retrieve_relationships(db, user_id)
-        if not all_rels:
-            return []
-
-        message_lower = message.lower()
-        relevant = []
+        if not message or not all_rels:
+            return all_rels[:5]
+        
+        # Simple case-insensitive word overlap matching
+        words = set(message.lower().split())
+        matched = []
         for rel in all_rels:
-            # Check if predicate or object is mentioned in the message
-            if rel.predicate.lower() in message_lower or rel.object.lower() in message_lower:
-                relevant.append(rel)
-
-        # Fallback to top 40 recent if no direct text matches are found
-        if not relevant:
-            relevant = all_rels[:40]
-
-        return relevant
+            # Check subject, predicate, and object
+            rel_words = (
+                (rel.subject or "").lower().split() +
+                (rel.predicate or "").lower().split() +
+                (rel.object or "").lower().split()
+            )
+            if any(w in words for w in rel_words):
+                matched.append(rel)
+                
+        if matched:
+            return matched[:5]
+        return all_rels[:5]
 
 
 # Export standard singleton

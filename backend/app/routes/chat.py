@@ -353,6 +353,19 @@ async def _get_emotional_profile_dict(
                 "onboarding_answers": profile.onboarding_answers or {},
                 "personality_profile": profile.personality_profile or {},
             })
+
+            # Self-healing Memory Rebuild: If user profile exists but memories are missing, rebuild from chat messages
+            try:
+                from app.models.memory import Memory
+                from app.services.memory_service import memory_service
+                mem_stmt = select(Memory).where(Memory.user_id == user_id)
+                mem_res = await db.execute(mem_stmt)
+                memories = mem_res.scalars().all()
+                if not memories:
+                    logger.info(f"User {user_id} has a profile but no memories. Running self-healing memory rebuild from chat history...")
+                    await memory_service.rebuild_memories_from_history(db, user_id)
+            except Exception as rebuild_err:
+                logger.warning(f"Failed to auto-rebuild memories for user {user_id}: {rebuild_err}")
             
         # Dynamically load / restore onboarding & profile facts from Supabase (crucial for personalization persistence)
         try:

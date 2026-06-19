@@ -578,7 +578,7 @@ class EmotionService:
         # Calculate final blended scores
         blended_scores = []
         for i in range(9):
-            val = 0.40 * mapped_mb_scores[i] + 0.40 * gemini_scores[i] + 0.20 * context_scores[i]
+            val = 0.30 * mapped_mb_scores[i] + 0.50 * gemini_scores[i] + 0.20 * context_scores[i]
             blended_scores.append(val)
 
         # Normalize final blended scores
@@ -641,8 +641,8 @@ class EmotionService:
         logger.info(
             f"\n=== HYBRID EMOTION BLENDER ===\n"
             f"User Message: {message}\n"
-            f"MentalBERT Mapped (40%): { {emotions_order[i]: round(mapped_mb_scores[i], 2) for i in range(9)} }\n"
-            f"Gemini (40%): { {emotions_order[i]: round(gemini_scores[i], 2) for i in range(9)} }\n"
+            f"MentalBERT Mapped (30%): { {emotions_order[i]: round(mapped_mb_scores[i], 2) for i in range(9)} }\n"
+            f"Gemini (50%): { {emotions_order[i]: round(gemini_scores[i], 2) for i in range(9)} }\n"
             f"Context (20%): { {emotions_order[i]: round(context_scores[i], 2) for i in range(9)} }\n"
             f"Blended Final: { {emotions_order[i]: round(blended_scores[i], 2) for i in range(9)} }\n"
             f"Selected: {matched_emotion} (conf: {confidence_score:.2f}) | Secondary: {secondary_emotion}\n"

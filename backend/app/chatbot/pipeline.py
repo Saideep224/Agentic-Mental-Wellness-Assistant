@@ -133,7 +133,20 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             )
             detected_emotion = emotion_res.get("detected_emotion", "Neutral")
             confidence_score = emotion_res.get("confidence_score", 1.0)
-            blended_scores = emotion_res.get("blended_scores", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0])
+            blended_scores = emotion_res.get("blended_scores")
+            if not blended_scores:
+                emotions_order = ["Sadness", "Anger", "Fear", "Anxiety", "Happiness", "Excitement", "Frustration", "Loneliness", "Neutral"]
+                blended_scores = [0.0] * 9
+                mapped_for_idx = detected_emotion
+                if mapped_for_idx == "Stress":
+                    mapped_for_idx = "Anxiety"
+                elif mapped_for_idx == "Happy":
+                    mapped_for_idx = "Happiness"
+                try:
+                    target_idx = emotions_order.index(mapped_for_idx)
+                    blended_scores[target_idx] = confidence_score
+                except ValueError:
+                    blended_scores[8] = confidence_score
             
             # Run Profile Fact Extraction and update db
             try:
@@ -558,28 +571,109 @@ async def response_agent_node(state: AgentState) -> dict:
                 messages.append({"role": role, "content": msg["content"]})
     messages.append({"role": "user", "content": user_message})
 
-    # Call Response Agent to generate response with quality checks
-    try:
-        gen_res = await response_agent.generate(
-            messages=messages,
-            temperature=0.7,
-            max_tokens=800,
-            recent_responses=recent_buddy_responses,
-        )
-        text = gen_res.get("text", "")
-        reasoning = gen_res.get("reasoning", "")
-    except Exception as e:
-        logger.error(f"Response agent generation failed: {e}", exc_info=True)
-        # Casual-appropriate fallbacks (never robotic support language)
+    # ── Greeting Interception Logic ──────────────────────────────
+    is_greeting = False
+    clean_msg = user_message.strip().lower().rstrip("?.!,")
+    greetings_set = {
+        "hi", "hey", "hello", "sup", "yo", "yooo", "heyy", "heyyy",
+        "wassup", "wassup bro", "hey hey", "hi there", "hey there",
+        "greetings", "good morning", "good afternoon", "good evening", "howdy"
+    }
+    
+    if clean_msg in greetings_set:
         import random
-        casual_fallbacks = [
-            "damn... ||| okay talk to me, what's going on?",
-            "wait what 😭 ||| say that again",
-            "bro hold on ||| what happened",
-            "oof ||| okay i'm listening",
+        # 1. Fetch user's last non-neutral emotion from logs
+        last_emotion = "neutral"
+        if db and user_id:
+            try:
+                import uuid
+                from app.models.emotion_log import EmotionLog
+                user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                stmt = select(EmotionLog).where(
+                    EmotionLog.user_id == user_uuid,
+                    EmotionLog.detected_emotion != "Neutral"
+                ).order_by(EmotionLog.timestamp.desc()).limit(1)
+                res = await db.execute(stmt)
+                last_log = res.scalars().first()
+                if last_log:
+                    last_emotion = last_log.detected_emotion.lower()
+            except Exception as le_err:
+                logger.warning(f"Failed to fetch last emotion for greeting check: {le_err}")
+        
+        # 2. Mood-based categorization lists
+        CASUAL_GREETINGS = [
+            "heyy 😊 what's up?",
+            "yooo 👋",
+            "sup bro",
+            "heyy there"
         ]
-        text = random.choice(casual_fallbacks)
-        reasoning = "Response generation failed, fallback triggered."
+
+        RETURNING_USER = [
+            "heyy welcome back 😊",
+            "good to see u again",
+            "yooo, how've u been?",
+            "heyy, what's been happening lately?"
+        ]
+
+        HAPPY_USER = [
+            "yooo 😎 u sound excited today",
+            "heyy, loving the energy already ✨",
+            "yooo what's the good news?"
+        ]
+
+        SAD_USER = [
+            "heyy 🥲 how are u holding up?",
+            "yo, how's everything been lately?",
+            "heyy, wanna talk about anything?"
+        ]
+
+        LATE_NIGHT = [
+            "still awake huh 😭",
+            "yooo night owl 🦉",
+            "heyy, can't sleep either?"
+        ]
+        
+        # 3. Intercept & select reply
+        is_late_night = current_time_ist.hour >= 23 or current_time_ist.hour < 5
+        total_msgs = len([m for m in history if m.get("role") == "user"])
+        
+        if is_late_night and random.random() < 0.7:
+            text = random.choice(LATE_NIGHT)
+        elif last_emotion in ["sadness", "loneliness", "anxiety", "fear"]:
+            text = random.choice(SAD_USER)
+        elif last_emotion in ["happiness", "excitement"]:
+            text = random.choice(HAPPY_USER)
+        elif total_msgs > 2 and random.random() < 0.6:
+            text = random.choice(RETURNING_USER)
+        else:
+            text = random.choice(CASUAL_GREETINGS)
+            
+        reasoning = f"Greeting intercept. msg='{user_message}', last_emotion='{last_emotion}', late_night={is_late_night}, returning={total_msgs > 2} -> select='{text}'"
+        is_greeting = True
+
+    if not is_greeting:
+        # Call Response Agent to generate response with quality checks
+        try:
+            gen_res = await response_agent.generate(
+                messages=messages,
+                temperature=0.7,
+                max_tokens=800,
+                recent_responses=recent_buddy_responses,
+            )
+            text = gen_res.get("text", "")
+            reasoning = gen_res.get("reasoning", "")
+        except Exception as e:
+            logger.error(f"Response agent generation failed: {e}", exc_info=True)
+            # Casual-appropriate fallbacks (never robotic support language)
+            import random
+            casual_fallbacks = [
+                "damn... ||| okay talk to me, what's going on?",
+                "wait what 😭 ||| say that again",
+                "bro hold on ||| what happened",
+                "oof ||| okay i'm listening",
+            ]
+            text = random.choice(casual_fallbacks)
+            reasoning = "Response generation failed, fallback triggered."
 
     # Update the per-user recent-responses cache (repetition guard)
     if text and user_id:

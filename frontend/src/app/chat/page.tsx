@@ -572,15 +572,7 @@ export default function ChatPage() {
 
                     return (
                       <>
-                        <div className="mb-2 px-3 text-[10px] font-bold tracking-wider uppercase text-sky-400 select-none opacity-80">
-                          My Chats:
-                        </div>
                         {buddyConvos.map((c) => renderContactItem(c))}
-
-                        <div className="mt-5 mb-2 px-3 text-[10px] font-bold tracking-wider uppercase text-sky-400 select-none opacity-80">
-                          Experts:
-                        </div>
-                        {EXPERTS_LIST.map((expert) => renderStaticExpertItem(expert))}
                       </>
                     );
                   })()}
@@ -803,7 +795,7 @@ export default function ChatPage() {
                     const suggestedSpec = message.agentAnalysis?.suggested_specialist;
                     const isAlreadyConnected = activeConv?.active_specialists?.includes(suggestedSpec);
                     const isDismissed = dismissedSuggestions.includes(message.id);
-                    const showSuggestion = suggestedSpec && !isAlreadyConnected && !isDismissed;
+                    const showSuggestion = false;
 
                     return (
                       <div key={message.id} className="space-y-3">

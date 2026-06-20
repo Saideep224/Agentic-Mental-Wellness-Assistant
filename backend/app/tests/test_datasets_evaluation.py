@@ -133,7 +133,7 @@ async def mock_llm_completion(messages, **kwargs):
             return res
             
     # 2. Response Agent mock response
-    elif "You are Buddy, the user's close friend." in sys_content:
+    elif "You are Esona, an AI wellness companion." in sys_content:
         # Determine intent mode from the prompt content
         print(f"[DEBUG MOCK] Response Agent called.")
         if "INTENT: CRISIS" in sys_content:

@@ -39,7 +39,7 @@ import { formatDate, truncateText } from '@/utils';
 import { skipOnboarding } from '@/api/onboarding';
 
 const agentSidebarConfig: Record<string, { emoji: string; name: string; role?: string; gradient: string; border: string }> = {
-  buddy: { emoji: '💙', name: 'Buddy', gradient: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'rgba(56, 189, 248, 0.3)' },
+  buddy: { emoji: '💙', name: 'Esona', gradient: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'rgba(56, 189, 248, 0.3)' },
   lex: { emoji: '⚖️', name: 'Lex', role: 'Legal Support', gradient: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)', border: 'rgba(245, 158, 11, 0.3)' },
   maya: { emoji: '👨‍⚕️', name: 'Dr. Maya', role: 'Health Support', gradient: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'rgba(16, 185, 129, 0.3)' },
   ray: { emoji: '👮', name: 'Officer Ray', role: 'Safety & Cyber Support', gradient: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)', border: 'rgba(239, 68, 68, 0.3)' },
@@ -643,7 +643,7 @@ export default function ChatPage() {
                     </div>
                     {isBuddy && activeConv?.active_specialists && activeConv.active_specialists.length > 0 ? (
                       <p className="text-[11px] text-sky-400 font-medium">
-                        Group Chat with Buddy
+                        Group Chat with Esona
                       </p>
                     ) : (
                       <p className="text-xs flex items-center gap-1" style={{ color: 'var(--accent-emerald)' }}>
@@ -817,7 +817,7 @@ export default function ChatPage() {
                             style={{ borderColor: 'rgba(56, 189, 248, 0.25)', boxShadow: '0 8px 32px rgba(56, 189, 248, 0.05)' }}
                           >
                             <p className="text-xs text-[var(--text-secondary)] text-center px-2 leading-relaxed">
-                              Buddy suggested involving <strong>{agentSidebarConfig[suggestedSpec]?.name || suggestedSpec}</strong> for specialized {agentSidebarConfig[suggestedSpec]?.role?.toLowerCase() || 'support'}.
+                              Esona suggested involving <strong>{agentSidebarConfig[suggestedSpec]?.name || suggestedSpec}</strong> for specialized {agentSidebarConfig[suggestedSpec]?.role?.toLowerCase() || 'support'}.
                             </p>
                             <div className="flex gap-3 w-full justify-center">
                               <button

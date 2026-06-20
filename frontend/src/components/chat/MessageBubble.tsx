@@ -73,7 +73,7 @@ const getEmotionDisplay = (emotion: string | undefined, emotionScore?: number, m
 };
 
 const agentConfig: Record<string, { emoji: string; name: string; gradient: string; border: string }> = {
-  buddy: { emoji: '💙', name: 'Buddy', gradient: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'rgba(56, 189, 248, 0.3)' },
+  buddy: { emoji: '💙', name: 'Esona', gradient: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'rgba(56, 189, 248, 0.3)' },
   lex: { emoji: '⚖️', name: 'Lex', gradient: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)', border: 'rgba(245, 158, 11, 0.3)' },
   maya: { emoji: '👨‍⚕️', name: 'Dr. Maya', gradient: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'rgba(16, 185, 129, 0.3)' },
   ray: { emoji: '👮', name: 'Officer Ray', gradient: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)', border: 'rgba(239, 68, 68, 0.3)' },

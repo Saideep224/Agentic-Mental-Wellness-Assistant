@@ -566,12 +566,14 @@ class ProfileService:
 
             # Build LLM Prompt
             client = get_chat_client()
-            prompt = f"""You are Buddy, the user's close friend and empathetic wellness companion.
+            prompt = f"""You are Esona, the user's close friend and empathetic AI wellness companion.
 Generate a short, warm, welcoming, and highly personalized first message greeting for the user opening their chat.
-Use their name if known.
-Incorporate context from their profile, onboarding answers, recent emotions, and knowledge graph.
-- For example, if they were stressed about exams last week, casually check in on how that's going.
-- Keep it extremely natural, friendly, brief, and conversational (1-2 sentences). Speak like a close college friend. Use abbreviations or casual phrasing naturally.
+Use their name if known (e.g. Sai).
+Incorporate context from their profile (interests, hobbies, goals), onboarding answers, recent emotions, and knowledge graph.
+- For example, if they have hobbies like editing or animation, or goals like improving mental wellness, mention them naturally and casually in the greeting.
+- E.g.: "heyy Sai 😊 good to see u again how's everything going with ur editing and animation stuff lately?" or "yo Sai 👋 last time u mentioned being interested in animation anything cool u worked on recently?"
+- Keep it extremely natural, friendly, brief, and conversational (1-2 sentences). Speak like a close college friend. Use lowercase and casual phrasing/abbreviations naturally.
+- DO NOT generate weird, inappropriate greeting words or slang like "hey daddy". Sound like a genuine, emotionally intelligent companion.
 
 Context Details:
 - User Name: {user_name}
@@ -595,7 +597,7 @@ Output ONLY the greeting message text."""
             logger.error(f"Failed to generate personalized greeting: {e}", exc_info=True)
             
         # Fallback greeting
-        return "Hey! I'm Buddy, your personal companion. I'm here to listen, support, and help you navigate whatever is on your mind. How are you feeling today?"
+        return "Hey! I'm Esona, your AI wellness companion. I'm here to listen, support, and help you navigate whatever is on your mind. How are you feeling today?"
 
 
 # Export standard singleton

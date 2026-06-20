@@ -38,7 +38,7 @@ async def list_conversations(
 ):
     """List all conversations for the authenticated user, newest first (Buddy first)."""
     # 1. Ensure the Buddy conversation exists
-    buddy_info = ("buddy", "💙 Buddy", "Hi! I'm Buddy, your personal companion. I'm here to listen, support, and help you navigate whatever is on your mind. How are you feeling today?")
+    buddy_info = ("buddy", "💙 Esona", "Hi! I'm Esona, your AI wellness companion. I'm here to listen, support, and help you navigate whatever is on your mind. How are you feeling today?")
     
     existing_result = await db.execute(
         select(Conversation).where(

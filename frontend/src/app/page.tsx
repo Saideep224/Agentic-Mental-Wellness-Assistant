@@ -14,7 +14,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="relative z-10 py-8 text-center border-t" style={{ borderColor: 'var(--glass-border)' }}>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          © {new Date().getFullYear()} Esona — Your Supporting Buddy. Built with care. 💙
+          © {new Date().getFullYear()} Esona — Your AI Wellness Companion. Built with care. 💙
         </p>
       </footer>
     </main>

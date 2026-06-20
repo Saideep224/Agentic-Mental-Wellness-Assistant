@@ -646,7 +646,7 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         from app.routes.chat import generate_first_message
         res1 = await generate_first_message(self.conv_id, self.user, self.db)
         self.assertIn("before we start, i'd love to get to know you a little better", res1["response"])
-        self.assertIn("i'm Buddy", res1["response"])
+        self.assertIn("i'm Esona", res1["response"])
 
         # 2. Test returning user within 4 hours session limit: onboarding_completed is True
         self.user.onboarding_completed = True

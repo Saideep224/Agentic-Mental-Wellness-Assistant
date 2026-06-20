@@ -21,7 +21,7 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXTAUTH_URL || 'http://localhost:3000'),
-  title: 'Esona - Your Supporting Buddy',
+  title: 'Esona - Your AI Wellness Companion',
   description:
     'An emotionally adaptive AI that truly understands you — your moods, your words, your silence. Esona is a multi-agent mental wellness chatbot that grows with you.',
   keywords: ['mental health', 'AI chatbot', 'emotional support', 'wellness', 'therapy'],
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
   },
   manifest: '/manifest.json',
   openGraph: {
-    title: 'Esona - Your Supporting Buddy',
+    title: 'Esona - Your AI Wellness Companion',
     description:
       'An emotionally adaptive AI that truly understands you — your moods, your words, your silence. Esona is a multi-agent mental wellness chatbot that grows with you.',
     type: 'website',

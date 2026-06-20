@@ -673,46 +673,14 @@ async def send_message(
         # 5. Run agent graph
         logger.info(f"[AI AGENT] Running multi-agent cognitive graph for user message...")
 
-        # --- Intent-based specialist routing ---
-        current_specialists: list = list(conversation.active_specialists or [])
-
-        # Extract pending specialist from last assistant message
-        pending_specialist = None
-        if history:
-            for msg in reversed(history):
-                if msg.get("role") == "assistant":
-                    analysis = msg.get("agent_analysis", {})
-                    pending_specialist = analysis.get("suggested_specialist")
-                    break
-
-        specialist_action, action_target = detect_specialist_action(body.message, current_specialists, pending_specialist)
+        # --- Intent-based specialist routing (Bypassed) ---
+        specialist_action = None
+        action_target = None
         specialist_action_event = None
-        if specialist_action == "invite" and action_target:
-            if action_target not in current_specialists:
-                current_specialists.append(action_target)
-                conversation.active_specialists = current_specialists
-                db.add(conversation)
-                await db.commit()
-                await db.refresh(conversation)
-                specialist_action_event = {"action": "invited", "specialist_id": action_target}
-                logger.info(f"[SPECIALIST INTENT] Invited specialist '{action_target}' to conversation {conversation_id_resolved}")
-        elif specialist_action == "remove" and action_target:
-            if action_target in current_specialists:
-                current_specialists.remove(action_target)
-                conversation.active_specialists = current_specialists
-                db.add(conversation)
-                await db.commit()
-                await db.refresh(conversation)
-                specialist_action_event = {"action": "removed", "specialist_id": action_target}
-                logger.info(f"[SPECIALIST INTENT] Removed specialist '{action_target}' from conversation {conversation_id_resolved}")
         # --- End intent-based routing ---
 
+        # Force all chats to route to Esona, bypassing active specialists
         specialist_id = None
-        if conversation.agent_id and conversation.agent_id != "buddy":
-            specialist_id = conversation.agent_id
-        elif conversation.active_specialists:
-            specialist_id = conversation.active_specialists[0]
-
         specialist_response = None
         suggested_specialist = None
 
@@ -814,18 +782,8 @@ async def send_message(
             mood_score = result.get("mood_score", None)
             agent_analysis = result.get("agent_analysis", {})
 
-            # Check if Buddy should recommend a specialist (only on Buddy chat, when no specialist is active)
-            if not specialist_id and conversation.agent_id == "buddy":
-                suggested_specialist = detect_specialist_recommendation(body.message, agent_analysis, history)
-                if suggested_specialist:
-                    from app.agents.specialist_registry import SPECIALIST_REGISTRY
-                    spec_info = SPECIALIST_REGISTRY[suggested_specialist]
-                    if suggested_specialist == "ray":
-                        rec_suffix = "\n\nOfficer Ray can help with reporting, cybercrime and complaint procedures. want me to bring him in?"
-                    else:
-                        rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
-                    full_response += rec_suffix
-                    agent_analysis["suggested_specialist"] = suggested_specialist
+            # Bypassed: Esona does not recommend or route to specialists
+            suggested_specialist = None
 
         except Exception as agent_err:
             logger.error(f"[AI AGENT ERROR] Multi-agent execution failed: {agent_err}. Falling back to randomized human reply.", exc_info=True)
@@ -1055,48 +1013,14 @@ async def generate_and_persist_sse_response(
             )
             conversation = conversation_res.scalar_one_or_none()
 
-            # --- Intent-based specialist routing (SSE path) ---
-            current_specialists: list = list((conversation.active_specialists if conversation else None) or [])
-
-            # Extract pending specialist from last assistant message
-            pending_specialist = None
-            if history:
-                for msg in reversed(history):
-                    if msg.get("role") == "assistant":
-                        analysis = msg.get("agent_analysis", {})
-                        pending_specialist = analysis.get("suggested_specialist")
-                        break
-
-            specialist_action, action_target = detect_specialist_action(message, current_specialists, pending_specialist)
+            # --- Intent-based specialist routing (SSE path, Bypassed) ---
+            specialist_action = None
+            action_target = None
             sse_specialist_action_event = None
-            if conversation:
-                if specialist_action == "invite" and action_target:
-                    if action_target not in current_specialists:
-                        current_specialists.append(action_target)
-                        conversation.active_specialists = current_specialists
-                        db.add(conversation)
-                        await db.commit()
-                        await db.refresh(conversation)
-                        sse_specialist_action_event = {"action": "invited", "specialist_id": action_target}
-                        logger.info(f"[SSE SPECIALIST INTENT] Invited specialist '{action_target}' to conversation {conversation_id}")
-                elif specialist_action == "remove" and action_target:
-                    if action_target in current_specialists:
-                        current_specialists.remove(action_target)
-                        conversation.active_specialists = current_specialists
-                        db.add(conversation)
-                        await db.commit()
-                        await db.refresh(conversation)
-                        sse_specialist_action_event = {"action": "removed", "specialist_id": action_target}
-                        logger.info(f"[SSE SPECIALIST INTENT] Removed specialist '{action_target}' from conversation {conversation_id}")
             # --- End intent-based routing ---
 
+            # Force all chats to route to Esona, bypassing active specialists
             specialist_id = None
-            if conversation:
-                if conversation.agent_id and conversation.agent_id != "buddy":
-                    specialist_id = conversation.agent_id
-                elif conversation.active_specialists:
-                    specialist_id = conversation.active_specialists[0]
-
             specialist_response = None
             suggested_specialist = None
 
@@ -1197,18 +1121,8 @@ async def generate_and_persist_sse_response(
             mood_score = result.get("mood_score", None)
             agent_analysis = result.get("agent_analysis", {})
 
-            # Check if Buddy should recommend a specialist
-            if not specialist_id and conversation and conversation.agent_id == "buddy":
-                suggested_specialist = detect_specialist_recommendation(message, agent_analysis, history)
-                if suggested_specialist:
-                    from app.agents.specialist_registry import SPECIALIST_REGISTRY
-                    spec_info = SPECIALIST_REGISTRY[suggested_specialist]
-                    if suggested_specialist == "ray":
-                        rec_suffix = "\n\nOfficer Ray can help with reporting, cybercrime and complaint procedures. want me to bring him in?"
-                    else:
-                        rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
-                    full_response += rec_suffix
-                    agent_analysis["suggested_specialist"] = suggested_specialist
+            # Bypassed: Esona does not recommend or route to specialists
+            suggested_specialist = None
 
         except Exception as agent_err:
             logger.error(f"[SSE AI ERROR] Agent graph execution failed: {agent_err}. Falling back to randomized human reply.", exc_info=True)
@@ -1741,7 +1655,7 @@ async def generate_first_message(
     if not current_user.onboarding_completed:
         if msg_count == 0:
             logger.info(f"[FIRST MESSAGE] New user {current_user.id}. Sending welcome + onboarding intro.")
-            reply = "hey 👋 ||| i'm Buddy ||| before we start, i'd love to get to know you a little better 😊"
+            reply = "hey 👋 ||| i'm Esona ||| before we start, i'd love to get to know you a little better 😊"
             assistant_msg = Message(
                 conversation_id=conversation.id,
                 user_id=current_user.id,
@@ -1849,7 +1763,7 @@ async def generate_first_message(
         time_of_day = "Night"
 
     # 6. Build LLM prompt
-    prompt = f"""You are Buddy, the user's close friend and empathetic wellness companion.
+    prompt = f"""You are Esona, the user's close friend and empathetic AI wellness companion.
 Your task is to generate a highly personalized, warm, and natural first greeting message (check-in) for the user.
 Every session check-in must feel unique, caring, and reflect that you remember their life, goals, and interests.
 
@@ -1868,7 +1782,7 @@ You must check the user's context and select the highest priority topic availabl
 5. General Greeting: If no specific context exists, just check in on how their day is going.
 
 === BEHAVIOR RULES ===
-1. NEVER introduce yourself (DO NOT say "I'm Buddy" or "Hi, I'm Buddy" or "Hi, I'm Esona"). The user already knows you.
+1. NEVER introduce yourself (DO NOT say "I'm Esona" or "Hi, I'm Esona"). The user already knows you.
 2. Speak like a close friend texting — informal, lowercase-friendly, warm, using natural emojis.
 3. STRICT LENGTH LIMIT: Under no circumstances exceed 2 short messages.
 4. You MUST split your thoughts using the delimiter " ||| " (with spaces around it) into exactly 1 or 2 parts. Each part should be a single short line.

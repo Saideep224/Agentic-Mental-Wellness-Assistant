@@ -667,10 +667,9 @@ async def response_agent_node(state: AgentState) -> dict:
             # Casual-appropriate fallbacks (never robotic support language)
             import random
             casual_fallbacks = [
-                "damn... ||| okay talk to me, what's going on?",
-                "wait what 😭 ||| say that again",
-                "bro hold on ||| what happened",
-                "oof ||| okay i'm listening",
+                "aw man, my brain just glitched for a sec 🥲 wanna try sending that again?",
+                "oof sorry, my system hit a small bump. what were u saying again? 😭",
+                "damn, my connection dropped for a split second. say that again? 🥲",
             ]
             text = random.choice(casual_fallbacks)
             reasoning = "Response generation failed, fallback triggered."

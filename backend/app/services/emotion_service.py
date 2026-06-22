@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.emotion_log import EmotionLog
-from app.utils.llm import get_chat_client
+from app.utils.llm import generate_chat_completion_with_fallback, get_chat_client
 
 logger = logging.getLogger(__name__)
 
@@ -478,8 +478,6 @@ class EmotionService:
         )
 
         try:
-            client = get_chat_client()
-            
             # Recent history context - analyze last 10 messages
             recent_context = "None"
             if history:
@@ -539,13 +537,11 @@ class EmotionService:
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": f"User message: {message}"},
             ]
-            response = await client.chat.completions.create(
-                model=settings.llm_model,
+            raw = await generate_chat_completion_with_fallback(
                 messages=messages,
                 temperature=0.1,
                 response_format={"type": "json_object"},
             )
-            raw = response.choices[0].message.content.strip()
             result = json.loads(raw)
             
             # Legacy compatibility check: if the mock/result contains detected_emotion directly

@@ -401,6 +401,7 @@ RULES:
 
 =================================================
 User Profile:
+- Name: {user_name}
 {profile_context}
 {profile_details}
 - Personality Traits: {json.dumps(personality)}

@@ -17,7 +17,7 @@ from app.models.emotion_log import EmotionLog
 from app.models.user_graph import UserEntity, UserRelationship
 from app.models.knowledge_graph import KnowledgeGraphRelation
 from app.routes.auth import get_current_user
-from app.utils.llm import get_chat_client
+from app.utils.llm import generate_chat_completion_with_fallback
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -69,22 +69,19 @@ async def get_agent_insights(
                 emotions_list.reverse()
                 emotions_str = ", ".join(emotions_list)
 
-                client = get_chat_client()
                 trend_prompt = (
                     f"Analyze this chronological list of recent user emotions: [{emotions_str}].\n"
                     "Determine the emotional trend of the user.\n"
                     "Provide a concise, 1-3 word description (e.g., 'Improving', 'Stable', 'Fluctuating', 'Anxious', 'Gradual Recovery').\n"
                     "Output ONLY the description, no explanation, no period."
                 )
-                response = await client.chat.completions.create(
-                    model=settings.llm_model,
+                emotion_trend = await generate_chat_completion_with_fallback(
                     messages=[
                         {"role": "system", "content": "You are a trend analysis tool. Respond only with the trend description."},
                         {"role": "user", "content": trend_prompt}
                     ],
                     temperature=0.1,
                 )
-                emotion_trend = response.choices[0].message.content.strip()
             except Exception as trend_err:
                 logger.warning(f"Failed to generate dynamic trend with LLM: {trend_err}")
                 # Fallback to simple rule-based trend

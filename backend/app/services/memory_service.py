@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.models.memory import Memory
-from app.utils.llm import get_chat_client
+from app.utils.llm import generate_chat_completion_with_fallback
 from app.memory.memory_manager import MemoryManager
 
 logger = logging.getLogger(__name__)
@@ -93,9 +93,7 @@ class MemoryService:
             if history_context:
                 prompt_content = f"Context:\n{history_context}\n\nUser message: {user_message}"
 
-            client = get_chat_client()
-            response = await client.chat.completions.create(
-                model=settings.llm_model,
+            raw = await generate_chat_completion_with_fallback(
                 messages=[
                     {"role": "system", "content": MEMORY_ANALYZER_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt_content},
@@ -103,7 +101,6 @@ class MemoryService:
                 temperature=0.1,
                 response_format={"type": "json_object"},
             )
-            raw = response.choices[0].message.content.strip()
             return json.loads(raw)
         except Exception as e:
             logger.error(f"Error in analyze_memory_importance: {e}", exc_info=True)
@@ -340,17 +337,13 @@ class MemoryService:
                 formatted_memories.append(f"- {m.memory_summary}")
             memories_text = "\n".join(formatted_memories)
 
-            # 3. Call LLM to consolidate
-            client = get_chat_client()
-            response = await client.chat.completions.create(
-                model=settings.llm_model,
+            reflection_content = await generate_chat_completion_with_fallback(
                 messages=[
                     {"role": "system", "content": MEMORY_REFLECTION_PROMPT},
                     {"role": "user", "content": f"User's memories:\n{memories_text}"}
                 ],
                 temperature=0.3,
             )
-            reflection_content = response.choices[0].message.content.strip()
 
             if not reflection_content or len(reflection_content) < 10:
                 logger.warning(f"Consolidated memory reflection was too short or empty. Skipping.")
@@ -446,10 +439,7 @@ Format the output strictly as a JSON object containing a list of memories:
                 history_lines.append(f"{role_name}: {m.content}")
             history_text = "\n".join(history_lines)
             
-            # 2. Call LLM to extract memories in bulk
-            client = get_chat_client()
-            response = await client.chat.completions.create(
-                model=settings.llm_model,
+            raw = await generate_chat_completion_with_fallback(
                 messages=[
                     {"role": "system", "content": REBUILD_MEMORIES_PROMPT},
                     {"role": "user", "content": f"User's past chat history:\n{history_text}"}
@@ -457,7 +447,6 @@ Format the output strictly as a JSON object containing a list of memories:
                 temperature=0.2,
                 response_format={"type": "json_object"}
             )
-            raw = response.choices[0].message.content.strip()
             data = json.loads(raw)
             extracted_memories = data.get("memories", [])
             

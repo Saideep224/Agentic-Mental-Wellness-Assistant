@@ -113,18 +113,14 @@ Conversation:
 Title:"""
     
     try:
-        from app.utils.llm import get_chat_client
-        client = get_chat_client()
-        from app.config import settings
-        response = await client.chat.completions.create(
-            model=settings.llm_model,
+        from app.utils.llm import generate_chat_completion_with_fallback
+        title = await generate_chat_completion_with_fallback(
             messages=[
                 {"role": "system", "content": prompt.format(history_text=history_text)},
             ],
             temperature=0.7,
             max_tokens=25,
         )
-        title = response.choices[0].message.content.strip()
         # Clean title
         title = title.replace('"', '').replace("'", '').replace("`", "").strip()
         if len(title) > 50:
@@ -383,15 +379,12 @@ Conversation history:
 Summary:"""
 
     try:
-        from app.utils.llm import get_chat_client
-        client = get_chat_client()
-        response = await client.chat.completions.create(
-            model=settings.llm_model,
+        from app.utils.llm import generate_chat_completion_with_fallback
+        summary = await generate_chat_completion_with_fallback(
             messages=[{"role": "system", "content": prompt}],
             temperature=0.3,
             max_tokens=200,
         )
-        summary = response.choices[0].message.content.strip()
         
         # Check if a summary already exists in Memory table
         from app.models.memory import Memory
@@ -1789,17 +1782,7 @@ async def generate_first_message(
     is_new_user_first_message = (not current_user.onboarding_completed) and msg_count == 0
 
     if is_new_user_first_message:
-        prompt = f"""You are Buddy, the user's close friend and empathetic wellness companion.
-This is the very first time you are meeting the user, and they have not completed their onboarding questionnaire yet.
-Generate a warm, friendly, and natural welcome message introducing yourself as Buddy, and invite them to share a bit about themselves so you can get to know them.
-Keep it extremely casual, Gen Z texting style, lowercase, using emojis.
-You MUST split your thoughts using the delimiter " ||| " (with spaces around it) into exactly 2 or 3 parts.
-Do not exceed 3 parts.
-DO NOT use the name of the user as you don't know it yet.
-
-Example: "hey 👋 ||| i'm Buddy ||| before we start, i'd love to get to know you a little better 😊"
-
-Response:"""
+        raw_response = "hey 👋 ||| i'm Buddy ||| before we start, i'd love to get to know you a little better 😊"
     else:
         should_generate = False
         if msg_count == 0:
@@ -1816,9 +1799,9 @@ Response:"""
 
         if not should_generate:
             return {
-                "response": history_msgs[-1].content if history_msgs else "",
-                "emotionDetected": history_msgs[-1].emotion_detected or "neutral",
-                "moodScore": history_msgs[-1].mood_score or 0.5,
+                "response": "",
+                "emotionDetected": "neutral",
+                "moodScore": 0.5,
             }
 
         prompt = f"""You are Buddy, the user's close friend and empathetic wellness companion.
@@ -1865,18 +1848,15 @@ USER DETAILS:
 
 Response:"""
 
-    try:
-        from app.utils.llm import generate_chat_completion_with_fallback
-        raw_response = await generate_chat_completion_with_fallback(
-            messages=[{"role": "system", "content": prompt}],
-            temperature=0.75,
-            max_tokens=150
-        )
-    except Exception as e:
-        logger.error(f"Failed to generate personalized first message: {e}", exc_info=True)
-        if is_new_user_first_message:
-            raw_response = "hey 👋 ||| i'm Buddy ||| before we start, i'd love to get to know you a little better 😊"
-        else:
+        try:
+            from app.utils.llm import generate_chat_completion_with_fallback
+            raw_response = await generate_chat_completion_with_fallback(
+                messages=[{"role": "system", "content": prompt}],
+                temperature=0.75,
+                max_tokens=150
+            )
+        except Exception as e:
+            logger.error(f"Failed to generate personalized first message: {e}", exc_info=True)
             raw_response = f"hey {user_name} 👋 ||| just wanted to check in and see how you're doing today."
 
     # 7. Save greeting to DB

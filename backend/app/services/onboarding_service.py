@@ -14,7 +14,7 @@ from app.config import settings
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.memory import Memory
-from app.utils.llm import get_chat_client
+from app.utils.llm import generate_chat_completion_with_fallback, get_chat_client
 from app.services.profile_service import profile_service
 
 logger = logging.getLogger(__name__)
@@ -197,9 +197,7 @@ class OnboardingService:
         q_text = self.get_question(stage)
         
         try:
-            client = get_chat_client()
-            response = await client.chat.completions.create(
-                model=settings.llm_model,
+            raw = await generate_chat_completion_with_fallback(
                 messages=[
                     {"role": "system", "content": ONBOARDING_PARSER_PROMPT.format(
                         question_type=q_type,
@@ -210,7 +208,6 @@ class OnboardingService:
                 temperature=0.1,
                 response_format={"type": "json_object"}
             )
-            raw = response.choices[0].message.content.strip()
             parsed = json.loads(raw)
             
             logger.info(f"[Onboarding Parser] Parsed stage {stage} response: {parsed}")
@@ -380,9 +377,7 @@ Output ONLY a single JSON object matching this schema:
 }"""
 
         try:
-            client = get_chat_client()
-            response = await client.chat.completions.create(
-                model=settings.llm_model,
+            raw = await generate_chat_completion_with_fallback(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"User answers:\n{answers_str}"}
@@ -390,7 +385,6 @@ Output ONLY a single JSON object matching this schema:
                 temperature=0.3,
                 response_format={"type": "json_object"}
             )
-            raw = response.choices[0].message.content.strip()
             profile_data = json.loads(raw)
             
             # Save data

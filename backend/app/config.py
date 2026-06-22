@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # ── OpenAI ────────────────────────────────────────────────
     OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o"
+    OPENAI_MODEL: str = "gpt-4o-mini"  # Cheaper than gpt-4o, excellent for conversational chat
 
     # ── Gemini ────────────────────────────────────────────────
     GEMINI_API_KEY: str = ""

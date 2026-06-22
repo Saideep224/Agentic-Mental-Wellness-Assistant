@@ -87,8 +87,8 @@ export default function AuthCallbackPage() {
         console.log('[Auth Callback] Successfully synced session with FastAPI backend:', freshUser);
 
         if (!freshUser.onboardingCompleted) {
-          setStatus('Redirecting to onboarding...');
-          router.replace('/onboarding');
+          setStatus('Redirecting to home page...');
+          router.replace('/');
         } else {
           setStatus('Redirecting to chat...');
           router.replace('/chat');

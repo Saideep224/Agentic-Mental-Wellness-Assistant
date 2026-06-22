@@ -152,7 +152,7 @@ export default function LoginPage() {
         api.setStoredUser(freshUser);
 
         if (!freshUser.onboardingCompleted) {
-          router.replace('/onboarding');
+          router.replace('/');
         } else {
           router.replace('/chat');
         }
@@ -196,7 +196,7 @@ export default function LoginPage() {
         api.setStoredUser(freshUser);
 
         if (!freshUser.onboardingCompleted) {
-          router.replace('/onboarding');
+          router.replace('/');
         } else {
           router.replace('/chat');
         }

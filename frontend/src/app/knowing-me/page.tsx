@@ -237,7 +237,19 @@ export default function KnowingMePage() {
 
       setEditingCategory(null);
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+
+      const answeredCount = rawAnswers.filter((ans: any) => 
+        (ans.selected_answers && ans.selected_answers.length > 0) || 
+        Boolean(ans.custom_answer?.trim())
+      ).length;
+
+      if (answeredCount === 25) {
+        setTimeout(() => {
+          router.replace('/chat');
+        }, 1500);
+      } else {
+        setTimeout(() => setSaveSuccess(false), 3000);
+      }
     } catch (err: any) {
       console.error('[KnowingMe] Save failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to save your answers. Please try again.');

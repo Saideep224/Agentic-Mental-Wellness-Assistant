@@ -185,21 +185,29 @@ export async function upsertQuestionAnswersToSupabase(
   } catch (err: any) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error('[LOG] [SupabaseSync] Exception caught in upsertQuestionAnswersToSupabase:', errMsg);
-    const isUserNotFound = 
+    
+    const isSessionError = 
+      errMsg.includes('Unable to verify your login session') ||
+      errMsg.includes('You are not signed in') ||
       errMsg.includes('user_not_found') || 
       errMsg.includes('sub claim') || 
       errMsg.includes('does not exist') ||
-      errMsg.includes('403');
+      errMsg.includes('403') ||
+      errMsg.includes('401') ||
+      errMsg.includes('JWT');
     
-    if (isUserNotFound) {
-      console.warn('[LOG] [SupabaseSync] User not found or invalid session. Clearing auth and redirecting...', errMsg);
+    if (isSessionError) {
+      console.warn('[LOG] [SupabaseSync] Critical session error. Clearing auth and redirecting...', errMsg);
       if (typeof window !== 'undefined') {
         const { clearAuth } = await import('./client');
         clearAuth();
-        console.log('[LOG] [SupabaseSync] Redirecting to /login due to 403/stale session');
+        console.log('[LOG] [SupabaseSync] Redirecting to /login due to session error');
         window.location.href = '/login';
       }
+      throw err;
+    } else {
+      console.warn('[LOG] [SupabaseSync] Non-blocking database sync warning (e.g. Supabase DB not configured). Continuing...', errMsg);
+      // Do not throw the error, let the save continue successfully to backend SQLite
     }
-    throw err;
   }
 }

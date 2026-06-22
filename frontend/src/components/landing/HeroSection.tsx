@@ -10,11 +10,15 @@ import EsonaGetStartedButton from './EsonaGetStartedButton';
 export default function HeroSection() {
   const [torchState, setTorchState] = useState<'unlit' | 'lighting' | 'revealing_text' | 'revealed_cta'>('unlit');
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   const handleBeginJourney = () => {
     if (isAuthenticated) {
-      router.push('/chat');
+      if (user?.onboardingCompleted) {
+        router.push('/chat');
+      } else {
+        router.push('/knowing-me');
+      }
     } else {
       router.push('/login');
     }

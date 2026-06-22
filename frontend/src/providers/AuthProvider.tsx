@@ -124,6 +124,14 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         const jwtToken = session.access_token;
         setTokenState(jwtToken);
         localStorage.setItem('esona_token', jwtToken);
+        
+        // Skip running getMe concurrently in the listener if we are on the auth callback page.
+        // The callback page itself will fetch the user and redirect, preventing concurrent race conditions.
+        if (typeof window !== 'undefined' && window.location.pathname === '/auth/callback') {
+          console.log('[LOG] [onAuthStateChange] Skipping getMe sync because user is on /auth/callback');
+          return;
+        }
+
         console.log('[LOG] [onAuthStateChange] Stored new token. Syncing profile via getMe...');
         
         try {
@@ -185,15 +193,18 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         
         if (pathname === '/login') {
           if (!hasCompletedOnboarding) {
-            console.log('[LOG] [AuthProvider Checks] Redirecting to /onboarding');
-            router.push('/onboarding');
+            console.log('[LOG] [AuthProvider Checks] Redirecting to /');
+            router.push('/');
           } else {
             console.log('[LOG] [AuthProvider Checks] Redirecting to /chat');
             router.push('/chat');
           }
-        } else if (hasCompletedOnboarding && pathname === '/onboarding') {
+        } else if (hasCompletedOnboarding && (pathname === '/onboarding' || pathname === '/knowing-me')) {
           console.log('[LOG] [AuthProvider Checks] Redirecting to /chat because onboarding is complete');
           router.push('/chat');
+        } else if (!hasCompletedOnboarding && protectedRoutes.some(route => pathname.startsWith(route)) && pathname !== '/knowing-me') {
+          console.log('[LOG] [AuthProvider Checks] Redirecting to / because onboarding is not complete');
+          router.push('/');
         }
       }
     }
@@ -206,7 +217,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     setUser(newUser);
     
     if (!newUser.onboardingCompleted) {
-      router.replace('/onboarding');
+      router.replace('/');
     } else {
       router.replace('/chat');
     }

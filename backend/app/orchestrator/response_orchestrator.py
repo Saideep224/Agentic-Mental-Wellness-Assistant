@@ -311,7 +311,7 @@ class ResponseOrchestrator:
                 "React the same way a close friend would react to that text: naturally, conversationally,\n"
                 "matching the user's surprise/confusion/playfulness.\n"
                 "Examples of correct casual responses:\n"
-                "  'wait what' | 'bro WHAT' | 'okay now i'm curious' | 'say sike' | '\ud83d\ude2d what happened' | 'HOLD ON'"
+                "  'wait what' | 'bro WHAT' | 'okay now i'm curious' | 'say sike' | '😭 what happened' | 'HOLD ON'"
             ),
             "check_in": (
                 "INTENT: CHECK-IN ● LIGHT MOOD ● CONVERSATIONAL MODE\n"
@@ -400,27 +400,24 @@ RULES:
 10. Sound human. Keep responses conversational. Length: 1-4 sentences.
 
 =================================================
-EMOTION CONTEXT:
-{emotion_context_str}
-
-RECENT EMOTION TIMELINE (LAST 7 DAYS):
-{timeline_str}
-=================================================
+User Profile:
 {profile_context}
-=================================================
-KNOWLEDGE GRAPH RELATIONSHIPS:
-{graph_str}
-=================================================
-{comfort_kit_block}
-{growth_insight_block}
-CURRENT USER PROFILE DETAILS (LEGACY):
-- Name: {user_name}
 {profile_details}
-
 - Personality Traits: {json.dumps(personality)}
 - Behavioral State: {json.dumps(behavior)}
 - Mental Growth Indicators: {json.dumps(growth)}
 
+Recent Emotions:
+- Current: {detected_emotion} (confidence: {detected_emotion_confidence})
+- 7-Day Timeline: {timeline_str}
+
+Knowledge Graph:
+{graph_str}
+
+Recent Memories:
+{memories_str}
+{comfort_kit_block}
+{growth_insight_block}
 =================================================
 PERSONALIZATION RULES:
 1. Use the User Profile details naturally and contextually. Avoid listing facts back to the user or sounding clinical or repeatedly mentioning profile details. Use them only when relevant.

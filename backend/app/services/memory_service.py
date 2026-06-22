@@ -210,7 +210,15 @@ class MemoryService:
                     similarity = overlap / max(len(query.lower().split()), 1)
                 
                 # Apply decay priority and confidence weighting
-                patterns = mem.behavior_patterns or {}
+                patterns = mem.behavior_patterns
+                if isinstance(patterns, str):
+                    try:
+                        import json
+                        patterns = json.loads(patterns)
+                    except Exception:
+                        patterns = {}
+                if not isinstance(patterns, dict):
+                    patterns = {}
                 decay_priority = patterns.get("decay_priority", 3)
                 importance = mem.importance_score if mem.importance_score is not None else float(patterns.get("importance_level", 3.0))
                 
@@ -253,7 +261,15 @@ class MemoryService:
 
             for mem in memories:
                 # Resolve importance and decay priority
-                patterns = mem.behavior_patterns or {}
+                patterns = mem.behavior_patterns
+                if isinstance(patterns, str):
+                    try:
+                        import json
+                        patterns = json.loads(patterns)
+                    except Exception:
+                        patterns = {}
+                if not isinstance(patterns, dict):
+                    patterns = {}
                 imp = mem.importance_score if mem.importance_score is not None else float(patterns.get("importance_level", 5.0))
                 decay = patterns.get("decay_priority")
                 if decay is None:

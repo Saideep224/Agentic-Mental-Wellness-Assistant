@@ -31,7 +31,7 @@ class ResponseAgent:
                     messages=messages,
                     temperature=current_temp,
                     max_tokens=max_tokens,
-                    preferred_model="gemini",
+                    # preferred_model=None — respect PRIMARY_PROVIDER from settings
                 )
                 
                 # Parse reasoning and clean text
@@ -80,9 +80,11 @@ class ResponseAgent:
                             break
 
                 if (quality_ok and repetition_ok) or attempt == retries:
+                    if attempt == retries and not (quality_ok and repetition_ok):
+                        logger.warning(f"[ResponseAgent] Response did not pass all checks (quality_ok={quality_ok}, repetition_ok={repetition_ok}) on final attempt, but returning the LLM response anyway per architecture requirements: '{clean_text}'")
                     return {"text": clean_text, "reasoning": reasoning}
                 
-                logger.warning(f"Response failed quality/repetition check on attempt {attempt + 1}. Retrying with adjusted temperature...")
+                logger.warning(f"Response failed quality/repetition check on attempt {attempt + 1} (quality_ok={quality_ok}, repetition_ok={repetition_ok}). Retrying with adjusted temperature...")
                 current_temp = min(1.0, current_temp + 0.15)
             except Exception as e:
                 logger.error(f"ResponseAgent generation failed: {e}", exc_info=True)
@@ -91,7 +93,7 @@ class ResponseAgent:
                     
         return {
             "text": "damn... ||| okay talk to me, what's going on?",
-            "reasoning": "Fallback response triggered due to error or poor quality."
+            "reasoning": "Fallback response triggered due to complete generation error."
         }
 
     @staticmethod

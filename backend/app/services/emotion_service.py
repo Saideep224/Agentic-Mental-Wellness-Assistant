@@ -490,11 +490,41 @@ class EmotionService:
                 
             memories_str = "None"
             if memories:
-                memories_str = "\n".join(memories)
+                if isinstance(memories, str):
+                    memories_str = memories
+                elif isinstance(memories, list):
+                    formatted_memories = []
+                    for m in memories:
+                        if isinstance(m, str):
+                            formatted_memories.append(m)
+                        elif isinstance(m, dict):
+                            formatted_memories.append(m.get("content") or m.get("memory_summary") or str(m))
+                        elif hasattr(m, "memory_summary"):
+                            formatted_memories.append(m.memory_summary)
+                        else:
+                            formatted_memories.append(str(m))
+                    memories_str = "\n".join(formatted_memories)
+                else:
+                    memories_str = str(memories)
                 
             kg_str = "None"
             if graph_relationships:
-                kg_str = "\n".join(graph_relationships)
+                if isinstance(graph_relationships, str):
+                    kg_str = graph_relationships
+                elif isinstance(graph_relationships, list):
+                    formatted_kg = []
+                    for r in graph_relationships:
+                        if isinstance(r, str):
+                            formatted_kg.append(r)
+                        elif isinstance(r, dict):
+                            formatted_kg.append(r.get("content") or f"{r.get('subject', 'User')} -> {r.get('predicate', '')} -> {r.get('object', '')}")
+                        elif hasattr(r, "subject") and hasattr(r, "predicate") and hasattr(r, "object"):
+                            formatted_kg.append(f"{r.subject} -> {r.predicate} -> {r.object}")
+                        else:
+                            formatted_kg.append(str(r))
+                    kg_str = "\n".join(formatted_kg)
+                else:
+                    kg_str = str(graph_relationships)
                 
             prompt = HYBRID_EMOTION_CLASSIFIER_PROMPT.format(
                 normalized_message=normalized_message,

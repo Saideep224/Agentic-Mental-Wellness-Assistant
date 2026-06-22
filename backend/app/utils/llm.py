@@ -57,6 +57,20 @@ async def generate_chat_completion_with_fallback(
     import logging
     logger = logging.getLogger(__name__)
 
+    def _safe_print(*args, **kwargs):
+        """Print that handles UnicodeEncodeError on Windows console."""
+        try:
+            print(*args, **kwargs)
+        except UnicodeEncodeError:
+            text = " ".join(str(a) for a in args)
+            print(text.encode('ascii', errors='replace').decode('ascii'), **kwargs)
+
+    # Check which API keys are loaded
+    gemini_loaded = bool(settings.GEMINI_API_KEY)
+    openrouter_loaded = bool(settings.OPENROUTER_API_KEY)
+    logger.info(f"[API KEY LOADED] Gemini: {gemini_loaded}, OpenRouter: {openrouter_loaded}")
+    _safe_print(f"[API KEY LOADED] Gemini: {gemini_loaded}, OpenRouter: {openrouter_loaded}")
+
     # Build order of providers based on settings and preferred_model
     all_possible_providers = {}
 
@@ -66,7 +80,10 @@ async def generate_chat_completion_with_fallback(
 
     # 2. Gemini
     if settings.GEMINI_API_KEY:
-        all_possible_providers["gemini"] = ("Gemini", settings.GEMINI_API_BASE, settings.GEMINI_API_KEY, settings.GEMINI_MODEL)
+        gemini_model = settings.GEMINI_MODEL
+        if gemini_model and not gemini_model.startswith("models/"):
+            gemini_model = f"models/{gemini_model}"
+        all_possible_providers["gemini"] = ("Gemini", settings.GEMINI_API_BASE, settings.GEMINI_API_KEY, gemini_model)
 
     # 3. OpenAI
     if settings.OPENAI_API_KEY:
@@ -76,9 +93,14 @@ async def generate_chat_completion_with_fallback(
     if settings.DEEPSEEK_API_KEY:
         all_possible_providers["deepseek"] = ("DeepSeek", settings.DEEPSEEK_API_BASE, settings.DEEPSEEK_API_KEY, "deepseek-chat")
 
-    # 5. OpenRouter
+    # 5. OpenRouter — supports comma-separated model list for multi-model waterfall
+    # e.g. OPENROUTER_MODEL=google/gemma-4-31b-it:free,meta-llama/llama-3.3-70b-instruct:free
     if settings.OPENROUTER_API_KEY:
-        all_possible_providers["openrouter"] = ("OpenRouter", settings.OPENROUTER_API_BASE, settings.OPENROUTER_API_KEY, settings.OPENROUTER_MODEL)
+        or_models = [m.strip() for m in settings.OPENROUTER_MODEL.split(",") if m.strip()]
+        for idx, or_model in enumerate(or_models):
+            provider_key = f"openrouter" if idx == 0 else f"openrouter_{idx}"
+            all_possible_providers[provider_key] = ("OpenRouter", settings.OPENROUTER_API_BASE, settings.OPENROUTER_API_KEY, or_model)
+
 
     providers = []
     first_provider_key = None
@@ -106,39 +128,113 @@ async def generate_chat_completion_with_fallback(
             p_model = p_info[3]
         else:
             p_model = preferred_model if preferred_model and first_provider_key in preferred_model.lower() else p_info[3]
+        if first_provider_key == "gemini" and p_model and not p_model.startswith("models/"):
+            p_model = f"models/{p_model}"
         providers.append((p_info[0], p_info[1], p_info[2], p_model))
 
     # Add other providers as fallbacks
     for key, p_info in all_possible_providers.items():
         if key != first_provider_key:
-            providers.append(p_info)
+            p_model = p_info[3]
+            if key == "gemini" and p_model and not p_model.startswith("models/"):
+                p_model = f"models/{p_model}"
+            providers.append((p_info[0], p_info[1], p_info[2], p_model))
 
     # Fallback to ConfigDefault if nothing is added
     if not providers:
-        providers.append(("ConfigDefault", settings.llm_base_url, settings.llm_api_key, settings.llm_model))
+        default_model = settings.llm_model
+        if (not settings.USE_OPENROUTER) and settings.GEMINI_API_KEY and default_model and not default_model.startswith("models/"):
+            default_model = f"models/{default_model}"
+        providers.append(("ConfigDefault", settings.llm_base_url, settings.llm_api_key, default_model))
+
+    import json
+    import asyncio
 
     last_error = None
     for name, base_url, api_key, model in providers:
-        try:
-            logger.info(f"Attempting chat completion with provider {name} using model {model}...")
-            client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-            
-            kwargs = {
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            }
-            if response_format:
-                kwargs["response_format"] = response_format
+        # Retry up to 3 attempts per provider
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                logger.info(f"Attempting chat completion with provider {name} using model {model} (Attempt {attempt+1}/{max_attempts})...")
+                logger.info(
+                    f"\n--- LLM REQUEST ({name}) ---\n"
+                    f"Model: {model}\n"
+                    f"Messages: {json.dumps(messages, indent=2)}\n"
+                    f"Temperature: {temperature}\n"
+                    f"Max Tokens: {max_tokens}\n"
+                    f"----------------------------\n"
+                )
                 
-            response = await client.chat.completions.create(**kwargs)
-            logger.info(f"Success with provider {name}!")
-            return response.choices[0].message.content.strip()
-        except Exception as e:
-            logger.warning(f"LLM Provider {name} failed: {e}")
-            last_error = e
-            continue
+                client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+                
+                kwargs = {
+                    "model": model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                }
+                if response_format:
+                    kwargs["response_format"] = response_format
+                    
+                # Model request logging
+                logger.info(f"[MODEL REQUEST] Provider: {name}, Model: {model}")
+                _safe_print(f"[MODEL REQUEST] Provider: {name}, Model: {model}")
+                
+                response = await client.chat.completions.create(**kwargs)
+                content = response.choices[0].message.content
+                
+                # Model response logging
+                logger.info(f"[MODEL RESPONSE] Provider: {name}, Content: {content}")
+                _safe_print(f"[MODEL RESPONSE] Provider: {name}, Content: {content}")
+                
+                if content is None:
+                    raise ValueError(f"Provider {name} returned response with choice content as None. Finish reason: {response.choices[0].finish_reason}")
+                
+                logger.info(
+                    f"\n--- LLM RESPONSE ({name}) ---\n"
+                    f"Content: {content}\n"
+                    f"-----------------------------\n"
+                )
+                
+                logger.info(f"Success with provider {name}!")
+                
+                # Final response logging
+                logger.info(f"[FINAL RESPONSE] Text: {content.strip()}")
+                _safe_print(f"[FINAL RESPONSE] Text: {content.strip()}")
+                
+                return content.strip()
+            except Exception as e:
+                # Model error logging
+                error_msg = f"[MODEL ERROR]\nException Type: {type(e).__name__}\nException Message: {str(e)}"
+                logger.error(error_msg)
+                _safe_print(error_msg)
+                
+                logger.warning(f"LLM Provider {name} failed on attempt {attempt+1}: {e}")
+                last_error = e
+                
+                # Check for OpenRouter token limit restriction
+                import re
+                match_tokens = re.search(r"can only afford (\d+)", str(e))
+                if match_tokens:
+                    max_tokens = int(match_tokens.group(1))
+                    logger.info(f"Adjusting max_tokens to affordable limit {max_tokens} for next retry.")
+                    _safe_print(f"Adjusting max_tokens to affordable limit {max_tokens} for next retry.")
+                
+                if attempt < max_attempts - 1:
+                    import openai
+                    if isinstance(e, openai.RateLimitError):
+                        match = re.search(r"Please retry in (\d+\.?\d*)s", str(e))
+                        if match:
+                            sleep_time = float(match.group(1)) + 1.5
+                            logger.info(f"Rate limit hit. Parsing requested delay. Sleeping for {sleep_time:.2f}s before retrying...")
+                        else:
+                            sleep_time = 15.0 * (attempt + 1)
+                            logger.info(f"Rate limit hit. Sleeping for {sleep_time:.2f}s before retrying...")
+                        await asyncio.sleep(sleep_time)
+                    else:
+                        await asyncio.sleep(2 ** attempt)
+                continue
 
     if last_error:
         raise last_error

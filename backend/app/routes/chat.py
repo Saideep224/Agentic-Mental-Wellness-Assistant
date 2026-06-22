@@ -1711,64 +1711,28 @@ async def generate_first_message(
     history_msgs = list(history_res.scalars().all())
     msg_count = len(history_msgs)
 
-    # 3. Handle non-onboarded users
-    if not current_user.onboarding_completed:
-        if msg_count == 0:
-            logger.info(f"[FIRST MESSAGE] New user {current_user.id}. Sending welcome + onboarding intro.")
-            reply = "hey 👋 ||| i'm Buddy ||| before we start, i'd love to get to know you a little better 😊"
-            assistant_msg = Message(
-                conversation_id=conversation.id,
-                user_id=current_user.id,
-                role=MessageRole.assistant,
-                content=reply,
-                emotion_detected="neutral",
-                mood_score=0.5,
-                agent_analysis={}
-            )
-            db.add(assistant_msg)
-            conversation.updated_at = datetime.now(timezone.utc)
-            await db.commit()
-            return {
-                "response": reply,
-                "emotionDetected": "neutral",
-                "moodScore": 0.5,
-            }
-        else:
-            # Already has onboarding history, return the first message
-            history_msgs.reverse()
-            first_msg = history_msgs[0]
-            return {
-                "response": first_msg.content,
-                "emotionDetected": first_msg.emotion_detected or "neutral",
-                "moodScore": first_msg.mood_score or 0.5,
-            }
+    # 3. Fetch onboarding answers and recent emotions
+    from app.models.onboarding import UserAnswer
+    answers_res = await db.execute(
+        select(UserAnswer).where(UserAnswer.user_id == current_user.id)
+    )
+    onboarding_answers = answers_res.scalars().all()
+    onboarding_answers_list = [f"Q: {ans.question_text} | A: {', '.join(ans.selected_answers)} {ans.custom_answer or ''}" for ans in onboarding_answers]
+    onboarding_str = "\n".join(onboarding_answers_list) if onboarding_answers_list else "No onboarding answers recorded."
 
-    # 4. Handle onboarded users
-    # Check if this is a new session (msg_count == 0 OR (last_msg is assistant AND > 4 hours old))
-    should_generate = False
-    if msg_count == 0:
-        should_generate = True
-    else:
-        last_msg = history_msgs[0]  # Since it's ordered by desc, the first one is the newest
-        if last_msg.role == "assistant":
-            last_msg_time = last_msg.created_at
-            if last_msg_time.tzinfo is None:
-                last_msg_time = last_msg_time.replace(tzinfo=timezone.utc)
-            time_diff = datetime.now(timezone.utc) - last_msg_time
-            if time_diff.total_seconds() > 4 * 3600:
-                should_generate = True
+    from app.models.emotion_log import EmotionLog
+    emotion_logs_res = await db.execute(
+        select(EmotionLog)
+        .where(EmotionLog.user_id == current_user.id)
+        .order_by(EmotionLog.timestamp.desc())
+        .limit(10)
+    )
+    emotion_logs = emotion_logs_res.scalars().all()
+    recent_emotions_list = [f"{log.timestamp.strftime('%Y-%m-%d %H:%M')}: {log.detected_emotion} (confidence: {log.confidence_score})" for log in emotion_logs]
+    recent_emotions_str = "\n".join(recent_emotions_list) if recent_emotions_list else "No recent emotion logs."
 
-    if not should_generate:
-        return {
-            "response": "",
-            "emotionDetected": "neutral",
-            "moodScore": 0.5,
-        }
-
-    # 5. Gather rich context for dynamic personalized check-in
+    # 4. Gather other rich context
     user_name = current_user.name or "friend"
-    
-    # Fetch UserPersonalProfile data
     from app.services.profile_service import profile_service
     personal_profile = await profile_service.get_profile(db, current_user.id)
     
@@ -1776,7 +1740,6 @@ async def generate_first_message(
     goals = []
     interests = []
     stress_triggers = []
-    
     if personal_profile:
         profession = personal_profile.profession or "unknown"
         goals = personal_profile.goals or []
@@ -1822,8 +1785,43 @@ async def generate_first_message(
     else:
         time_of_day = "Night"
 
-    # 6. Build LLM prompt
-    prompt = f"""You are Buddy, the user's close friend and empathetic wellness companion.
+    # Determine message generation path
+    is_new_user_first_message = (not current_user.onboarding_completed) and msg_count == 0
+
+    if is_new_user_first_message:
+        prompt = f"""You are Buddy, the user's close friend and empathetic wellness companion.
+This is the very first time you are meeting the user, and they have not completed their onboarding questionnaire yet.
+Generate a warm, friendly, and natural welcome message introducing yourself as Buddy, and invite them to share a bit about themselves so you can get to know them.
+Keep it extremely casual, Gen Z texting style, lowercase, using emojis.
+You MUST split your thoughts using the delimiter " ||| " (with spaces around it) into exactly 2 or 3 parts.
+Do not exceed 3 parts.
+DO NOT use the name of the user as you don't know it yet.
+
+Example: "hey 👋 ||| i'm Buddy ||| before we start, i'd love to get to know you a little better 😊"
+
+Response:"""
+    else:
+        should_generate = False
+        if msg_count == 0:
+            should_generate = True
+        else:
+            last_msg = history_msgs[-1]  # The newest one
+            if last_msg.role == MessageRole.assistant:
+                last_msg_time = last_msg.created_at
+                if last_msg_time.tzinfo is None:
+                    last_msg_time = last_msg_time.replace(tzinfo=timezone.utc)
+                time_diff = datetime.now(timezone.utc) - last_msg_time
+                if time_diff.total_seconds() > 4 * 3600:
+                    should_generate = True
+
+        if not should_generate:
+            return {
+                "response": history_msgs[-1].content if history_msgs else "",
+                "emotionDetected": history_msgs[-1].emotion_detected or "neutral",
+                "moodScore": history_msgs[-1].mood_score or 0.5,
+            }
+
+        prompt = f"""You are Buddy, the user's close friend and empathetic wellness companion.
 Your task is to generate a highly personalized, warm, and natural first greeting message (check-in) for the user.
 Every session check-in must feel unique, caring, and reflect that you remember their life, goals, and interests.
 
@@ -1835,7 +1833,7 @@ Current time of day is: {time_of_day}
 
 === CONTEXT PRIORITY ORDER ===
 You must check the user's context and select the highest priority topic available:
-1. Active Emotional Concerns: If recent messages or memories show they are going through a tough time (e.g. breakup, high anxiety, loneliness), ask how they are holding up today.
+1. Active Emotional Concerns: If recent messages, emotions, or memories show they are going through a tough time (e.g. breakup, high anxiety, loneliness, sadness), ask how they are holding up today.
 2. Recent Discussions: If they recently mentioned a specific event, exam, meeting, or project, ask how it went.
 3. Goals: Reference one of their goals (e.g., finding an internship, coding, learning Japanese, fitness) and ask for updates.
 4. Hobbies/Interests: Ask about one of their hobbies or interests (e.g. video editing, gaming, anime) in a friendly way.
@@ -1846,9 +1844,6 @@ You must check the user's context and select the highest priority topic availabl
 2. Speak like a close friend texting — informal, lowercase-friendly, warm, using natural emojis.
 3. STRICT LENGTH LIMIT: Under no circumstances exceed 2 short messages.
 4. You MUST split your thoughts using the delimiter " ||| " (with spaces around it) into exactly 1 or 2 parts. Each part should be a single short line.
-   - Example 1: "hey {user_name} 👋 ||| how's the Esona project going?"
-   - Example 2: "still awake? 😭 ||| how did that meeting go?"
-   - Example 3: "good morning ☀️ ||| how are you holding up after yesterday?"
 5. Do NOT ask generic robotic assistant questions like "How can I help you today?".
 
 USER DETAILS:
@@ -1857,6 +1852,10 @@ USER DETAILS:
 - Goals: {goals}
 - Hobbies/Interests: {interests}
 - Stress Triggers: {stress_triggers}
+- Onboarding Answers:
+{onboarding_str}
+- Recent Emotions:
+{recent_emotions_str}
 - Recent Memories:
 {memories_str}
 - Knowledge Graph Relationships:
@@ -1875,7 +1874,10 @@ Response:"""
         )
     except Exception as e:
         logger.error(f"Failed to generate personalized first message: {e}", exc_info=True)
-        raw_response = f"hey {user_name} 👋 ||| just wanted to check in and see how you're doing today."
+        if is_new_user_first_message:
+            raw_response = "hey 👋 ||| i'm Buddy ||| before we start, i'd love to get to know you a little better 😊"
+        else:
+            raw_response = f"hey {user_name} 👋 ||| just wanted to check in and see how you're doing today."
 
     # 7. Save greeting to DB
     assistant_msg = Message(

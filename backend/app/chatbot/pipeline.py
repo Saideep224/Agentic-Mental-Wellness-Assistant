@@ -225,7 +225,12 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
         if not analysis:
             raise ValueError("Parsed JSON is empty or invalid")
     except Exception as e:
-        logger.warning(f"Multi-agent cognitive analyzer failed, using fallback: {e}. Raw was: {repr(raw) if 'raw' in locals() else 'None'}", exc_info=True)
+        logger.exception(e)
+        print("FALLBACK TRIGGERED")
+        print("USER:", user_message)
+        print("EMOTION:", detected_emotion)
+        print("ERROR:", e)
+        print("MODEL_RESPONSE:", "Cognitive Analyzer Fallback (analysis dict)")
         analysis = {
             "message_type": "emotional",
             "personality_agent": {
@@ -571,152 +576,54 @@ async def response_agent_node(state: AgentState) -> dict:
                 messages.append({"role": role, "content": msg["content"]})
     messages.append({"role": "user", "content": user_message})
 
-    # ── Greeting Interception Logic ──────────────────────────────
-    is_greeting = False
-    clean_msg = user_message.strip().lower().rstrip("?.!,")
-    greetings_set = {
-        "hi", "hey", "hello", "sup", "yo", "yooo", "heyy", "heyyy",
-        "wassup", "wassup bro", "hey hey", "hi there", "hey there",
-        "greetings", "good morning", "good afternoon", "good evening", "howdy"
-    }
-    
-    if clean_msg in greetings_set:
-        import random
-        # 1. Fetch user's last non-neutral emotion from logs
-        last_emotion = "neutral"
-        if db and user_id:
-            try:
-                import uuid
-                from app.models.emotion_log import EmotionLog
-                user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
-                stmt = select(EmotionLog).where(
-                    EmotionLog.user_id == user_uuid,
-                    EmotionLog.detected_emotion != "Neutral"
-                ).order_by(EmotionLog.timestamp.desc()).limit(1)
-                res = await db.execute(stmt)
-                last_log = res.scalars().first()
-                if last_log:
-                    last_emotion = last_log.detected_emotion.lower()
-            except Exception as le_err:
-                logger.warning(f"Failed to fetch last emotion for greeting check: {le_err}")
-        
-        # 2. Mood-based categorization lists (for fallbacks)
-        CASUAL_GREETINGS = [
-            "heyy 😊 what's up?",
-            "yooo 👋",
-            "sup bro",
-            "heyy there"
-        ]
-
-        RETURNING_USER = [
-            "heyy welcome back 😊",
-            "good to see u again",
-            "yooo, how've u been?",
-            "heyy, what's been happening lately?"
-        ]
-
-        HAPPY_USER = [
-            "yooo 😎 u sound excited today",
-            "heyy, loving the energy already ✨",
-            "yooo what's the good news?"
-        ]
-
-        SAD_USER = [
-            "heyy 🥲 how are u holding up?",
-            "yo, how's everything been lately?",
-            "heyy, wanna talk about anything?"
-        ]
-
-        LATE_NIGHT = [
-            "still awake huh 😭",
-            "yooo night owl 🦉",
-            "heyy, can't sleep either?"
-        ]
-        
-        # 3. Dynamic LLM greeting generation with context
-        memories_list = []
-        for m in memories:
-            m_type = m.get("memory_type") or "emotion"
-            memories_list.append(f"- [{m_type.upper()}] User once said: '{m.get('content', '')}'")
-        memories_summary = "\n".join(memories_list) if memories_list else "No past memories."
-
-        # Fetch upcoming/past event memories
-        events = [m for m in memories if m.get("memory_type") == "event"]
-        events_str = ""
-        if events:
-            events_str = f"Critical event recall: the user has the following event memory: {[e['content'] for e in events]}. Casually check in on it if appropriate."
-
-        is_late_night = current_time_ist.hour >= 23 or current_time_ist.hour < 5
-        total_msgs = len([m for m in history if m.get("role") == "user"])
-
-        system_content = (
-            "You are Buddy, the user's best friend. Your texting style is very casual, natural, human, and imperfect.\n"
-            "You write in lowercase, use texting shortcuts (like idc, oof, damn, sup, yooo, ngl, fr, tbh), and casual emojis.\n"
-            "Keep the message extremely short, like a single WhatsApp/SMS bubble (1 short clause/phrase, 3-12 words).\n"
-            "Never write essays, never sound professional, never say 'I understand how you feel' or use supportive therapy framing.\n"
-            "React to the user's greeting naturally based on context.\n\n"
-            "CONTEXT:\n"
-            f"- User name: {user_name}\n"
-            f"- Current time: {current_time_str}\n"
-            f"- Is it late night? {is_late_night}\n"
-            f"- Last session's detected emotion: {last_emotion}\n"
-            f"- Memories/Event notes:\n{memories_summary}\n"
-            f"{events_str}\n"
-            f"- Messages in this session: {total_msgs}\n\n"
-            "Generate ONLY the greeting response. Do not use quotes or include reasoning."
+    # Call Response Agent to generate response with quality checks
+    error_log = "None"
+    text = ""
+    reasoning = ""
+    try:
+        gen_res = await response_agent.generate(
+            messages=messages,
+            temperature=0.7,
+            max_tokens=800,
+            recent_responses=recent_buddy_responses,
         )
+        text = gen_res.get("text", "")
+        reasoning = gen_res.get("reasoning", "")
+    except Exception as e:
+        error_log = str(e)
+        logger.exception(e)
+        text = f"Error: {str(e)}"
+        reasoning = f"Response generation failed, exception raised: {e}"
+        print("FALLBACK TRIGGERED")
+        print("USER:", user_message)
+        print("EMOTION:", state.get("detected_emotion", "Neutral"))
+        print("ERROR:", e)
+        print("MODEL_RESPONSE:", text)
 
-        try:
-            logger.info("Generating dynamic greeting using LLM...")
-            text = await generate_chat_completion_with_fallback(
-                messages=[
-                    {"role": "system", "content": system_content},
-                    {"role": "user", "content": user_message}
-                ],
-                temperature=0.7,
-                max_tokens=50,
-                preferred_model="gemini"
-            )
-            text = text.strip().replace('"', '').replace("'", "")
-            reasoning = f"Dynamic greeting generated via LLM. Context: last_emotion={last_emotion}, late_night={is_late_night}, returning={total_msgs > 2}"
-        except Exception as e:
-            logger.warning(f"Failed to generate dynamic greeting: {e}. Using fallback greeting logic.")
-            if is_late_night and random.random() < 0.7:
-                text = random.choice(LATE_NIGHT)
-            elif last_emotion in ["sadness", "loneliness", "anxiety", "fear"]:
-                text = random.choice(SAD_USER)
-            elif last_emotion in ["happiness", "excitement"]:
-                text = random.choice(HAPPY_USER)
-            elif total_msgs > 2 and random.random() < 0.6:
-                text = random.choice(RETURNING_USER)
-            else:
-                text = random.choice(CASUAL_GREETINGS)
-            reasoning = f"Greeting intercept (fallback). msg='{user_message}', last_emotion='{last_emotion}', late_night={is_late_night}, returning={total_msgs > 2} -> select='{text}'"
-        
-        is_greeting = True
+    # Prepare context blocks for logging in the exact requested format
+    user_message_log = user_message
+    emotion_log = state.get("detected_emotion", "Neutral")
+    
+    memories_list_log = []
+    for m in memories:
+        m_type = m.get("memory_type") or "emotion"
+        memories_list_log.append(f"- [{m_type.upper()}] {m.get('content', '')}")
+    memory_context_log = "\n".join(memories_list_log) if memories_list_log else "No memories"
+    
+    profile_context_log = json.dumps(profile, indent=2)
+    prompt_sent_log = json.dumps(messages, indent=2)
 
-    if not is_greeting:
-        # Call Response Agent to generate response with quality checks
-        try:
-            gen_res = await response_agent.generate(
-                messages=messages,
-                temperature=0.7,
-                max_tokens=800,
-                recent_responses=recent_buddy_responses,
-            )
-            text = gen_res.get("text", "")
-            reasoning = gen_res.get("reasoning", "")
-        except Exception as e:
-            logger.error(f"Response agent generation failed: {e}", exc_info=True)
-            # Casual-appropriate fallbacks (never robotic support language)
-            import random
-            casual_fallbacks = [
-                "aw man, my brain just glitched for a sec 🥲 wanna try sending that again?",
-                "oof sorry, my system hit a small bump. what were u saying again? 😭",
-                "damn, my connection dropped for a split second. say that again? 🥲",
-            ]
-            text = random.choice(casual_fallbacks)
-            reasoning = "Response generation failed, fallback triggered."
+    logger.info(
+        f"\n=================================================\n"
+        f"USER MESSAGE: {user_message_log}\n"
+        f"EMOTION: {emotion_log}\n"
+        f"MEMORY CONTEXT:\n{memory_context_log}\n"
+        f"PROFILE CONTEXT:\n{profile_context_log}\n"
+        f"PROMPT SENT TO MODEL:\n{prompt_sent_log}\n"
+        f"MODEL RESPONSE:\n{text}\n"
+        f"ERROR IF ANY: {error_log}\n"
+        f"=================================================\n"
+    )
 
     # Update the per-user recent-responses cache (repetition guard)
     if text and user_id:
@@ -832,11 +739,14 @@ async def run_agent_graph(
         result = await _compiled_graph.ainvoke(initial_state)
         return result
     except Exception as e:
-        logger.error(f"Agent graph execution failed: {e}", exc_info=True)
+        logger.exception(e)
+        fallback_resp = f"Error: {str(e)}"
+        print("FALLBACK TRIGGERED")
+        print("USER:", user_message)
+        print("EMOTION:", initial_state.get("detected_emotion", "Neutral"))
+        print("ERROR:", e)
+        print("MODEL_RESPONSE:", fallback_resp)
         return {
             **initial_state,
-            "response": (
-                "Hey, I hit a bump trying to think that through. "
-                "Can you say that again? I want to give you a proper response."
-            ),
+            "response": fallback_resp,
         }

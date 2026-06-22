@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     PRIMARY_PROVIDER: str = "gemini"
 
     # ── Ollama ────────────────────────────────────────────────
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_BASE_URL: str = ""  # Leave empty if Ollama is not running locally
     OLLAMA_MODEL: str = "llama3"
 
     # ── DeepSeek ──────────────────────────────────────────────

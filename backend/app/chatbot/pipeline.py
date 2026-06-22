@@ -600,7 +600,7 @@ async def response_agent_node(state: AgentState) -> dict:
             except Exception as le_err:
                 logger.warning(f"Failed to fetch last emotion for greeting check: {le_err}")
         
-        # 2. Mood-based categorization lists
+        # 2. Mood-based categorization lists (for fallbacks)
         CASUAL_GREETINGS = [
             "heyy 😊 what's up?",
             "yooo 👋",
@@ -633,22 +633,66 @@ async def response_agent_node(state: AgentState) -> dict:
             "heyy, can't sleep either?"
         ]
         
-        # 3. Intercept & select reply
+        # 3. Dynamic LLM greeting generation with context
+        memories_list = []
+        for m in memories:
+            m_type = m.get("memory_type") or "emotion"
+            memories_list.append(f"- [{m_type.upper()}] User once said: '{m.get('content', '')}'")
+        memories_summary = "\n".join(memories_list) if memories_list else "No past memories."
+
+        # Fetch upcoming/past event memories
+        events = [m for m in memories if m.get("memory_type") == "event"]
+        events_str = ""
+        if events:
+            events_str = f"Critical event recall: the user has the following event memory: {[e['content'] for e in events]}. Casually check in on it if appropriate."
+
         is_late_night = current_time_ist.hour >= 23 or current_time_ist.hour < 5
         total_msgs = len([m for m in history if m.get("role") == "user"])
+
+        system_content = (
+            "You are Buddy, the user's best friend. Your texting style is very casual, natural, human, and imperfect.\n"
+            "You write in lowercase, use texting shortcuts (like idc, oof, damn, sup, yooo, ngl, fr, tbh), and casual emojis.\n"
+            "Keep the message extremely short, like a single WhatsApp/SMS bubble (1 short clause/phrase, 3-12 words).\n"
+            "Never write essays, never sound professional, never say 'I understand how you feel' or use supportive therapy framing.\n"
+            "React to the user's greeting naturally based on context.\n\n"
+            "CONTEXT:\n"
+            f"- User name: {user_name}\n"
+            f"- Current time: {current_time_str}\n"
+            f"- Is it late night? {is_late_night}\n"
+            f"- Last session's detected emotion: {last_emotion}\n"
+            f"- Memories/Event notes:\n{memories_summary}\n"
+            f"{events_str}\n"
+            f"- Messages in this session: {total_msgs}\n\n"
+            "Generate ONLY the greeting response. Do not use quotes or include reasoning."
+        )
+
+        try:
+            logger.info("Generating dynamic greeting using LLM...")
+            text = await generate_chat_completion_with_fallback(
+                messages=[
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.7,
+                max_tokens=50,
+                preferred_model="gemini"
+            )
+            text = text.strip().replace('"', '').replace("'", "")
+            reasoning = f"Dynamic greeting generated via LLM. Context: last_emotion={last_emotion}, late_night={is_late_night}, returning={total_msgs > 2}"
+        except Exception as e:
+            logger.warning(f"Failed to generate dynamic greeting: {e}. Using fallback greeting logic.")
+            if is_late_night and random.random() < 0.7:
+                text = random.choice(LATE_NIGHT)
+            elif last_emotion in ["sadness", "loneliness", "anxiety", "fear"]:
+                text = random.choice(SAD_USER)
+            elif last_emotion in ["happiness", "excitement"]:
+                text = random.choice(HAPPY_USER)
+            elif total_msgs > 2 and random.random() < 0.6:
+                text = random.choice(RETURNING_USER)
+            else:
+                text = random.choice(CASUAL_GREETINGS)
+            reasoning = f"Greeting intercept (fallback). msg='{user_message}', last_emotion='{last_emotion}', late_night={is_late_night}, returning={total_msgs > 2} -> select='{text}'"
         
-        if is_late_night and random.random() < 0.7:
-            text = random.choice(LATE_NIGHT)
-        elif last_emotion in ["sadness", "loneliness", "anxiety", "fear"]:
-            text = random.choice(SAD_USER)
-        elif last_emotion in ["happiness", "excitement"]:
-            text = random.choice(HAPPY_USER)
-        elif total_msgs > 2 and random.random() < 0.6:
-            text = random.choice(RETURNING_USER)
-        else:
-            text = random.choice(CASUAL_GREETINGS)
-            
-        reasoning = f"Greeting intercept. msg='{user_message}', last_emotion='{last_emotion}', late_night={is_late_night}, returning={total_msgs > 2} -> select='{text}'"
         is_greeting = True
 
     if not is_greeting:

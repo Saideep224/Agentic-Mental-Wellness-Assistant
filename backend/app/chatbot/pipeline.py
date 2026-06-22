@@ -217,8 +217,9 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
                 {"role": "user", "content": user_content},
             ],
             temperature=0.2,
-            max_tokens=4000,
-            response_format={"type": "json_object"},
+            max_tokens=800,  # Reduced from 4000 for free-tier compatibility
+            # Note: response_format omitted — free models (Gemma, Llama) don't support JSON mode
+            # The system prompt instructs JSON output which is sufficient
         )
         from app.utils.helpers import safe_json_parse
         analysis = safe_json_parse(raw)
@@ -584,7 +585,7 @@ async def response_agent_node(state: AgentState) -> dict:
         gen_res = await response_agent.generate(
             messages=messages,
             temperature=0.7,
-            max_tokens=800,
+            max_tokens=300,  # Reduced to stay within OpenRouter free-tier limits
             recent_responses=recent_buddy_responses,
         )
         text = gen_res.get("text", "")
@@ -592,13 +593,14 @@ async def response_agent_node(state: AgentState) -> dict:
     except Exception as e:
         error_log = str(e)
         logger.exception(e)
-        text = f"Error: {str(e)}"
+        # NEVER show raw error messages to the user — use a friendly fallback instead
+        text = "damn sorry, something went sideways on my end ||| wanna try again?"
         reasoning = f"Response generation failed, exception raised: {e}"
         print("FALLBACK TRIGGERED")
         print("USER:", user_message)
         print("EMOTION:", state.get("detected_emotion", "Neutral"))
         print("ERROR:", e)
-        print("MODEL_RESPONSE:", text)
+        print("MODEL_RESPONSE: [fallback due to exception]")
 
     # Prepare context blocks for logging in the exact requested format
     user_message_log = user_message
@@ -740,12 +742,13 @@ async def run_agent_graph(
         return result
     except Exception as e:
         logger.exception(e)
-        fallback_resp = f"Error: {str(e)}"
         print("FALLBACK TRIGGERED")
         print("USER:", user_message)
         print("EMOTION:", initial_state.get("detected_emotion", "Neutral"))
         print("ERROR:", e)
-        print("MODEL_RESPONSE:", fallback_resp)
+        print("MODEL_RESPONSE: [graph-level exception fallback]")
+        # NEVER show raw error to user
+        fallback_resp = "sorry my bad, something went off on my end ||| give it another shot?"
         return {
             **initial_state,
             "response": fallback_resp,

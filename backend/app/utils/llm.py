@@ -174,8 +174,13 @@ async def generate_chat_completion_with_fallback(
                     "temperature": temperature,
                     "max_tokens": max_tokens,
                 }
-                if response_format:
+                # Free models (e.g. :free suffix) don't support response_format JSON mode
+                # Drop it silently — the system prompt instructs JSON output which is sufficient
+                is_free_model = ":free" in str(model)
+                if response_format and not is_free_model:
                     kwargs["response_format"] = response_format
+                elif response_format and is_free_model:
+                    logger.debug(f"[{name}] Dropping response_format for free model '{model}' (not supported)")
                     
                 # Model request logging
                 logger.info(f"[MODEL REQUEST] Provider: {name}, Model: {model}")
@@ -213,25 +218,48 @@ async def generate_chat_completion_with_fallback(
                 logger.warning(f"LLM Provider {name} failed on attempt {attempt+1}: {e}")
                 last_error = e
                 
-                # Check for OpenRouter token limit restriction
+                import openai
+                # 401 = wrong API key / user not found — no point retrying, move to next provider immediately
+                if isinstance(e, openai.AuthenticationError):
+                    logger.warning(f"[{name}] 401 AuthenticationError — skipping to next provider immediately.")
+                    break
+                
+                # Check for OpenRouter token limit restriction (402)
                 import re
                 match_tokens = re.search(r"can only afford (\d+)", str(e))
                 if match_tokens:
-                    max_tokens = int(match_tokens.group(1))
+                    affordable = int(match_tokens.group(1))
+                    if affordable < 20:
+                        # Not worth retrying, move on to next provider
+                        logger.warning(f"[{name}] Can only afford {affordable} tokens — skipping to next provider.")
+                        break
+                    max_tokens = affordable
                     logger.info(f"Adjusting max_tokens to affordable limit {max_tokens} for next retry.")
                     _safe_print(f"Adjusting max_tokens to affordable limit {max_tokens} for next retry.")
                 
                 if attempt < max_attempts - 1:
-                    import openai
                     if isinstance(e, openai.RateLimitError):
-                        match = re.search(r"Please retry in (\d+\.?\d*)s", str(e))
-                        if match:
-                            sleep_time = float(match.group(1)) + 1.5
-                            logger.info(f"Rate limit hit. Parsing requested delay. Sleeping for {sleep_time:.2f}s before retrying...")
+                        error_str = str(e)
+                        # Check for retry_after_seconds_raw in OpenRouter metadata
+                        match_retry = re.search(r"retry_after_seconds_raw\":(\d+\.?\d*)", error_str)
+                        match_secs = re.search(r"Please retry in (\d+\.?\d*)s", error_str)
+                        
+                        # Free-model rate limit: skip to next model immediately instead of sleeping
+                        if "is_byok\":false" in error_str or ":free" in str(model):
+                            logger.info(f"[{name}] Free model rate-limited — skipping to next provider immediately.")
+                            break
+                        elif match_retry:
+                            sleep_time = float(match_retry.group(1)) + 1.0
+                            logger.info(f"Rate limit hit. Sleeping for {sleep_time:.2f}s (from retry_after_seconds_raw)...")
+                            await asyncio.sleep(sleep_time)
+                        elif match_secs:
+                            sleep_time = float(match_secs.group(1)) + 1.5
+                            logger.info(f"Rate limit hit. Sleeping for {sleep_time:.2f}s...")
+                            await asyncio.sleep(sleep_time)
                         else:
-                            sleep_time = 15.0 * (attempt + 1)
-                            logger.info(f"Rate limit hit. Sleeping for {sleep_time:.2f}s before retrying...")
-                        await asyncio.sleep(sleep_time)
+                            sleep_time = 5.0 * (attempt + 1)
+                            logger.info(f"Rate limit hit. Sleeping for {sleep_time:.2f}s...")
+                            await asyncio.sleep(sleep_time)
                     else:
                         await asyncio.sleep(2 ** attempt)
                 continue

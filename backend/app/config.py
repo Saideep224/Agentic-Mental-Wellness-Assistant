@@ -38,12 +38,13 @@ class Settings(BaseSettings):
     GEMINI_API_BASE: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
     # ── OpenRouter ────────────────────────────────────────────
-    USE_OPENROUTER: bool = True
+    USE_OPENROUTER: bool = False  # Provider routing handled by PRIMARY_PROVIDER in llm.py
     OPENROUTER_API_KEY: str = ""
-    OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
+    # Free-tier waterfall: all models are zero-cost. Tries each in order on rate-limit/errors.
+    OPENROUTER_MODEL: str = "google/gemma-4-31b-it:free,meta-llama/llama-3.3-70b-instruct:free,qwen/qwen3-next-80b-a3b-instruct:free,google/gemma-4-26b-a4b-it:free,nousresearch/hermes-3-llama-3.1-405b:free"
     OPENROUTER_API_BASE: str = "https://openrouter.ai/api/v1"
 
-    PRIMARY_PROVIDER: str = "gemini"
+    PRIMARY_PROVIDER: str = "openrouter"  # Use openrouter with free models by default
 
     # ── Ollama ────────────────────────────────────────────────
     OLLAMA_BASE_URL: str = ""  # Leave empty if Ollama is not running locally

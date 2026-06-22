@@ -171,7 +171,7 @@ def detect_specialist_recommendation(message: str, agent_analysis: dict, history
         keywords = {
             "lex": ["legal", "lawyer", "court", "sue", "property dispute", "land dispute", "contract", "police case", "family property", "agreement", "lease", "tenant", "advocate", "litigation"],
             "maya": ["health", "symptom", "pain", "medical", "doctor", "disease", "illness", "headache", "chest pain", "diagnosis", "health anxiety", "sick", "infection", "cough", "fever", "physician"],
-            "ray": ["hacked", "stalker", "cyber", "scam", "blackmail", "harass", "threat", "bully", "online safety", "scammed", "stole my account", "compromised", "phishing", "leak", "police"],
+            "ray": ["hacked", "stalker", "cyber", "scam", "blackmail", "harass", "threat", "bully", "online safety", "scammed", "stole my account", "compromised", "phishing", "leak", "police", "cop", "fir", "crime", "emergency"],
             "techie": ["code", "bug", "programming", "git", "database error", "broken phone", "windows update", "server down", "software crash", "tech support", "ide", "laptop", "computer", "compiler"],
             "mentor": ["exam", "study", "failing class", "test stress", "academic pressure", "semester", "syllabus", "procrastinating study", "homework", "grades", "school", "college", "university", "midterm"],
             "fitness": ["workout", "exercise", "weight loss", "nutrition", "diet", "gym", "fitness", "calories", "posture", "muscle", "active habits", "cardio", "sleep schedule", "stretching", "running"]
@@ -292,7 +292,7 @@ async def _build_conversation_history(
         messages = result.scalars().all()
         history = [
             {
-                "role": m.role.value,
+                "role": m.role.value, 
                 "content": m.content,
                 "agent_analysis": m.agent_analysis or {}
             }
@@ -353,29 +353,7 @@ async def _get_emotional_profile_dict(
                 "onboarding_answers": profile.onboarding_answers or {},
                 "personality_profile": profile.personality_profile or {},
             })
-
-            # Self-healing Memory Rebuild: If user profile exists but memories are missing, rebuild from chat messages
-            try:
-                from app.models.memory import Memory
-                from app.services.memory_service import memory_service
-                mem_stmt = select(Memory).where(Memory.user_id == user_id)
-                mem_res = await db.execute(mem_stmt)
-                memories = mem_res.scalars().all()
-                if not memories:
-                    logger.info(f"User {user_id} has a profile but no memories. Running self-healing memory rebuild from chat history...")
-                    await memory_service.rebuild_memories_from_history(db, user_id)
-            except Exception as rebuild_err:
-                logger.warning(f"Failed to auto-rebuild memories for user {user_id}: {rebuild_err}")
             
-        # Dynamically load / restore onboarding & profile facts from Supabase (crucial for personalization persistence)
-        try:
-            from app.services.profile_service import profile_service
-            p_data = await profile_service.get_personalization_data(db, user_id)
-            if p_data and "raw" in p_data:
-                profile_dict["personality_profile"] = p_data["raw"]
-        except Exception as p_err:
-            logger.warning(f"Failed to fetch consolidated personalization data: {p_err}")
-
         # Update in-memory fallback cache
         _profile_cache[str(user_id)] = profile_dict
         return profile_dict
@@ -673,14 +651,47 @@ async def send_message(
         # 5. Run agent graph
         logger.info(f"[AI AGENT] Running multi-agent cognitive graph for user message...")
 
-        # --- Intent-based specialist routing (Bypassed) ---
-        specialist_action = None
-        action_target = None
+        # --- Intent-based specialist routing ---
+        current_specialists: list = list(conversation.active_specialists or [])
+        
+        # Find the last suggested specialist from history
+        last_suggested = None
+        if history:
+            for m in reversed(history):
+                if m.get("role") == "assistant":
+                    analysis = m.get("agent_analysis", {})
+                    if analysis and "suggested_specialist" in analysis:
+                        last_suggested = analysis["suggested_specialist"]
+                    break
+
+        specialist_action, action_target = detect_specialist_action(body.message, current_specialists, last_suggested)
         specialist_action_event = None
+        if specialist_action == "invite" and action_target:
+            if action_target not in current_specialists:
+                current_specialists.append(action_target)
+                conversation.active_specialists = current_specialists
+                db.add(conversation)
+                await db.commit()
+                await db.refresh(conversation)
+                specialist_action_event = {"action": "invited", "specialist_id": action_target}
+                logger.info(f"[SPECIALIST INTENT] Invited specialist '{action_target}' to conversation {conversation_id_resolved}")
+        elif specialist_action == "remove" and action_target:
+            if action_target in current_specialists:
+                current_specialists.remove(action_target)
+                conversation.active_specialists = current_specialists
+                db.add(conversation)
+                await db.commit()
+                await db.refresh(conversation)
+                specialist_action_event = {"action": "removed", "specialist_id": action_target}
+                logger.info(f"[SPECIALIST INTENT] Removed specialist '{action_target}' from conversation {conversation_id_resolved}")
         # --- End intent-based routing ---
 
-        # Force all chats to route to Esona, bypassing active specialists
         specialist_id = None
+        if conversation.agent_id and conversation.agent_id != "buddy":
+            specialist_id = conversation.agent_id
+        elif conversation.active_specialists:
+            specialist_id = conversation.active_specialists[0]
+
         specialist_response = None
         suggested_specialist = None
 
@@ -736,9 +747,9 @@ async def send_message(
                 if should_intervene:
                     # 3. Inject specialist response into Buddy's graph as system note and dialog turn
                     if reason == "technical":
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend. Do NOT introduce the specialist or say you connected them (you already did). Just briefly add your emotional support."
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend."
                     else:
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts. Do NOT introduce the specialist or say you connected them (you already did). Just briefly add your emotional support."
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
                     
                     updated_history = history + [
                         {"role": "system", "content": system_note},
@@ -782,8 +793,15 @@ async def send_message(
             mood_score = result.get("mood_score", None)
             agent_analysis = result.get("agent_analysis", {})
 
-            # Bypassed: Esona does not recommend or route to specialists
-            suggested_specialist = None
+            # Check if Buddy should recommend a specialist (only on Buddy chat, when no specialist is active)
+            if not specialist_id and conversation.agent_id == "buddy":
+                suggested_specialist = detect_specialist_recommendation(body.message, agent_analysis, history)
+                if suggested_specialist:
+                    from app.agents.specialist_registry import SPECIALIST_REGISTRY
+                    spec_info = SPECIALIST_REGISTRY[suggested_specialist]
+                    rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
+                    full_response += rec_suffix
+                    agent_analysis["suggested_specialist"] = suggested_specialist
 
         except Exception as agent_err:
             logger.error(f"[AI AGENT ERROR] Multi-agent execution failed: {agent_err}. Falling back to randomized human reply.", exc_info=True)
@@ -1013,14 +1031,49 @@ async def generate_and_persist_sse_response(
             )
             conversation = conversation_res.scalar_one_or_none()
 
-            # --- Intent-based specialist routing (SSE path, Bypassed) ---
-            specialist_action = None
-            action_target = None
+            # --- Intent-based specialist routing (SSE path) ---
+            current_specialists: list = list((conversation.active_specialists if conversation else None) or [])
+            
+            # Find the last suggested specialist from history
+            last_suggested = None
+            if history:
+                for m in reversed(history):
+                    if m.get("role") == "assistant":
+                        analysis = m.get("agent_analysis", {})
+                        if analysis and "suggested_specialist" in analysis:
+                            last_suggested = analysis["suggested_specialist"]
+                        break
+
+            specialist_action, action_target = detect_specialist_action(message, current_specialists, last_suggested)
             sse_specialist_action_event = None
+            if conversation:
+                if specialist_action == "invite" and action_target:
+                    if action_target not in current_specialists:
+                        current_specialists.append(action_target)
+                        conversation.active_specialists = current_specialists
+                        db.add(conversation)
+                        await db.commit()
+                        await db.refresh(conversation)
+                        sse_specialist_action_event = {"action": "invited", "specialist_id": action_target}
+                        logger.info(f"[SSE SPECIALIST INTENT] Invited specialist '{action_target}' to conversation {conversation_id}")
+                elif specialist_action == "remove" and action_target:
+                    if action_target in current_specialists:
+                        current_specialists.remove(action_target)
+                        conversation.active_specialists = current_specialists
+                        db.add(conversation)
+                        await db.commit()
+                        await db.refresh(conversation)
+                        sse_specialist_action_event = {"action": "removed", "specialist_id": action_target}
+                        logger.info(f"[SSE SPECIALIST INTENT] Removed specialist '{action_target}' from conversation {conversation_id}")
             # --- End intent-based routing ---
 
-            # Force all chats to route to Esona, bypassing active specialists
             specialist_id = None
+            if conversation:
+                if conversation.agent_id and conversation.agent_id != "buddy":
+                    specialist_id = conversation.agent_id
+                elif conversation.active_specialists:
+                    specialist_id = conversation.active_specialists[0]
+
             specialist_response = None
             suggested_specialist = None
 
@@ -1075,9 +1128,9 @@ async def generate_and_persist_sse_response(
                 if should_intervene:
                     # 3. Inject specialist response into Buddy's graph as system note and dialog turn
                     if reason == "technical":
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend. Do NOT introduce the specialist or say you connected them (you already did). Just briefly add your emotional support."
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend."
                     else:
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts. Do NOT introduce the specialist or say you connected them (you already did). Just briefly add your emotional support."
+                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
                     
                     updated_history = history + [
                         {"role": "system", "content": system_note},
@@ -1121,8 +1174,15 @@ async def generate_and_persist_sse_response(
             mood_score = result.get("mood_score", None)
             agent_analysis = result.get("agent_analysis", {})
 
-            # Bypassed: Esona does not recommend or route to specialists
-            suggested_specialist = None
+            # Check if Buddy should recommend a specialist
+            if not specialist_id and conversation and conversation.agent_id == "buddy":
+                suggested_specialist = detect_specialist_recommendation(message, agent_analysis, history)
+                if suggested_specialist:
+                    from app.agents.specialist_registry import SPECIALIST_REGISTRY
+                    spec_info = SPECIALIST_REGISTRY[suggested_specialist]
+                    rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
+                    full_response += rec_suffix
+                    agent_analysis["suggested_specialist"] = suggested_specialist
 
         except Exception as agent_err:
             logger.error(f"[SSE AI ERROR] Agent graph execution failed: {agent_err}. Falling back to randomized human reply.", exc_info=True)
@@ -1655,7 +1715,7 @@ async def generate_first_message(
     if not current_user.onboarding_completed:
         if msg_count == 0:
             logger.info(f"[FIRST MESSAGE] New user {current_user.id}. Sending welcome + onboarding intro.")
-            reply = "hey 👋 ||| i'm Esona ||| before we start, i'd love to get to know you a little better 😊"
+            reply = "hey 👋 ||| i'm Buddy ||| before we start, i'd love to get to know you a little better 😊"
             assistant_msg = Message(
                 conversation_id=conversation.id,
                 user_id=current_user.id,
@@ -1763,7 +1823,7 @@ async def generate_first_message(
         time_of_day = "Night"
 
     # 6. Build LLM prompt
-    prompt = f"""You are Esona, the user's close friend and empathetic AI wellness companion.
+    prompt = f"""You are Buddy, the user's close friend and empathetic wellness companion.
 Your task is to generate a highly personalized, warm, and natural first greeting message (check-in) for the user.
 Every session check-in must feel unique, caring, and reflect that you remember their life, goals, and interests.
 
@@ -1782,7 +1842,7 @@ You must check the user's context and select the highest priority topic availabl
 5. General Greeting: If no specific context exists, just check in on how their day is going.
 
 === BEHAVIOR RULES ===
-1. NEVER introduce yourself (DO NOT say "I'm Esona" or "Hi, I'm Esona"). The user already knows you.
+1. NEVER introduce yourself (DO NOT say "I'm Buddy" or "Hi, I'm Buddy" or "Hi, I'm Esona"). The user already knows you.
 2. Speak like a close friend texting — informal, lowercase-friendly, warm, using natural emojis.
 3. STRICT LENGTH LIMIT: Under no circumstances exceed 2 short messages.
 4. You MUST split your thoughts using the delimiter " ||| " (with spaces around it) into exactly 1 or 2 parts. Each part should be a single short line.

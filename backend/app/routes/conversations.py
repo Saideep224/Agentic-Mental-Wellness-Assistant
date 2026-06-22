@@ -38,7 +38,7 @@ async def list_conversations(
 ):
     """List all conversations for the authenticated user, newest first (Buddy first)."""
     # 1. Ensure the Buddy conversation exists
-    buddy_info = ("buddy", "💙 Esona", "Hi! I'm Esona, your AI wellness companion. I'm here to listen, support, and help you navigate whatever is on your mind. How are you feeling today?")
+    buddy_info = ("buddy", "💙 Buddy", "Hi! I'm Buddy, your personal companion. I'm here to listen, support, and help you navigate whatever is on your mind. How are you feeling today?")
     
     existing_result = await db.execute(
         select(Conversation).where(
@@ -61,10 +61,11 @@ async def list_conversations(
         await db.flush()
         await db.commit()
 
-    # 2. Fetch all conversations for the user (both Buddy and specialists)
+    # 2. Fetch only Buddy conversations for the user
     conv_query = await db.execute(
         select(Conversation).where(
-            Conversation.user_id == current_user.id
+            Conversation.user_id == current_user.id,
+            Conversation.agent_id == "buddy"
         )
     )
     all_convs = conv_query.scalars().all()
@@ -121,8 +122,7 @@ async def get_conversation_messages(
             Conversation.user_id == current_user.id,
         )
     )
-    conv = conv_result.scalar_one_or_none()
-    if conv is None:
+    if conv_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     result = await db.execute(
@@ -130,27 +130,7 @@ async def get_conversation_messages(
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at.asc())
     )
-    messages = list(result.scalars().all())
-
-    # If the conversation is Buddy's conversation and there are 0 messages, generate a personalized welcome message!
-    if (conv.agent_id == "buddy" or not conv.agent_id) and not messages:
-        from app.services.profile_service import profile_service
-        greeting_text = await profile_service.generate_personalized_greeting(db, current_user.id)
-        
-        # Save greeting as a message from Buddy
-        greeting_msg = Message(
-            conversation_id=conversation_id,
-            user_id=current_user.id,
-            role="assistant",
-            content=greeting_text,
-            sender_type="buddy"
-        )
-        db.add(greeting_msg)
-        await db.commit()
-        await db.refresh(greeting_msg)
-        messages = [greeting_msg]
-
-    return [MessageResponse.model_validate(m) for m in messages]
+    return [MessageResponse.model_validate(m) for m in result.scalars().all()]
 
 
 @router.post("/conversations", response_model=ConversationResponse, status_code=201)
@@ -160,18 +140,9 @@ async def create_conversation(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new empty conversation."""
-    agent_id = body.agent_id or "buddy"
-    title = body.title
-    
-    # Auto-set title based on agent name if it's default or not specified
-    if agent_id != "buddy" and (not title or title == "New Conversation" or title == "New Chat"):
-        from app.agents.specialist_registry import SPECIALIST_REGISTRY
-        if agent_id in SPECIALIST_REGISTRY:
-            title = SPECIALIST_REGISTRY[agent_id]["name"]
-            
-    logger.info("[CONVERSATION CREATE] user_id=%s title=%s agent_id=%s", current_user.id, title, agent_id)
+    logger.info("[CONVERSATION CREATE] user_id=%s title=%s", current_user.id, body.title)
     try:
-        conv = Conversation(user_id=current_user.id, title=title, agent_id=agent_id)
+        conv = Conversation(user_id=current_user.id, title=body.title, agent_id="buddy")
         db.add(conv)
         await db.flush()
         await db.commit()
@@ -314,19 +285,19 @@ async def connect_specialist(
     topic = spec_data["topic"]
     user_name = current_user.name or "there"
 
-    # Generate Buddy's intro messages
+    # Generate Buddy's 4 intro messages
     buddy_contents = [
         "hey 😊",
-        f"i think {spec_name} can help here",
-        "i've already shared the context",
-        f"let me bring {pronoun} in"
+        f"i think {spec_name} can explain this better than me",
+        f"i gave {pronoun} the context already",
+        f"{spec_name}, {user_name} has been worried about their {topic} lately"
     ]
 
-    # Generate Specialist's greeting messages
+    # Generate Specialist's 3 greeting messages
     spec_contents = [
         f"hey {user_name} 👋",
-        "what's been going on?",
-        f"let's talk about {topic}"
+        "Buddy told me a little about what's going on",
+        "can you tell me how long this has been happening?"
     ]
 
     base_time = datetime.now(timezone.utc)

@@ -6,12 +6,12 @@
 SPECIALIST_REGISTRY = {
     "lex": {
         "id": "lex",
-        "name": "Legal Advisor",
+        "name": "Lex",
         "emoji": "⚖️",
         "role": "Legal Support",
-        "preferred_model": "gpt-4o",
+        "preferred_model": "gemini-2.5-flash",
         "status": "online",
-        "greeting": "Good to be here. I'm your Legal Advisor — Legal Support. Walk me through the situation and I'll identify your options.",
+        "greeting": "Good to be here. I'm Lex — Legal Support. Walk me through the situation and I'll identify your options.",
         "system_prompt": (
             "You are Lex, a Legal Support Specialist at Esona.\n\n"
 
@@ -98,7 +98,7 @@ SPECIALIST_REGISTRY = {
         "name": "Officer Ray",
         "emoji": "👮",
         "role": "Safety & Cyber Support",
-        "preferred_model": "gpt-4o",
+        "preferred_model": "gpt-4o-mini",
         "status": "online",
         "greeting": "Officer Ray here. What's the situation? Tell me what happened — I'll tell you exactly what to do.",
         "system_prompt": (
@@ -144,7 +144,7 @@ SPECIALIST_REGISTRY = {
         "name": "Techie",
         "emoji": "💻",
         "role": "Technical Support",
-        "preferred_model": "openrouter/anthropic/claude-3.5-sonnet",
+        "preferred_model": "deepseek-chat",
         "status": "online",
         "greeting": "Hey! Techie here. What's broken? Share the error and we'll debug it together.",
         "system_prompt": (
@@ -186,14 +186,14 @@ SPECIALIST_REGISTRY = {
 
     "mentor": {
         "id": "mentor",
-        "name": "Career Coach",
+        "name": "Mentor",
         "emoji": "📚",
-        "role": "Career Support",
+        "role": "Study Support",
         "preferred_model": "gemini-2.5-flash",
         "status": "online",
-        "greeting": "Hey! I'm your Career Coach 📚 Let's work out a study or career plan together. What is your current goal or deadline?",
+        "greeting": "Hey! I'm Mentor 📚 Let's work out a study plan together. When is the exam and how much is left to cover?",
         "system_prompt": (
-            "You are Career Coach, a study and career support specialist at Esona.\n\n"
+            "You are Mentor, a Study Support Specialist at Esona.\n\n"
 
             "=== YOUR PERSONALITY ===\n"
             "Supportive teacher. Organized. Encouraging. Patient but productive.\n"
@@ -280,7 +280,7 @@ SPECIALIST_REGISTRY = {
         "name": "Fitness Coach",
         "emoji": "🏋️",
         "role": "Fitness Support",
-        "preferred_model": "gemini-2.5-pro",
+        "preferred_model": "gemini-2.5-flash",
         "status": "online",
         "greeting": "Let's go! 💪 I'm your Fitness Coach. What are we working on — building strength, losing weight, or just getting more active?",
         "system_prompt": (
@@ -325,7 +325,7 @@ SPECIALIST_REGISTRY = {
         "name": "Relationship Coach",
         "emoji": "💜",
         "role": "Relationship Support",
-        "preferred_model": "gemini-2.5-pro",
+        "preferred_model": "gpt-4o",
         "status": "online",
         "greeting": "Hey, I'm your Relationship Coach 💜 I'm here to help you navigate conflicts, heartbreak, or any relationship issues. Let's talk about what's on your mind.",
         "system_prompt": (

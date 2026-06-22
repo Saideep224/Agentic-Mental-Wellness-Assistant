@@ -79,12 +79,75 @@ def get_speculative_transition(message: str) -> str:
     return "typing"
 
 
-def detect_specialist_action(message: str, active_specialists: list[str], pending_specialist: str | None = None) -> tuple[str | None, str | None]:
+def detect_specialist_action(message: str, active_specialists: list[str], suggested_specialist: str | None = None) -> tuple[str | None, str | None]:
     """
     Analyzes user message for specialist invite/removal intent.
-    DISABLED: Automatic expert switching is disabled. Buddy never auto-connects.
-    Always returns (None, None).
+    Returns: (action, specialist_id)
+    where action can be 'invite', 'remove', or None.
     """
+    msg = (message or "").lower().strip()
+    
+    # Minimal keyword list strictly for explicit connects or removes by name
+    spec_keywords = {
+        "lex": ["lex"],
+        "maya": ["maya", "dr. maya", "dr maya"],
+        "ray": ["ray", "officer ray"],
+        "techie": ["techie"],
+        "mentor": ["mentor"],
+        "finance": ["finance coach"],
+        "fitness": ["fitness coach"],
+        "relationship": ["relationship coach"]
+    }
+    
+    # 1. Check for removal intent
+    removal_triggers = [
+        "remove", "disconnect", "leave", "go away", "don't need", "dont need",
+        "can leave", "ask to leave", "thanks", "thank you", "goodbye", "bye", "dismiss"
+    ]
+    
+    is_removal = any(trigger in msg for trigger in removal_triggers)
+    
+    if is_removal:
+        # Check if they mention an active specialist
+        for spec_id in active_specialists:
+            keywords = spec_keywords.get(spec_id, [spec_id])
+            if any(kw in msg for kw in keywords):
+                return "remove", spec_id
+        # Fallback: if they just say "disconnect all" or "remove specialist" or "can leave"
+        if "specialist" in msg or "specialists" in msg or "disconnect" in msg or "remove" in msg or "leave" in msg:
+            if active_specialists:
+                return "remove", active_specialists[0]
+                
+    # 2. Explicit confirmation of a suggested specialist
+    if suggested_specialist and not is_removal:
+        confirmation_triggers = [
+            "yes", "yeah", "yep", "sure", "okay", "ok", "connect", "bring", "do it", "please", "alright", "fine"
+        ]
+        rejection_triggers = [
+            "no", "nah", "nope", "nevermind", "don't", "dont", "stop", "never mind"
+        ]
+        
+        is_rejection = any(msg.startswith(t) for t in rejection_triggers) or msg == "n"
+        if not is_rejection:
+            # If they use a confirmation word or it's a very short affirmative message
+            if any(t in msg for t in confirmation_triggers) or msg == "y":
+                return "invite", suggested_specialist
+                
+    # 3. Explicit invite by exact specialist name
+    invite_triggers = [
+        "connect", "invite", "add", "call", "bring in", "summon", "talk to", "chat with"
+    ]
+    
+    is_invite = any(trigger in msg for trigger in invite_triggers)
+    
+    if is_invite and not is_removal:
+        # Find which specialist they are explicitly requesting by name
+        for spec_id, keywords in spec_keywords.items():
+            if any(kw in msg for kw in keywords):
+                # Only invite if they aren't already active
+                if spec_id not in active_specialists:
+                    return "invite", spec_id
+                        
     return None, None
 
 

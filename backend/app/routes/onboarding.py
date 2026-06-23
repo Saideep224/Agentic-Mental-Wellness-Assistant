@@ -237,18 +237,8 @@ async def submit_onboarding(
         await profile_service.update_profile(db, current_user.id, profile_updates)
         await db.flush()
 
-    # Count how many answers are actually answered (non-empty)
-    answered_count = 0
-    for ans in answers_to_analyze:
-        if ans.get("selected_answers") or (ans.get("custom_answer") and ans.get("custom_answer").strip()):
-            answered_count += 1
-
-    # Mark user onboarding as complete on User table (profiles) only if all 25 are answered
-    if answered_count == 25:
-        current_user.onboarding_completed = True
-    else:
-        current_user.onboarding_completed = False
-
+    # Mark user onboarding as complete on User table (profiles)
+    current_user.onboarding_completed = True
     current_user.personality_profile = derive_personality_profile(answers_to_analyze)
     await db.flush()
     await db.commit()

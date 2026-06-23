@@ -8,7 +8,7 @@ import logging
 import uuid
 from typing import Any, Dict, List
 
-from app.utils.llm import generate_chat_completion_with_fallback
+from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -121,8 +121,12 @@ async def analyze_onboarding(
     {memories_context}
     """
 
+    # Use client to run query
+    client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+
     try:
-        raw_content = await generate_chat_completion_with_fallback(
+        response = await client.chat.completions.create(
+            model=settings.llm_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -130,6 +134,8 @@ async def analyze_onboarding(
             temperature=0.4,
             response_format={"type": "json_object"},
         )
+
+        raw_content = response.choices[0].message.content or "{}"
         profile_data = json.loads(raw_content)
 
     except Exception as e:

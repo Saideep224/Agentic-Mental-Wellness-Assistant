@@ -88,8 +88,8 @@ class ResponseAgent:
                 current_temp = min(1.0, current_temp + 0.15)
             except Exception as e:
                 logger.error(f"ResponseAgent generation failed: {e}", exc_info=True)
-                # LLM exception means all waterfall providers failed. Do not retry with higher temperature.
-                raise e
+                if attempt == retries:
+                    raise e
                     
         return {
             "text": "damn... ||| okay talk to me, what's going on?",

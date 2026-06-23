@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.knowledge_graph import KnowledgeGraphRelation
-from app.utils.llm import generate_chat_completion_with_fallback, get_chat_client
+from app.utils.llm import get_chat_client
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +50,11 @@ class KnowledgeGraphService:
             return {"entities": [], "relationships": [], "events": []}
 
         try:
+            client = get_chat_client()
             # Use replace instead of format to avoid KeyErrors on template braces
             prompt = KNOWLEDGE_GRAPH_EXTRACTION_PROMPT.replace("{message}", message)
-            raw = await generate_chat_completion_with_fallback(
+            response = await client.chat.completions.create(
+                model=settings.llm_model,
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": f"User message: {message}"}
@@ -60,6 +62,7 @@ class KnowledgeGraphService:
                 temperature=0.1,
                 response_format={"type": "json_object"}
             )
+            raw = response.choices[0].message.content.strip()
             parsed = json.loads(raw)
             
             # --- USER DIAGNOSTIC LOGS ---

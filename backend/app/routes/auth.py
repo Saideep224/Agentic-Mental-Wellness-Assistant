@@ -126,14 +126,8 @@ async def get_current_user(
             await db.flush()
             await db.refresh(user)
         except Exception as e:
-            logger.warning(f"[Auth Dependency] Failed to auto-create user: {e}. Checking if user was created concurrently...")
-            await db.rollback()
-            # Query again to see if user was inserted concurrently by another request
-            result = await db.execute(select(User).where(User.id == user_id))
-            user = result.scalar_one_or_none()
-            if user is None:
-                logger.error(f"[Auth Dependency] User creation failed permanently: {e}")
-                raise credentials_exception
+            print(f"[Auth Dependency] Failed to auto-create user: {e}")
+            raise credentials_exception
     else:
         # Sync onboarding status and OAuth metadata changes if any
         updated = False

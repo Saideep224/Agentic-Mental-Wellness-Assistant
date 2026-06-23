@@ -108,11 +108,15 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(asst_msg_db.emotion, "Stress")
         self.assertEqual(asst_msg_db.emotion_detected, "Stress") # property alias
 
-    @patch("app.services.emotion_service.generate_chat_completion_with_fallback")
-    async def test_emotion_classification_mentalbert(self, mock_generate_chat):
+    @patch("app.services.emotion_service.get_chat_client")
+    async def test_emotion_classification_mentalbert(self, mock_get_client):
         """Phase 5: Verify simulated MentalBERT classifies messages and stores them in emotion_logs."""
         # Setup mock LLM response
-        mock_generate_chat.return_value = '{"detected_emotion": "Stress", "confidence_score": 0.95}'
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(message=MagicMock(content='{"detected_emotion": "Stress", "confidence_score": 0.95}'))
+        ]
+        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response)
 
         # Classify
         res = await emotion_service.classify_emotion_mentalbert(
@@ -131,8 +135,8 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(log.confidence_score, 0.95)
         self.assertEqual(log.message, "I am so overwhelmed with all my coursework.")
 
-    @patch("app.services.onboarding_service.generate_chat_completion_with_fallback")
-    async def test_conversational_onboarding_flow(self, mock_generate_chat):
+    @patch("app.services.onboarding_service.get_chat_client")
+    async def test_conversational_onboarding_flow(self, mock_get_client):
         """Phase 3: Verify user onboarding answers are parsed, stages increment, and profiles compiled."""
         # Create user profile record
         profile = UserProfile(
@@ -143,22 +147,12 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         self.db.add(profile)
         await self.db.commit()
 
-        # Mock responses for onboarding flow:
-        # 1. Stage 6 (Identity)
-        # 2. Stage 15 (Communication Style)
-        # 3. Stage 16 (Sleep habits)
-        # 4. Finalization profile compilation
-        mock_generate_chat.side_effect = [
-            '{"name": "Saideep"}',
-            '{"communication_style": "Friendly Friend"}',
-            '{"sleep_habits": "Good"}',
-            (
-                '{"personality_type": {"type": "Night Owl", "strengths": ["creative"], "growth_areas": ["sleep"]}, '
-                '"emotional_baseline": {"dominant_emotion": "neutral", "stress_level": 3.0}, '
-                '"comfort_preferences": {"escape_mechanisms": ["coding"]}, '
-                '"reply_style": {"reply_style": "casual", "communication_style": "Friendly Friend"}}'
-            )
+        # Mock Stage 6 Parser (Identity)
+        mock_response_6 = MagicMock()
+        mock_response_6.choices = [
+            MagicMock(message=MagicMock(content='{"name": "Saideep"}'))
         ]
+        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_6)
 
         # Parse & save identity (Stage 6)
         success = await onboarding_service.parse_and_save_answer(
@@ -168,12 +162,41 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.user.name, "Saideep")
         self.assertEqual(profile.personality_profile["onboarding_stage"], 7)
 
+        # Mock Stage 15 Parser (Communication Style)
+        mock_response_15 = MagicMock()
+        mock_response_15.choices = [
+            MagicMock(message=MagicMock(content='{"communication_style": "Friendly Friend"}'))
+        ]
+        mock_get_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_15)
+
         # Parse & save communication style (Stage 15)
         success = await onboarding_service.parse_and_save_answer(
             self.db, self.user, profile, 15, "Friendly Friend please"
         )
         self.assertTrue(success)
         self.assertEqual(self.user.communication_style, "Friendly Friend")
+
+        # Mock Stage 16 finalize compilation
+        mock_response_16 = MagicMock()
+        mock_response_16.choices = [
+            MagicMock(message=MagicMock(content='{"sleep_habits": "Good"}'))
+        ]
+        mock_finalize_response = MagicMock()
+        mock_finalize_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content=(
+                        '{"personality_type": {"type": "Night Owl", "strengths": ["creative"], "growth_areas": ["sleep"]}, '
+                        '"emotional_baseline": {"dominant_emotion": "neutral", "stress_level": 3.0}, '
+                        '"comfort_preferences": {"escape_mechanisms": ["coding"]}, '
+                        '"reply_style": {"reply_style": "casual", "communication_style": "Friendly Friend"}}'
+                    )
+                )
+            )
+        ]
+        
+        # We'll use side_effect to return mock_response_16, then mock_finalize_response
+        mock_get_client.return_value.chat.completions.create = AsyncMock(side_effect=[mock_response_16, mock_finalize_response])
 
         # Complete final stage (Stage 16)
         success = await onboarding_service.parse_and_save_answer(
@@ -280,37 +303,49 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         await self.db.refresh(self.user)
         self.assertEqual(self.user.onboarding_step, 5)
 
-    @patch("app.services.emotion_service.generate_chat_completion_with_fallback")
+    @patch("app.services.emotion_service.get_chat_client")
     @patch("app.chatbot.pipeline.generate_chat_completion_with_fallback")
     @patch("app.memory.memory_manager.MemoryManager._get_embedding")
-    @patch("app.services.profile_service.generate_chat_completion_with_fallback")
-    @patch("app.services.knowledge_graph_service.generate_chat_completion_with_fallback")
+    @patch("app.services.profile_service.get_chat_client")
+    @patch("app.services.knowledge_graph_service.get_chat_client")
     @patch("app.agents.response_agent.generate_chat_completion_with_fallback")
     async def test_emotion_validation_and_crisis_override(
         self,
         mock_response_generate,
-        mock_kg_generate,
-        mock_profile_generate,
+        mock_kg_client,
+        mock_profile_client,
         mock_embedding,
         mock_pipeline_generate,
-        mock_emotion_generate
+        mock_emotion_client
     ):
         """Verify the emotion classification pipeline behaves correctly for validation inputs."""
         import json
         mock_embedding.return_value = [0.1, 0.2, 0.3]
         
         # Mock profile client response
-        mock_profile_generate.return_value = '{"name": null, "university": null, "profession": null}'
+        mock_response_facts = MagicMock()
+        mock_response_facts.choices = [
+            MagicMock(message=MagicMock(content='{"name": null, "university": null, "profession": null}'))
+        ]
+        mock_profile_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_facts)
 
         # Mock kg client response
-        mock_kg_generate.return_value = '{"relations": []}'
+        mock_response_rels = MagicMock()
+        mock_response_rels.choices = [
+            MagicMock(message=MagicMock(content='{"relations": []}'))
+        ]
+        mock_kg_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_rels)
 
         # Mock final response generation
         mock_response_generate.return_value = "I am a supportive response."
         
         # 1. Test "I am happy"
         # Mock emotion service LLM response
-        mock_emotion_generate.return_value = '{"detected_emotion": "Happy", "confidence_score": 0.95}'
+        mock_response_happy = MagicMock()
+        mock_response_happy.choices = [
+            MagicMock(message=MagicMock(content='{"detected_emotion": "Happy", "confidence_score": 0.95}'))
+        ]
+        mock_emotion_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_happy)
 
         # Mock cognitive analyzer return for Happy
         mock_pipeline_generate.return_value = json.dumps({
@@ -344,7 +379,11 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
 
         # 2. Test "I am anxious about exams"
         # Mock emotion service LLM response
-        mock_emotion_generate.return_value = '{"detected_emotion": "Anxiety", "confidence_score": 0.95}'
+        mock_response_anxious = MagicMock()
+        mock_response_anxious.choices = [
+            MagicMock(message=MagicMock(content='{"detected_emotion": "Anxiety", "confidence_score": 0.95}'))
+        ]
+        mock_emotion_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_anxious)
 
         mock_pipeline_generate.return_value = json.dumps({
             "message_type": "emotional",
@@ -376,7 +415,11 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
 
         # 3. Test "I feel depressed"
         # Mock emotion service LLM response
-        mock_emotion_generate.return_value = '{"detected_emotion": "Sadness", "confidence_score": 0.95}'
+        mock_response_sad = MagicMock()
+        mock_response_sad.choices = [
+            MagicMock(message=MagicMock(content='{"detected_emotion": "Sadness", "confidence_score": 0.95}'))
+        ]
+        mock_emotion_client.return_value.chat.completions.create = AsyncMock(return_value=mock_response_sad)
 
         mock_pipeline_generate.return_value = json.dumps({
             "message_type": "emotional",

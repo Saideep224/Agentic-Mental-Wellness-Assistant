@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.user_personal_profile import UserPersonalProfile
-from app.utils.llm import generate_chat_completion_with_fallback, get_chat_client
+from app.utils.llm import get_chat_client
 
 logger = logging.getLogger(__name__)
 
@@ -463,7 +463,9 @@ class ProfileService:
             user_id = uuid.UUID(user_id)
 
         try:
-            raw = await generate_chat_completion_with_fallback(
+            client = get_chat_client()
+            response = await client.chat.completions.create(
+                model=settings.llm_model,
                 messages=[
                     {"role": "system", "content": PROFILE_FACT_EXTRACTION_PROMPT},
                     {"role": "user", "content": f"User message: {user_message}"}
@@ -471,6 +473,7 @@ class ProfileService:
                 temperature=0.1,
                 response_format={"type": "json_object"}
             )
+            raw = response.choices[0].message.content.strip()
             extracted = json.loads(raw)
             logger.info(f"[Fact Extraction] Extracted facts: {extracted}")
 
@@ -561,6 +564,8 @@ class ProfileService:
             from app.services.knowledge_graph_service import knowledge_graph_service
             kg = await knowledge_graph_service.retrieve_full_graph_context(db, user_id)
 
+            # Build LLM Prompt
+            client = get_chat_client()
             prompt = f"""You are Esona, the user's close friend and empathetic AI wellness companion.
 Generate a short, warm, welcoming, and highly personalized first message greeting for the user opening their chat.
 Use their name if known (e.g. Sai).
@@ -579,11 +584,13 @@ Context Details:
 
 Output ONLY the greeting message text."""
 
-            greeting = await generate_chat_completion_with_fallback(
+            response = await client.chat.completions.create(
+                model=settings.llm_model,
                 messages=[{"role": "system", "content": prompt}],
                 temperature=0.7,
                 max_tokens=150
             )
+            greeting = response.choices[0].message.content.strip()
             if greeting:
                 return greeting
         except Exception as e:

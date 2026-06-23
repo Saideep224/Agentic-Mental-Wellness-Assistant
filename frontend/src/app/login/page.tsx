@@ -15,7 +15,7 @@ type AuthMode = 'login' | 'register';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading, login: authLogin } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, login: authLogin } = useAuth();
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -218,7 +218,7 @@ export default function LoginPage() {
 
   // Visual guard: if already authenticated, show redirect loader instead of login form
   if (isAuthenticated) {
-    const dest = authUser?.onboardingCompleted ? 'chat...' : 'onboarding...';
+    const dest = user?.onboardingCompleted ? 'chat...' : 'onboarding...';
     return (
       <AnimatePresence>
         <FullPageTransition message={`Taking you to ${dest}`} />

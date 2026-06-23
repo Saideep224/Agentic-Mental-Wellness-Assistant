@@ -15,7 +15,7 @@ type AuthMode = 'login' | 'register';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, login: authLogin } = useAuth();
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,12 +25,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline' | 'idle'>('idle');
 
-  // Redirect to chat if already authenticated (after auth check completes)
-  useEffect(() => {
-    if (isAuthenticated && !authLoading) {
-      router.replace('/chat');
-    }
-  }, [isAuthenticated, authLoading, router]);
+  // AuthProvider's route guard handles redirecting authenticated users away from /login.
+  // No need to duplicate the logic here — it causes double-redirect races.
 
   // Check backend health and URL error parameters on mount
   useEffect(() => {
@@ -150,12 +146,10 @@ export default function LoginPage() {
         const freshUser = await api.getMe(jwtToken);
         api.setToken(jwtToken);
         api.setStoredUser(freshUser);
+        console.log('[Auth] Register getMe success. onboardingCompleted:', freshUser.onboardingCompleted);
 
-        if (!freshUser.onboardingCompleted) {
-          router.replace('/onboarding');
-        } else {
-          router.replace('/chat');
-        }
+        // Use authLogin() to set AuthProvider state before navigating
+        authLogin(jwtToken, freshUser);
       } else {
         console.log('[Auth] Logging in via Supabase Auth...');
         const { data, error: signInError } = await supabase.auth.signInWithPassword({
@@ -194,12 +188,10 @@ export default function LoginPage() {
         const freshUser = await api.getMe(jwtToken);
         api.setToken(jwtToken);
         api.setStoredUser(freshUser);
+        console.log('[Auth] Login getMe success. onboardingCompleted:', freshUser.onboardingCompleted);
 
-        if (!freshUser.onboardingCompleted) {
-          router.replace('/onboarding');
-        } else {
-          router.replace('/chat');
-        }
+        // Use authLogin() to set AuthProvider state before navigating
+        authLogin(jwtToken, freshUser);
       }
     } catch (err: any) {
       console.error('[Auth] Submit failed:', err);
@@ -226,9 +218,10 @@ export default function LoginPage() {
 
   // Visual guard: if already authenticated, show redirect loader instead of login form
   if (isAuthenticated) {
+    const dest = authUser?.onboardingCompleted ? 'chat...' : 'onboarding...';
     return (
       <AnimatePresence>
-        <FullPageTransition message="Taking you to chat..." />
+        <FullPageTransition message={`Taking you to ${dest}`} />
       </AnimatePresence>
     );
   }

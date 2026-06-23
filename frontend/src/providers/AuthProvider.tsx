@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { User } from '@/types';
-import { getToken, getStoredUser, clearAuth, getMe, checkBackendHealth } from '@/api';
+import { getToken, getStoredUser, clearAuth, getMe, checkBackendHealth, mapUser } from '@/api';
 import { supabase } from '@/database/supabase';
 
 interface AuthContextType {
@@ -24,16 +24,17 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setTokenState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   const router = useRouter();
   const pathname = usePathname();
 
+  // ─── Hard logout: only called for explicit/confirmed auth errors ───────────
   const handleInvalidSession = async () => {
-    console.log('[AuthProvider] Clearing invalid or deleted session...');
+    console.log('[AuthProvider] Clearing confirmed-invalid session...');
     if (typeof window !== 'undefined') {
       try {
-        localStorage.clear();
-        sessionStorage.clear();
+        localStorage.removeItem('esona_token');
+        localStorage.removeItem('esona_user');
       } catch (err) {
         console.warn('[AuthProvider] Storage clear error:', err);
       }
@@ -43,73 +44,89 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await supabase.auth.signOut();
     } catch (err) {
-      console.warn('[AuthProvider] Supabase signOut error on invalid session:', err);
+      console.warn('[AuthProvider] Supabase signOut error:', err);
     }
     if (typeof window !== 'undefined') {
       window.location.href = '/login';
     }
   };
 
-  // Warmup Backend Mount Ping and 4-minute heartbeat to keep connection pool active and prevent Render cold starts
+  // ─── Backend warmup ping + heartbeat ──────────────────────────────────────
   useEffect(() => {
     const runPing = async () => {
-      console.log('[AuthProvider] Sending backend warmup ping...');
       try {
         const healthy = await checkBackendHealth();
-        console.log('[AuthProvider] Backend warmup ping status:', healthy ? 'SUCCESS' : 'FAILED');
+        console.log('[AuthProvider] Backend ping:', healthy ? 'OK' : 'FAILED');
       } catch (err) {
-        console.warn('[AuthProvider] Backend warmup ping failed:', err);
+        console.warn('[AuthProvider] Backend ping error:', err);
       }
     };
-
-    // Run immediately on mount
     runPing();
-
-    // Set interval for every 4 minutes (4 * 60 * 1000 ms)
     const intervalId = setInterval(runPing, 4 * 60 * 1000);
-
     return () => clearInterval(intervalId);
   }, []);
 
-  // Load and listen to Supabase Auth State changes
+  // ─── Core auth initialisation + Supabase listener ─────────────────────────
   useEffect(() => {
     const initAuth = async () => {
       try {
         console.log('[AuthProvider] Restoring Supabase session...');
         const { data: { session } } = await supabase.auth.getSession();
-        
+
         if (session) {
           const jwtToken = session.access_token;
+          // Optimistically set token + a basic user from Supabase metadata
+          // so route guard never sees a null user during getMe() round-trip.
+          const supabaseUser: User = mapUser({
+            id: session.user.id,
+            email: session.user.email ?? '',
+            name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
+            onboarding_completed: false,
+            avatar_url: session.user.user_metadata?.avatar_url ?? null,
+            provider: session.user.app_metadata?.provider ?? 'credentials',
+          });
+
+          // Check localStorage first for full user (has onboardingCompleted)
+          const cached = getStoredUser();
+          const initialUser = cached?.id === session.user.id ? cached : supabaseUser;
+
           setTokenState(jwtToken);
+          setUser(initialUser);
           localStorage.setItem('esona_token', jwtToken);
-          
-          const freshUser = await getMe(jwtToken);
-          setUser(freshUser);
-          localStorage.setItem('esona_user', JSON.stringify(freshUser));
-          console.log('[AuthProvider] Session restored successfully for:', freshUser.email);
+
+          console.log('[AuthProvider] Session found. User:', initialUser.email, '| onboardingCompleted:', initialUser.onboardingCompleted);
+
+          // Try to refresh user from backend — but DON'T clear session on failure
+          try {
+            const freshUser = await getMe(jwtToken);
+            setUser(freshUser);
+            localStorage.setItem('esona_user', JSON.stringify(freshUser));
+            console.log('[AuthProvider] getMe OK:', freshUser.email, '| onboardingCompleted:', freshUser.onboardingCompleted);
+          } catch (getMeErr: any) {
+            // Backend may be cold-starting or returning a transient error.
+            // Do NOT wipe the session — Supabase session is valid.
+            // We'll use the cached/supabase-derived user until backend warms up.
+            const status = (getMeErr as any)?.status;
+            console.warn('[AuthProvider] getMe failed (non-fatal, keeping session). Status:', status, 'Error:', getMeErr?.message);
+            // Only hard-logout if Supabase itself says the token is invalid (403 sub mismatch)
+            // Don't logout on 401 — Render cold starts return 401 transiently.
+            if (status === 403 || getMeErr?.message?.includes('sub claim')) {
+              console.warn('[AuthProvider] Confirmed invalid sub claim. Clearing session.');
+              await handleInvalidSession();
+            }
+            // else: keep the session alive, user stays logged in
+          }
         } else {
-          // Clear if no session
+          console.log('[AuthProvider] No Supabase session found.');
           setTokenState(null);
           setUser(null);
+          localStorage.removeItem('esona_token');
+          localStorage.removeItem('esona_user');
         }
       } catch (err: any) {
-        console.warn('[LOG] [AuthProvider initAuth] Session restoration error:', err);
-        const errMsg = err?.message || String(err);
-        const isAuthError = 
-          errMsg.includes('401') || 
-          errMsg.includes('403') || 
-          errMsg.includes('user_not_found') || 
-          errMsg.includes('sub claim') || 
-          errMsg.includes('does not exist') ||
-          errMsg.includes('unauthorized') ||
-          errMsg.includes('not authenticated');
-          
-        if (isAuthError) {
-          console.warn('[LOG] [AuthProvider initAuth] Explicit auth error. Clearing session...');
-          await handleInvalidSession();
-        } else {
-          console.warn('[LOG] [AuthProvider initAuth] Transient or server error. Retaining local session.');
-        }
+        // This is a Supabase SDK error (network issue etc.) — not an auth error.
+        // Retain any existing local session.
+        console.warn('[AuthProvider] initAuth Supabase error (non-fatal):', err?.message);
       } finally {
         setIsLoading(false);
       }
@@ -117,45 +134,38 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
     initAuth();
 
-    // Set up auth state change listener
+    // ─── Supabase auth state change listener ──────────────────────────────
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[LOG] [onAuthStateChange] event:', event, 'hasSession:', !!session);
-      if (session) {
-        const jwtToken = session.access_token;
-        setTokenState(jwtToken);
-        localStorage.setItem('esona_token', jwtToken);
-        console.log('[LOG] [onAuthStateChange] Stored new token. Syncing profile via getMe...');
-        
-        try {
-          const freshUser = await getMe(jwtToken);
-          console.log('[LOG] [onAuthStateChange] getMe success for:', freshUser.email, 'onboardingCompleted:', freshUser.onboardingCompleted);
-          setUser(freshUser);
-          localStorage.setItem('esona_user', JSON.stringify(freshUser));
-        } catch (err: any) {
-          console.error('[LOG] [onAuthStateChange] Failed to sync profile on event:', err);
-          const errMsg = err?.message || String(err);
-          const isAuthError = 
-            errMsg.includes('401') || 
-            errMsg.includes('403') || 
-            errMsg.includes('user_not_found') || 
-            errMsg.includes('sub claim') || 
-            errMsg.includes('does not exist') ||
-            errMsg.includes('unauthorized') ||
-            errMsg.includes('not authenticated');
-            
-          if (isAuthError) {
-            console.warn('[LOG] [onAuthStateChange] Explicit auth error. Clearing session...');
-            await handleInvalidSession();
-          } else {
-            console.warn('[LOG] [onAuthStateChange] Transient or server error. Retaining local session.');
-          }
-        }
-      } else {
-        console.log('[LOG] [onAuthStateChange] Session is null. Clearing auth state...');
+      console.log('[AuthProvider] onAuthStateChange:', event, '| hasSession:', !!session);
+
+      if (event === 'SIGNED_OUT') {
         setTokenState(null);
         setUser(null);
         localStorage.removeItem('esona_token');
         localStorage.removeItem('esona_user');
+        return;
+      }
+
+      if (session) {
+        const jwtToken = session.access_token;
+        setTokenState(jwtToken);
+        localStorage.setItem('esona_token', jwtToken);
+
+        // Try to sync with backend — non-fatal on failure
+        try {
+          const freshUser = await getMe(jwtToken);
+          console.log('[AuthProvider] onAuthStateChange getMe OK:', freshUser.email);
+          setUser(freshUser);
+          localStorage.setItem('esona_user', JSON.stringify(freshUser));
+        } catch (err: any) {
+          const status = (err as any)?.status;
+          console.warn('[AuthProvider] onAuthStateChange getMe failed. Status:', status, '| Keeping session.');
+          // Only invalidate on confirmed invalid sub claim, not on 401 (Render cold start)
+          if (status === 403 || err?.message?.includes('sub claim')) {
+            await handleInvalidSession();
+          }
+          // Otherwise keep the optimistic user state
+        }
       }
     });
 
@@ -164,47 +174,53 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Route protection redirect checks
+  // ─── Route protection ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!isLoading) {
-      const storedToken = localStorage.getItem('esona_token') || token;
-      const storedUser = getStoredUser() || user;
+    if (isLoading) return; // Wait for auth to initialise before making any routing decisions
 
-      console.log('[LOG] [AuthProvider Checks] pathname:', pathname, 'hasStoredToken:', !!storedToken, 'hasStoredUser:', !!storedUser);
-      if (storedUser) {
-        console.log('[LOG] [AuthProvider Checks] storedUser details -> email:', storedUser.email, 'onboardingCompleted:', storedUser.onboardingCompleted);
-      }
+    const storedToken = token || localStorage.getItem('esona_token');
+    const storedUser = user || getStoredUser();
 
-      if (!storedToken || !storedUser) {
-        if (protectedRoutes.some(route => pathname.startsWith(route)) && pathname !== '/login') {
-          console.log('[LOG] [AuthProvider Checks] Redirecting to /login because storedToken or storedUser is missing');
-          router.push('/login');
-        }
-      } else {
-        const hasCompletedOnboarding = storedUser.onboardingCompleted ?? false;
-        
-        if (pathname === '/login') {
-          if (!hasCompletedOnboarding) {
-            console.log('[LOG] [AuthProvider Checks] Redirecting to /onboarding');
-            router.push('/onboarding');
-          } else {
-            console.log('[LOG] [AuthProvider Checks] Redirecting to /chat');
-            router.push('/chat');
-          }
-        } else if (hasCompletedOnboarding && pathname === '/onboarding') {
-          console.log('[LOG] [AuthProvider Checks] Redirecting to /chat because onboarding is complete');
-          router.push('/chat');
-        }
-      }
+    const isAuthed = !!(storedToken && storedUser);
+    const isOnProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
+    const isOnLoginPage = pathname === '/login';
+
+    console.log('[AuthProvider] Route check | path:', pathname, '| authed:', isAuthed, '| onboardingCompleted:', storedUser?.onboardingCompleted);
+
+    if (!isAuthed && isOnProtectedRoute) {
+      // Not logged in, trying to access protected page → login
+      console.log('[AuthProvider] → Redirecting to /login (not authenticated)');
+      router.push('/login');
+      return;
     }
-  }, [pathname, isLoading, router, user, token]);
 
+    if (isAuthed && isOnLoginPage) {
+      // Already logged in, on login page → send to correct destination
+      if (!storedUser!.onboardingCompleted) {
+        console.log('[AuthProvider] → Redirecting to /onboarding');
+        router.replace('/onboarding');
+      } else {
+        console.log('[AuthProvider] → Redirecting to /chat');
+        router.replace('/chat');
+      }
+      return;
+    }
+
+    if (isAuthed && storedUser!.onboardingCompleted && pathname === '/onboarding') {
+      // Onboarding already done, back on onboarding page → send to chat
+      console.log('[AuthProvider] → Redirecting to /chat (onboarding already complete)');
+      router.replace('/chat');
+    }
+  }, [pathname, isLoading, user, token, router]);
+
+  // ─── login() — called from login page after successful Supabase auth ───────
   const login = (newToken: string, newUser: User) => {
+    console.log('[AuthProvider] login() called for:', newUser.email, '| onboardingCompleted:', newUser.onboardingCompleted);
     localStorage.setItem('esona_token', newToken);
     localStorage.setItem('esona_user', JSON.stringify(newUser));
     setTokenState(newToken);
     setUser(newUser);
-    
+
     if (!newUser.onboardingCompleted) {
       router.replace('/onboarding');
     } else {
@@ -212,18 +228,17 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ─── logout() ─────────────────────────────────────────────────────────────
   const logout = async () => {
     try {
       await supabase.auth.signOut();
     } catch (e) {
       console.warn('[AuthProvider] Signout error:', e);
     }
-    
-    // Clear all storage
+
     localStorage.clear();
     sessionStorage.clear();
-    
-    // Clear document cookies manually to prevent any stale state
+
     if (typeof document !== 'undefined') {
       const cookies = document.cookie.split(';');
       for (let i = 0; i < cookies.length; i++) {
@@ -234,26 +249,23 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=' + window.location.hostname;
       }
     }
-    
+
     setTokenState(null);
     setUser(null);
     window.location.href = '/login';
   };
 
+  // ─── refreshUser() ────────────────────────────────────────────────────────
   const refreshUser = async () => {
-    console.log('[LOG] [refreshUser] triggered');
     const currentToken = token || localStorage.getItem('esona_token');
-    if (!currentToken) {
-      console.warn('[LOG] [refreshUser] failed: currentToken is null');
-      return;
-    }
+    if (!currentToken) return;
     try {
       const freshUser = await getMe(currentToken);
-      console.log('[LOG] [refreshUser] getMe success for:', freshUser.email, 'onboardingCompleted:', freshUser.onboardingCompleted);
+      console.log('[AuthProvider] refreshUser OK:', freshUser.email, '| onboardingCompleted:', freshUser.onboardingCompleted);
       setUser(freshUser);
       localStorage.setItem('esona_user', JSON.stringify(freshUser));
     } catch (err) {
-      console.error('[LOG] [refreshUser] Failed to refresh user:', err);
+      console.error('[AuthProvider] refreshUser failed:', err);
     }
   };
 
@@ -262,7 +274,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         token,
-        isAuthenticated: !!token,
+        isAuthenticated: !!(token && user),
         isLoading,
         login,
         logout,

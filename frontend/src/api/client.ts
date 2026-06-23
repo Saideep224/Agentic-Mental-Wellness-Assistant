@@ -187,15 +187,14 @@ export async function apiGet<T>(endpoint: string, token?: string | null): Promis
   }
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      clearAuth();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
-    }
+    // DO NOT auto-redirect on 401/403 here — the AuthProvider handles session
+    // invalidation with proper context. Auto-redirecting here causes the login loop:
+    // backend cold start 401 → wipes fresh session → redirects back to /login.
     const errorData = await response.json().catch(() => ({}));
     const message = await parseError(response, errorData);
-    throw new Error(message);
+    const err = new Error(message);
+    (err as any).status = response.status;
+    throw err;
   }
 
   return response.json();
@@ -221,15 +220,12 @@ export async function apiPost<T>(endpoint: string, body?: unknown, token?: strin
   }
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      clearAuth();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
-    }
+    // DO NOT auto-redirect on 401/403 here — see apiGet comment above.
     const errorData = await response.json().catch(() => ({}));
     const message = await parseError(response, errorData);
-    throw new Error(message);
+    const err = new Error(message);
+    (err as any).status = response.status;
+    throw err;
   }
 
   return response.json();
@@ -255,15 +251,12 @@ export async function apiPatch<T>(endpoint: string, body?: unknown, token?: stri
   }
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      clearAuth();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
-    }
+    // DO NOT auto-redirect on 401/403 here — see apiGet comment above.
     const errorData = await response.json().catch(() => ({}));
     const message = await parseError(response, errorData);
-    throw new Error(message);
+    const err = new Error(message);
+    (err as any).status = response.status;
+    throw err;
   }
 
   return response.json();
@@ -286,15 +279,12 @@ export async function apiDelete<T = void>(endpoint: string, token?: string | nul
   }
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      clearAuth();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
-    }
+    // DO NOT auto-redirect on 401/403 here — see apiGet comment above.
     const errorData = await response.json().catch(() => ({}));
     const message = await parseError(response, errorData);
-    throw new Error(message);
+    const err = new Error(message);
+    (err as any).status = response.status;
+    throw err;
   }
 
   // Return parsed JSON if content exists, otherwise undefined

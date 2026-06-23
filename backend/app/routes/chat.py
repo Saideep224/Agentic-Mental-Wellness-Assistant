@@ -1404,6 +1404,9 @@ async def stream_message_sse(
     GET endpoint for Server-Sent Events (SSE) streaming of chat responses.
     Allows browsers to connect natively using the standard EventSource API.
     """
+    print("CHAT REQUEST RECEIVED")
+    print("CONVERSATION ID:", conversation_id)
+    print("USER MESSAGE:", message)
     logger.info(f"[API SSE] stream_message_sse request received: conversation_id={conversation_id}, message_len={len(message) if message else 0}")
     
     try:
@@ -1816,7 +1819,7 @@ Response:"""
 
         if not should_generate:
             return {
-                "response": history_msgs[-1].content if history_msgs else "",
+                "response": "",
                 "emotionDetected": history_msgs[-1].emotion_detected or "neutral",
                 "moodScore": history_msgs[-1].mood_score or 0.5,
             }
@@ -1865,18 +1868,18 @@ USER DETAILS:
 
 Response:"""
 
-    try:
-        from app.utils.llm import generate_chat_completion_with_fallback
-        raw_response = await generate_chat_completion_with_fallback(
-            messages=[{"role": "system", "content": prompt}],
-            temperature=0.75,
-            max_tokens=150
-        )
-    except Exception as e:
-        logger.error(f"Failed to generate personalized first message: {e}", exc_info=True)
-        if is_new_user_first_message:
-            raw_response = "hey 👋 ||| i'm Buddy ||| before we start, i'd love to get to know you a little better 😊"
-        else:
+    if is_new_user_first_message:
+        raw_response = "hey 👋 ||| i'm Buddy ||| before we start, i'd love to get to know you a little better 😊"
+    else:
+        try:
+            from app.utils.llm import generate_chat_completion_with_fallback
+            raw_response = await generate_chat_completion_with_fallback(
+                messages=[{"role": "system", "content": prompt}],
+                temperature=0.75,
+                max_tokens=150
+            )
+        except Exception as e:
+            logger.error(f"Failed to generate personalized first message: {e}", exc_info=True)
             raw_response = f"hey {user_name} 👋 ||| just wanted to check in and see how you're doing today."
 
     # 7. Save greeting to DB

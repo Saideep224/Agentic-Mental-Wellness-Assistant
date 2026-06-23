@@ -33,7 +33,9 @@ def decode_and_verify_token(token: str) -> dict:
     
     try:
         # Decode Supabase JWT
-        if getattr(settings, "SUPABASE_JWT_SECRET", None):
+        jwt_secret = getattr(settings, "SUPABASE_JWT_SECRET", None)
+        print("SUPABASE_JWT_SECRET SET:", bool(jwt_secret), "LENGTH:", len(jwt_secret) if jwt_secret else 0)
+        if jwt_secret:
             logger.info(f"[AUTH] Attempting to decode token {masked_token} with SUPABASE_JWT_SECRET...")
             payload = jwt.decode(
                 token, settings.SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False}
@@ -45,6 +47,7 @@ def decode_and_verify_token(token: str) -> dict:
             payload = jwt.get_unverified_claims(token)
             return payload
     except Exception as supabase_err:
+        print("SUPABASE VERIFY FAILED:", supabase_err)
         logger.warning(f"[AUTH] Supabase verification failed: {supabase_err}. Trying local JWT fallback...")
         try:
             # Fallback to local JWT signature
@@ -54,6 +57,7 @@ def decode_and_verify_token(token: str) -> dict:
             logger.info("[AUTH] Token successfully decoded with local JWT secret.")
             return payload
         except (JWTError, ValueError) as local_err:
+            print("LOCAL JWT VERIFY FAILED:", local_err)
             logger.error(f"[AUTH] Local verification fallback failed: {local_err}")
             raise ValueError(f"Token validation failed (Supabase: {supabase_err}, Local: {local_err})") from supabase_err
 
@@ -68,6 +72,8 @@ async def get_current_user(
     
     # Log incoming auth header info
     auth_header = request.headers.get("Authorization", "")
+    print("AUTH HEADER:", auth_header)
+    print("TOKEN RECEIVED:", token[:20])
     masked_header = f"Bearer {auth_header[7:15]}...{auth_header[-8:]}" if len(auth_header) > 20 else auth_header
     logger.info(f"[AUTH] Incoming request to {request.url.path} with header: '{masked_header}'")
 
@@ -79,6 +85,7 @@ async def get_current_user(
     
     try:
         payload = decode_and_verify_token(token)
+        print("JWT VERIFY SUCCESS")
         user_id_str: str | None = payload.get("sub")
         if user_id_str is None:
             logger.error("[AUTH] Sub claim is missing from JWT payload.")
@@ -86,6 +93,7 @@ async def get_current_user(
         user_id = uuid.UUID(user_id_str)
         logger.info(f"[AUTH] Token verified. Decoded user_id: {user_id}")
     except Exception as e:
+        print("JWT VERIFY FAILED:", e)
         logger.error(f"[AUTH] Authentication failed for token: {e}")
         raise credentials_exception
 

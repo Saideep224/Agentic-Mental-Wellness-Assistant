@@ -209,6 +209,7 @@ export function useChat({ conversationId, activeSpecialistId, onSpecialistAction
       const token = api.getToken();
       if (!token) return;
 
+      console.log("MESSAGE SENT", content);
       setError(null);
 
       // Add user message immediately
@@ -454,6 +455,7 @@ export function useChat({ conversationId, activeSpecialistId, onSpecialistAction
                 const messageId = activeBubbleId.split('-')[0];
                 processBurst(messageId);
               } else if (data.type === 'done') {
+                console.log("AI RESPONSE RECEIVED");
                 // Wait for burst queue to empty before finalizing
                 const finalize = setInterval(() => {
                   if (burstQueue.length === 0 && !isProcessingBurst) {

@@ -185,9 +185,11 @@ async def generate_chat_completion_with_fallback(
                 # Model request logging
                 logger.info(f"[MODEL REQUEST] Provider: {name}, Model: {model}")
                 _safe_print(f"[MODEL REQUEST] Provider: {name}, Model: {model}")
+                print("MODEL USED:", model)
                 
                 response = await client.chat.completions.create(**kwargs)
                 content = response.choices[0].message.content
+                print("LLM RESPONSE RECEIVED")
                 
                 # Model response logging
                 logger.info(f"[MODEL RESPONSE] Provider: {name}, Content: {content}")

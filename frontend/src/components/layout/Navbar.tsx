@@ -13,7 +13,7 @@ import EsonaLogo from '@/components/layout/EsonaLogo';
 import UserAvatar from '@/components/layout/UserAvatar';
 
 export default function Navbar() {
-  const { logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -23,9 +23,7 @@ export default function Navbar() {
     setMounted(true);
   }, []);
 
-  const token = mounted ? getToken() : null;
-  const user = mounted ? getStoredUser() : null;
-  const isLoggedIn = mounted && !!token;
+  const isLoggedIn = mounted && !!token && !!user;
 
   const navLinks = [
     { href: '/chat', label: 'Chat', icon: MessageCircle },

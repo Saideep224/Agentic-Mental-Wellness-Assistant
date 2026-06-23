@@ -12,11 +12,9 @@ interface ProfileModalProps {
   onClose: () => void;
 }
 export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
-  
-  const user = getStoredUser();
 
   useEffect(() => {
     if (isOpen) {

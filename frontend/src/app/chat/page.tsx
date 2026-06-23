@@ -37,6 +37,7 @@ import { getToken, getStoredUser } from '@/api';
 import * as api from '@/api';
 import { formatDate, truncateText } from '@/utils';
 import { skipOnboarding } from '@/api/onboarding';
+import { useAuth } from '@/providers/AuthProvider';
 
 const agentSidebarConfig: Record<string, { emoji: string; name: string; role?: string; gradient: string; border: string }> = {
   buddy: { emoji: '💙', name: 'Esona', gradient: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'rgba(56, 189, 248, 0.3)' },
@@ -113,7 +114,7 @@ export default function ChatPage() {
     setMounted(true);
   }, []);
 
-  const user = mounted ? getStoredUser() : null;
+  const { user, refreshUser } = useAuth();
 
   const [connectingSpecialistId, setConnectingSpecialistId] = useState<string | null>(null);
   const [removingSpecialistId, setRemovingSpecialistId] = useState<string | null>(null);
@@ -315,15 +316,43 @@ export default function ChatPage() {
   };
 
   const handleSkipOnboarding = async () => {
+    console.log("SKIP CLICKED");
     const token = getToken();
     if (!token) return;
     setSkipLoading(true);
     try {
       await skipOnboarding(token);
-      // Reload to get fresh user state (onboarding_completed = true)
-      window.location.reload();
+      
+      // Load conversations (which automatically creates the Buddy conversation if missing)
+      const convos = await api.getConversations(token);
+      setConversations(convos);
+      
+      let conversationId = '';
+      if (convos.length > 0) {
+        const buddyConv = convos.find((c) => c.agent_id === 'buddy') || convos[0];
+        conversationId = buddyConv.id;
+        setActiveConversationId(conversationId);
+      }
+      
+      console.log("CONVERSATION CREATED", conversationId);
+      
+      // Update local storage
+      const currentUser = getStoredUser();
+      if (currentUser) {
+        api.setStoredUser({ ...currentUser, onboardingCompleted: true });
+      }
+      
+      // Sync fresh state from the backend
+      try {
+        await refreshUser();
+      } catch (err) {
+        console.warn('Failed to refresh user auth state after skip:', err);
+      }
+
+      console.log("CHAT READY");
     } catch (err) {
       console.error('Failed to skip onboarding:', err);
+    } finally {
       setSkipLoading(false);
     }
   };

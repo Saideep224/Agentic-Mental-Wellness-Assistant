@@ -349,7 +349,7 @@ class ResponseOrchestrator:
 
         system_prompt = f"""You are Esona, an AI wellness companion.
 You are NOT a therapist.
-Your job is to feel like a close, emotionally intelligent friend.
+Your job is to feel like a close, emotionally intelligent friend to {user_name}.
 
 RULES:
 1. Always respond based on:
@@ -407,11 +407,11 @@ User Profile:
 - Behavioral State: {json.dumps(behavior)}
 - Mental Growth Indicators: {json.dumps(growth)}
 
-Recent Emotions:
-- Current: {detected_emotion} (confidence: {detected_emotion_confidence})
-- 7-Day Timeline: {timeline_str}
+EMOTION CONTEXT:
+{emotion_context_str}
+- RECENT EMOTION TIMELINE (LAST 7 DAYS): {timeline_str}
 
-Knowledge Graph:
+KNOWLEDGE GRAPH RELATIONSHIPS:
 {graph_str}
 
 Recent Memories:

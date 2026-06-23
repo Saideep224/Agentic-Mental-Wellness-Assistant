@@ -80,9 +80,9 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           const supabaseUser: User = mapUser({
             id: session.user.id,
             email: session.user.email ?? '',
-            name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
+            name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
             onboarding_completed: false,
-            avatar_url: session.user.user_metadata?.avatar_url ?? null,
+            avatar_url: session.user.user_metadata?.avatar_url ?? session.user.user_metadata?.picture ?? null,
             provider: session.user.app_metadata?.provider ?? 'credentials',
           });
 
@@ -93,6 +93,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           setTokenState(jwtToken);
           setUser(initialUser);
           localStorage.setItem('esona_token', jwtToken);
+          localStorage.setItem('esona_user', JSON.stringify(initialUser));
 
           console.log('[AuthProvider] Session found. User:', initialUser.email, '| onboardingCompleted:', initialUser.onboardingCompleted);
 
@@ -148,8 +149,22 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
       if (session) {
         const jwtToken = session.access_token;
+        const supabaseUser: User = mapUser({
+          id: session.user.id,
+          email: session.user.email ?? '',
+          name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+          onboarding_completed: false,
+          avatar_url: session.user.user_metadata?.avatar_url ?? session.user.user_metadata?.picture ?? null,
+          provider: session.user.app_metadata?.provider ?? 'credentials',
+        });
+
+        const cached = getStoredUser();
+        const initialUser = cached?.id === session.user.id ? cached : supabaseUser;
+
         setTokenState(jwtToken);
+        setUser(initialUser);
         localStorage.setItem('esona_token', jwtToken);
+        localStorage.setItem('esona_user', JSON.stringify(initialUser));
 
         // Try to sync with backend — non-fatal on failure
         try {

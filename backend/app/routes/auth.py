@@ -31,52 +31,67 @@ def decode_and_verify_token(token: str) -> dict:
     # Mask token for logs
     masked_token = f"{token[:8]}...{token[-8:]}" if len(token) > 16 else "***"
     
-    # 1. Try JWKS Verification if issuer matches Supabase pattern or starts with http
+    # Extract JWT header properties to get alg and kid
     try:
-        unverified_claims = jwt.get_unverified_claims(token)
-        iss = unverified_claims.get("iss")
-        if iss and iss.startswith("http"):
-            logger.info(f"[AUTH] Token issuer: {iss}. Fetching JWKS...")
-            unverified_header = jwt.get_unverified_header(token)
-            kid = unverified_header.get("kid")
-            
-            if kid:
-                with httpx.Client(timeout=4.0) as client:
-                    r = client.get(f"{iss.rstrip('/')}/auth/v1/jwks")
-                    r.raise_for_status()
-                    jwks = r.json()
-                
-                # Find matching key
-                key = None
-                for k in jwks.get("keys", []):
-                    if k.get("kid") == kid:
-                        key = k
-                        break
-                
-                if key:
-                    logger.info(f"[AUTH] Found key matching kid '{kid}' in JWKS. Decoding token...")
-                    payload = jwt.decode(
-                        token,
-                        key,
-                        algorithms=["HS256", "RS256", "ES256"],
-                        options={"verify_aud": False}
-                    )
-                    logger.info("[AUTH] Token decoded successfully using JWKS.")
-                    return payload
-                else:
-                    logger.warning(f"[AUTH] Key ID '{kid}' not found in JWKS.")
-    except Exception as jwks_err:
-        print("JWKS VERIFY FAILED:", jwks_err)
-        logger.warning(f"[AUTH] JWKS verification failed: {jwks_err}. Falling back...")
+        unverified_header = jwt.get_unverified_header(token)
+        alg = unverified_header.get("alg", "HS256")
+        kid = unverified_header.get("kid")
+    except Exception as header_err:
+        logger.warning(f"[AUTH] Failed to parse JWT header: {header_err}")
+        alg = "HS256"
+        kid = None
 
-    # 2. Try Supabase JWT Secret Verification (for HS256 local/custom setups)
+    # 1. Try JWKS Verification if token is signed asymmetrically (ES256, RS256)
+    if alg in ("ES256", "RS256"):
+        try:
+            unverified_claims = jwt.get_unverified_claims(token)
+            iss = unverified_claims.get("iss")
+            if iss and iss.startswith("http"):
+                # Avoid duplicating /auth/v1
+                if "/auth/v1" in iss:
+                    jwks_url = f"{iss.rstrip('/')}/jwks"
+                else:
+                    jwks_url = f"{iss.rstrip('/')}/auth/v1/jwks"
+                    
+                logger.info(f"[AUTH] Token algorithm: {alg}. Fetching JWKS from: {jwks_url}...")
+                
+                if kid:
+                    with httpx.Client(timeout=4.0) as client:
+                        r = client.get(jwks_url)
+                        r.raise_for_status()
+                        jwks = r.json()
+                    
+                    # Find matching key
+                    key = None
+                    for k in jwks.get("keys", []):
+                        if k.get("kid") == kid:
+                            key = k
+                            break
+                    
+                    if key:
+                        logger.info(f"[AUTH] Found key matching kid '{kid}' in JWKS. Decoding token...")
+                        payload = jwt.decode(
+                            token,
+                            key,
+                            algorithms=[alg],
+                            options={"verify_aud": False}
+                        )
+                        logger.info("[AUTH] Token decoded successfully using JWKS.")
+                        return payload
+                    else:
+                        logger.warning(f"[AUTH] Key ID '{kid}' not found in JWKS.")
+        except Exception as jwks_err:
+            print("JWKS VERIFY FAILED:", jwks_err)
+            logger.warning(f"[AUTH] JWKS verification failed: {jwks_err}. Falling back...")
+
+    # 2. Try Supabase JWT Secret Verification (for HS256 setups)
     try:
         jwt_secret = getattr(settings, "SUPABASE_JWT_SECRET", None)
         print("SUPABASE_JWT_SECRET SET:", bool(jwt_secret), "LENGTH:", len(jwt_secret) if jwt_secret else 0)
         if jwt_secret:
-            logger.info(f"[AUTH] Attempting to decode token {masked_token} with SUPABASE_JWT_SECRET...")
+            logger.info(f"[AUTH] Attempting to decode token {masked_token} with SUPABASE_JWT_SECRET (alg={alg})...")
             payload = jwt.decode(
-                token, settings.SUPABASE_JWT_SECRET, algorithms=["HS256", "RS256", "ES256"], options={"verify_aud": False}
+                token, settings.SUPABASE_JWT_SECRET, algorithms=[alg], options={"verify_aud": False}
             )
             logger.info("[AUTH] Token successfully decoded with Supabase JWT Secret.")
             return payload
@@ -90,7 +105,7 @@ def decode_and_verify_token(token: str) -> dict:
         try:
             # Fallback to local JWT signature
             payload = jwt.decode(
-                token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM, "RS256", "ES256"]
+                token, settings.JWT_SECRET, algorithms=[alg]
             )
             logger.info("[AUTH] Token successfully decoded with local JWT secret.")
             return payload

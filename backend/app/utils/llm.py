@@ -255,21 +255,25 @@ async def generate_chat_completion_with_fallback(
                         match_secs = re.search(r"Please retry in (\d+\.?\d*)s", error_str)
                         
                         # Free-model rate limit: skip to next model immediately instead of sleeping
-                        if "is_byok\":false" in error_str or ":free" in str(model):
-                            logger.info(f"[{name}] Free model rate-limited — skipping to next provider immediately.")
+                        if "is_byok\":false" in error_str or ":free" in str(model) or "free_tier" in error_str:
+                            logger.info(f"[{name}] Free model or free tier rate-limited — skipping to next provider immediately.")
                             break
-                        elif match_retry:
+                        
+                        sleep_time = 0.0
+                        if match_retry:
                             sleep_time = float(match_retry.group(1)) + 1.0
-                            logger.info(f"Rate limit hit. Sleeping for {sleep_time:.2f}s (from retry_after_seconds_raw)...")
-                            await asyncio.sleep(sleep_time)
                         elif match_secs:
                             sleep_time = float(match_secs.group(1)) + 1.5
-                            logger.info(f"Rate limit hit. Sleeping for {sleep_time:.2f}s...")
-                            await asyncio.sleep(sleep_time)
                         else:
                             sleep_time = 5.0 * (attempt + 1)
-                            logger.info(f"Rate limit hit. Sleeping for {sleep_time:.2f}s...")
-                            await asyncio.sleep(sleep_time)
+                            
+                        # Skip immediately if wait is too long for real-time streaming
+                        if sleep_time > 8.0:
+                            logger.warning(f"[{name}] Rate limit sleep time ({sleep_time:.2f}s) is too long for real-time chat — skipping to next provider immediately.")
+                            break
+                            
+                        logger.info(f"Rate limit hit. Sleeping for {sleep_time:.2f}s...")
+                        await asyncio.sleep(sleep_time)
                     else:
                         await asyncio.sleep(2 ** attempt)
                 continue

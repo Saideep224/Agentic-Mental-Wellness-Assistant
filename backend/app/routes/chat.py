@@ -1446,6 +1446,16 @@ async def stream_message_sse(
                 github_username = user_meta.get("user_name") if provider == "github" else None
                 name = user_meta.get("full_name") or user_meta.get("name") or None
                 email = payload.get("email", "")
+                
+                # Check for email conflict
+                if email:
+                    result_email = await db.execute(select(User).where(User.email == email))
+                    existing_user_by_email = result_email.scalar_one_or_none()
+                    if existing_user_by_email and existing_user_by_email.id != user_id:
+                        logger.warning(f"[AUTH SSE] Conflict detected: email {email} registered under old user_id {existing_user_by_email.id}. Deleting old profile...")
+                        await db.delete(existing_user_by_email)
+                        await db.flush()
+                
                 if not name:
                     name = email.split("@")[0] or "Esona User"
                     

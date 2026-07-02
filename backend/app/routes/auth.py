@@ -170,6 +170,14 @@ async def get_current_user(
         # Auto-create profile row if it doesn't exist yet (robust sync bridge)
         try:
             email = payload.get("email", "")
+            if email:
+                result_email = await db.execute(select(User).where(User.email == email))
+                existing_user_by_email = result_email.scalar_one_or_none()
+                if existing_user_by_email and existing_user_by_email.id != user_id:
+                    logger.warning(f"[AUTH] Conflict detected: email {email} registered under old user_id {existing_user_by_email.id}. Deleting old profile...")
+                    await db.delete(existing_user_by_email)
+                    await db.flush()
+            
             if not name:
                 name = email.split("@")[0] or "Esona User"
             

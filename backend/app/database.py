@@ -64,9 +64,14 @@ engine_kwargs: dict = {"echo": False, "pool_pre_ping": True}
 if settings.is_postgres:
     # Supabase PostgreSQL via transaction pooler (port 6543)
     # prepared_statement_cache_size=0 is REQUIRED for Supabase pooler
-    # ssl=True is REQUIRED for Supabase cloud connections
+    # ssl context that disables verification (to allow self-signed certificates and dev connections)
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    
     connect_args["prepared_statement_cache_size"] = 0
-    connect_args["ssl"] = True
+    connect_args["ssl"] = ctx
     engine_kwargs["pool_size"] = 10
     engine_kwargs["max_overflow"] = 20
 else:
@@ -170,11 +175,11 @@ async def create_tables() -> None:
                 await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS metadata_json jsonb DEFAULT '{}';"))
                 await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS importance_score double precision DEFAULT 0.5;"))
                 await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS expires_at timestamp with time zone;"))
-                # ── knowledge_graph_relations columns ─────────────────────
-                await conn.execute(text("ALTER TABLE knowledge_graph_relations ADD COLUMN IF NOT EXISTS confidence double precision DEFAULT 1.0;"))
-                # ── user_personal_profiles columns ────────────────────────
-                await conn.execute(text("ALTER TABLE user_personal_profiles ADD COLUMN IF NOT EXISTS personality_json jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personal_profiles ADD COLUMN IF NOT EXISTS last_analyzed_at timestamp with time zone;"))
+                # ── knowledge_graph columns ─────────────────────
+                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS confidence double precision DEFAULT 1.0;"))
+                # ── user_profile columns ────────────────────────
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS personality_json jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS last_analyzed_at timestamp with time zone;"))
             else:
                 # SQLite: try/except each individually since SQLite doesn't support IF NOT EXISTS for columns
                 _sqlite_add_cols = [
@@ -192,9 +197,9 @@ async def create_tables() -> None:
                     ("memories", "metadata_json", "JSON DEFAULT '{}'"),
                     ("memories", "importance_score", "FLOAT DEFAULT 0.5"),
                     ("memories", "expires_at", "DATETIME"),
-                    ("knowledge_graph_relations", "confidence", "FLOAT DEFAULT 1.0"),
-                    ("user_personal_profiles", "personality_json", "JSON DEFAULT '{}'"),
-                    ("user_personal_profiles", "last_analyzed_at", "DATETIME"),
+                    ("knowledge_graph", "confidence", "FLOAT DEFAULT 1.0"),
+                    ("user_profile", "personality_json", "JSON DEFAULT '{}'"),
+                    ("user_profile", "last_analyzed_at", "DATETIME"),
                 ]
                 for table, col, col_type in _sqlite_add_cols:
                     try:

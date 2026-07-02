@@ -188,15 +188,23 @@ async def generate_chat_completion_with_fallback(
                 print("MODEL USED:", model)
                 
                 response = await client.chat.completions.create(**kwargs)
-                content = response.choices[0].message.content
+                choice = response.choices[0]
+                content = choice.message.content
                 print("LLM RESPONSE RECEIVED")
+                
+                # Explicitly ignore reasoning tokens from OpenRouter thinking models
+                # Some models return reasoning in separate fields (e.g., reasoning_content, thinking)
+                # We only want the final assistant message content
+                msg_dict = choice.message.model_extra or {}
+                if msg_dict.get("reasoning_content") or msg_dict.get("reasoning"):
+                    logger.info(f"[{name}] Discarding separate reasoning tokens from model response (defense-in-depth)")
                 
                 # Model response logging
                 logger.info(f"[MODEL RESPONSE] Provider: {name}, Content: {content}")
                 _safe_print(f"[MODEL RESPONSE] Provider: {name}, Content: {content}")
                 
                 if content is None:
-                    raise ValueError(f"Provider {name} returned response with choice content as None. Finish reason: {response.choices[0].finish_reason}")
+                    raise ValueError(f"Provider {name} returned response with choice content as None. Finish reason: {choice.finish_reason}")
                 
                 logger.info(
                     f"\n--- LLM RESPONSE ({name}) ---\n"

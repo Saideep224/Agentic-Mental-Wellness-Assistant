@@ -240,6 +240,7 @@ export function useChat({ conversationId, activeSpecialistId, onSpecialistAction
       let isProcessingBurst = false;
       let currentSenderType = 'buddy';
       let buddyBubbleSpawned = false;
+      let streamCompleted = false;
 
       const cleanUpConnection = () => {
         if (connectionTimeout) {
@@ -456,6 +457,7 @@ export function useChat({ conversationId, activeSpecialistId, onSpecialistAction
                 processBurst(messageId);
               } else if (data.type === 'done') {
                 console.log("AI RESPONSE RECEIVED");
+                streamCompleted = true;
                 // Wait for burst queue to empty before finalizing
                 const finalize = setInterval(() => {
                   if (burstQueue.length === 0 && !isProcessingBurst) {
@@ -543,6 +545,12 @@ export function useChat({ conversationId, activeSpecialistId, onSpecialistAction
           };
 
           eventSource.onerror = (e) => {
+            // Suppress expected connection close after successful stream completion
+            if (streamCompleted) {
+              console.debug('[useChat] EventSource closed after stream completed (expected behavior)');
+              cleanUpConnection();
+              return;
+            }
             console.error('EventSource connection error:', e);
             if (connectionTimeout) {
               clearTimeout(connectionTimeout);

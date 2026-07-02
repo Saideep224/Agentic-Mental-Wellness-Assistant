@@ -34,35 +34,75 @@ class ResponseAgent:
                     # preferred_model=None — respect PRIMARY_PROVIDER from settings
                 )
                 
-                # Parse reasoning and clean text
+                # Parse reasoning and clean text — defense-in-depth sanitizer
                 import re
                 raw_text = response_text
                 reasoning = ""
                 clean_text = ""
                 
-                if "<reasoning>" in raw_text.lower():
-                    parts = re.split(r"(?i)<reasoning>", raw_text, maxsplit=1)
-                    before_reasoning = parts[0].strip()
-                    after_reasoning = parts[1]
-                    
-                    if "</reasoning>" in after_reasoning.lower():
-                        sub_parts = re.split(r"(?i)</reasoning>", after_reasoning, maxsplit=1)
-                        reasoning = sub_parts[0].strip()
-                        clean_text = (before_reasoning + "\n\n" + sub_parts[1].strip()).strip()
+                # Normalize variant tag formats: "reasoning>", "<reasoning>", "<thinking>", etc.
+                # Some models output tags without the leading "<" bracket
+                normalized = raw_text
+                normalized = re.sub(r'(?<![</])reasoning>', '<reasoning>', normalized, flags=re.IGNORECASE)
+                normalized = re.sub(r'(?<!<)/reasoning>', '</reasoning>', normalized, flags=re.IGNORECASE)
+                normalized = re.sub(r'(?<![</])thinking>', '<thinking>', normalized, flags=re.IGNORECASE)
+                normalized = re.sub(r'(?<!<)/thinking>', '</thinking>', normalized, flags=re.IGNORECASE)
+                
+                # Try extracting <reasoning>...</reasoning> or <thinking>...</thinking>
+                tag_pattern = re.compile(
+                    r'<(?:reasoning|thinking|analysis|reflection)>(.*?)</(?:reasoning|thinking|analysis|reflection)>',
+                    re.IGNORECASE | re.DOTALL
+                )
+                tag_match = tag_pattern.search(normalized)
+                
+                if tag_match:
+                    reasoning = tag_match.group(1).strip()
+                    clean_text = normalized[:tag_match.start()] + normalized[tag_match.end():]
+                    clean_text = clean_text.strip()
+                elif re.search(r'<(?:reasoning|thinking|analysis|reflection)>', normalized, re.IGNORECASE):
+                    # Opening tag exists but no closing tag — strip everything from the opening tag to the first double newline
+                    parts = re.split(r'<(?:reasoning|thinking|analysis|reflection)>', normalized, maxsplit=1, flags=re.IGNORECASE)
+                    before = parts[0].strip()
+                    after = parts[1] if len(parts) > 1 else ""
+                    # Try to find where the reasoning ends (double newline or end of text)
+                    reasoning_end = re.split(r'\n\n', after, maxsplit=1)
+                    if len(reasoning_end) > 1:
+                        reasoning = reasoning_end[0].strip()
+                        clean_text = (before + "\n\n" + reasoning_end[1].strip()).strip()
                     else:
-                        # Fallback for missing closing tag
-                        lines_split = after_reasoning.split("\n\n")
-                        if len(lines_split) > 1:
-                            reasoning = "\n\n".join(lines_split[:-1]).strip()
-                            clean_text = (before_reasoning + "\n\n" + lines_split[-1].strip()).strip()
-                        else:
-                            reasoning = after_reasoning.strip()
-                            clean_text = before_reasoning.strip()
+                        reasoning = after.strip()
+                        clean_text = before
                 else:
                     clean_text = raw_text.strip()
                 
-                # Clean up any residual tags
-                clean_text = re.sub(r"(?i)</?reasoning>", "", clean_text).strip()
+                # Final cleanup: strip any residual XML-like tags
+                clean_text = re.sub(r'</?(?:reasoning|thinking|analysis|reflection)>', '', clean_text, flags=re.IGNORECASE).strip()
+                
+                # Strip lines that look like internal reasoning (starts with reasoning markers)
+                reasoning_line_patterns = [
+                    r'^The user (?:responded|is |said|seems|appears|mentioned)',
+                    r'^This indicates',
+                    r'^My goal is',
+                    r'^I should',
+                    r'^I will',
+                    r'^I\'ll',
+                    r'^I need to',
+                    r'^Let me',
+                    r'^The user\'s emotion',
+                    r'^Hidden Strategy:',
+                    r'^Emotional Understanding:',
+                    r'^Conversational Intent:',
+                ]
+                combined_pattern = '|'.join(reasoning_line_patterns)
+                lines = clean_text.split('\n')
+                filtered_lines = []
+                for line in lines:
+                    stripped_line = line.strip()
+                    if stripped_line and re.match(combined_pattern, stripped_line, re.IGNORECASE):
+                        reasoning += "\n" + stripped_line  # preserve for debug
+                        continue
+                    filtered_lines.append(line)
+                clean_text = '\n'.join(filtered_lines).strip()
                 
                 # Check response quality on the clean text
                 quality_ok = self.check_response_quality(clean_text)

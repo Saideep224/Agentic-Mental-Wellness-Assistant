@@ -1433,9 +1433,44 @@ async def stream_message_sse(
         result = await db.execute(select(User).where(User.id == user_id))
         current_user = result.scalar_one_or_none()
         if current_user is None:
-            logger.error(f"[AUTH SSE ERROR] User profile not found in DB for user_id={user_id}")
-            raise credentials_exception
-        logger.info(f"[AUTH SSE SUCCESS] Authenticated user details: id={current_user.id}, email={current_user.email}")
+            logger.info(f"[AUTH SSE] User profile not found in DB for user_id={user_id}. Auto-creating...")
+            try:
+                user_meta = payload.get("user_metadata", {}) if payload else {}
+                onboarding_completed_meta = bool(user_meta.get("onboarding_completed", False))
+                avatar_url = user_meta.get("avatar_url") or user_meta.get("picture") or None
+                
+                provider = "credentials"
+                if payload:
+                    provider = payload.get("app_metadata", {}).get("provider", "credentials")
+                    
+                github_username = user_meta.get("user_name") if provider == "github" else None
+                name = user_meta.get("full_name") or user_meta.get("name") or None
+                email = payload.get("email", "")
+                if not name:
+                    name = email.split("@")[0] or "Esona User"
+                    
+                current_user = User(
+                    id=user_id,
+                    user_id=user_id,
+                    email=email,
+                    name=name,
+                    avatar_url=avatar_url,
+                    provider=provider,
+                    github_username=github_username,
+                    onboarding_completed=onboarding_completed_meta,
+                )
+                db.add(current_user)
+                await db.commit()
+                # Re-fetch or refresh to bind to session
+                result = await db.execute(select(User).where(User.id == user_id))
+                current_user = result.scalar_one()
+                logger.info(f"[AUTH SSE SUCCESS] Auto-created user details: id={current_user.id}, email={current_user.email}")
+            except Exception as auto_err:
+                logger.error(f"[AUTH SSE ERROR] Failed to auto-create user profile: {auto_err}", exc_info=True)
+                await db.rollback()
+                raise credentials_exception
+        else:
+            logger.info(f"[AUTH SSE SUCCESS] Authenticated user details: id={current_user.id}, email={current_user.email}")
  
         # 2. Get the conversation
         conversation = await _get_or_create_conversation(db, current_user.id, conversation_id)

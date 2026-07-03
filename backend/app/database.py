@@ -176,10 +176,90 @@ async def create_tables() -> None:
                 await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS importance_score double precision DEFAULT 0.5;"))
                 await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS expires_at timestamp with time zone;"))
                 # ── knowledge_graph columns ─────────────────────
+                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS subject varchar(255) DEFAULT 'User';"))
+                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS predicate varchar(255);"))
+                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS object varchar(255);"))
                 await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS confidence double precision DEFAULT 1.0;"))
-                # ── user_profile columns ────────────────────────
+                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
+                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();"))
+                 # ── user_profile columns ────────────────────────
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS university varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS name varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS age varchar(50);"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS profession varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS field_of_work varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS current_challenge varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS advice_preference varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS primary_support_need varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS student_year varchar(100);"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS communication_style varchar(100);"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS interests jsonb DEFAULT '[]';"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS hobbies jsonb DEFAULT '[]';"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS goals jsonb DEFAULT '[]';"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS stress_triggers jsonb DEFAULT '[]';"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS coping_mechanisms jsonb DEFAULT '[]';"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS support_system text;"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS sleep_habits varchar(100);"))
                 await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS personality_json jsonb DEFAULT '{}';"))
                 await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS last_analyzed_at timestamp with time zone;"))
+                
+                # ── profiles table columns (onboarding & personalization) ──
+                await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS onboarding_step integer DEFAULT 1;"))
+                await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS personality_profile jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS interests jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS communication_style text;"))
+                await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS personality_type text;"))
+                
+                # ── user_personality (UserProfile) table columns ──────────
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS personality_profile jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS personality_type jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS communication_style jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS interests jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS stress_indicators jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS personality_type_dict jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_style jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS stress_triggers jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS strengths jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS weaknesses jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS onboarding_answers jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS onboarding_completed boolean DEFAULT false;"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_baseline jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS comfort_preferences jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_summary jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS stress_patterns jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_triggers jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS preferred_response_style jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
+                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();"))
+
+                # ── user_profile (UserPersonalProfile) extra timestamp columns ─
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();"))
+
+                # ── chat_messages and conversations extra columns ─────────
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS agent_analysis jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS emotional_context jsonb DEFAULT '{}';"))
+                await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS emotional_tag varchar(255);"))
+
+                # ── user_entities table columns ────────────────────────────
+                await conn.execute(text("ALTER TABLE user_entities ADD COLUMN IF NOT EXISTS entity varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_entities ADD COLUMN IF NOT EXISTS type varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_entities ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
+
+                # ── user_relationships table columns ───────────────────────
+                await conn.execute(text("ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS source varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS relationship varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS target varchar(255);"))
+                await conn.execute(text("ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
+
+                # ── user_question_answers table columns ────────────────────
+                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS question_id integer;"))
+                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS question_text text;"))
+                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS category varchar(100);"))
+                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS selected_answer jsonb DEFAULT '[]';"))
+                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS custom_answer text;"))
+                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
+                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();"))
             else:
                 # SQLite: try/except each individually since SQLite doesn't support IF NOT EXISTS for columns
                 _sqlite_add_cols = [
@@ -189,17 +269,82 @@ async def create_tables() -> None:
                     ("chat_messages", "mood_score", "FLOAT"),
                     ("chat_messages", "detected_emotion", "VARCHAR(100)"),
                     ("chat_messages", "sender_type", "VARCHAR(50) DEFAULT 'user'"),
-                    ("user_profile", "university", "VARCHAR(255)"),
+                    ("chat_messages", "agent_analysis", "JSON DEFAULT '{}'"),
+                    ("chat_messages", "emotional_context", "JSON DEFAULT '{}'"),
                     ("conversations", "agent_id", "VARCHAR(50) DEFAULT 'buddy'"),
                     ("conversations", "active_specialists", "JSON DEFAULT '[]'"),
+                    ("conversations", "emotional_tag", "VARCHAR(255)"),
                     ("emotion_logs", "confidence_score", "FLOAT"),
                     ("emotion_logs", "secondary_emotion", "VARCHAR(100)"),
                     ("memories", "metadata_json", "JSON DEFAULT '{}'"),
                     ("memories", "importance_score", "FLOAT DEFAULT 0.5"),
                     ("memories", "expires_at", "DATETIME"),
+                    ("knowledge_graph", "subject", "VARCHAR(255) DEFAULT 'User'"),
+                    ("knowledge_graph", "predicate", "VARCHAR(255)"),
+                    ("knowledge_graph", "object", "VARCHAR(255)"),
                     ("knowledge_graph", "confidence", "FLOAT DEFAULT 1.0"),
+                    ("knowledge_graph", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                    ("knowledge_graph", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                    ("user_profile", "university", "VARCHAR(255)"),
+                    ("user_profile", "name", "VARCHAR(255)"),
+                    ("user_profile", "age", "VARCHAR(50)"),
+                    ("user_profile", "profession", "VARCHAR(255)"),
+                    ("user_profile", "field_of_work", "VARCHAR(255)"),
+                    ("user_profile", "current_challenge", "VARCHAR(255)"),
+                    ("user_profile", "advice_preference", "VARCHAR(255)"),
+                    ("user_profile", "primary_support_need", "VARCHAR(255)"),
+                    ("user_profile", "student_year", "VARCHAR(100)"),
+                    ("user_profile", "communication_style", "VARCHAR(100)"),
+                    ("user_profile", "interests", "JSON DEFAULT '[]'"),
+                    ("user_profile", "hobbies", "JSON DEFAULT '[]'"),
+                    ("user_profile", "goals", "JSON DEFAULT '[]'"),
+                    ("user_profile", "stress_triggers", "JSON DEFAULT '[]'"),
+                    ("user_profile", "coping_mechanisms", "JSON DEFAULT '[]'"),
+                    ("user_profile", "support_system", "TEXT"),
+                    ("user_profile", "sleep_habits", "VARCHAR(100)"),
                     ("user_profile", "personality_json", "JSON DEFAULT '{}'"),
                     ("user_profile", "last_analyzed_at", "DATETIME"),
+                    ("profiles", "onboarding_step", "INTEGER DEFAULT 1"),
+                    ("profiles", "personality_profile", "JSON DEFAULT '{}'"),
+                    ("profiles", "interests", "JSON DEFAULT '{}'"),
+                    ("profiles", "communication_style", "TEXT"),
+                    ("profiles", "personality_type", "TEXT"),
+                    ("user_personality", "personality_profile", "JSON DEFAULT '{}'"),
+                    ("user_personality", "personality_type", "JSON DEFAULT '{}'"),
+                    ("user_personality", "communication_style", "JSON DEFAULT '{}'"),
+                    ("user_personality", "interests", "JSON DEFAULT '{}'"),
+                    ("user_personality", "stress_indicators", "JSON DEFAULT '{}'"),
+                    ("user_personality", "personality_type_dict", "JSON DEFAULT '{}'"),
+                    ("user_personality", "emotional_style", "JSON DEFAULT '{}'"),
+                    ("user_personality", "stress_triggers", "JSON DEFAULT '{}'"),
+                    ("user_personality", "strengths", "JSON DEFAULT '{}'"),
+                    ("user_personality", "weaknesses", "JSON DEFAULT '{}'"),
+                    ("user_personality", "onboarding_answers", "JSON DEFAULT '{}'"),
+                    ("user_personality", "onboarding_completed", "BOOLEAN DEFAULT 0"),
+                    ("user_personality", "emotional_baseline", "JSON DEFAULT '{}'"),
+                    ("user_personality", "comfort_preferences", "JSON DEFAULT '{}'"),
+                    ("user_personality", "emotional_summary", "JSON DEFAULT '{}'"),
+                    ("user_personality", "stress_patterns", "JSON DEFAULT '{}'"),
+                    ("user_personality", "emotional_triggers", "JSON DEFAULT '{}'"),
+                    ("user_personality", "preferred_response_style", "JSON DEFAULT '{}'"),
+                    ("user_personality", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                    ("user_personality", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                    ("user_profile", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                    ("user_profile", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                    ("user_entities", "entity", "VARCHAR(255)"),
+                    ("user_entities", "type", "VARCHAR(255)"),
+                    ("user_entities", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                    ("user_relationships", "source", "VARCHAR(255)"),
+                    ("user_relationships", "relationship", "VARCHAR(255)"),
+                    ("user_relationships", "target", "VARCHAR(255)"),
+                    ("user_relationships", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                    ("user_question_answers", "question_id", "INTEGER"),
+                    ("user_question_answers", "question_text", "TEXT"),
+                    ("user_question_answers", "category", "VARCHAR(100)"),
+                    ("user_question_answers", "selected_answer", "JSON DEFAULT '[]'"),
+                    ("user_question_answers", "custom_answer", "TEXT"),
+                    ("user_question_answers", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                    ("user_question_answers", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
                 ]
                 for table, col, col_type in _sqlite_add_cols:
                     try:

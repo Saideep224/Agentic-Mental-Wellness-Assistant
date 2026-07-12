@@ -82,7 +82,12 @@ export default function IntroScene({ progress, isActive }: Props) {
           className="absolute bottom-12 flex flex-col items-center gap-2 pointer-events-auto cursor-pointer"
           onClick={() => {
             if (typeof window !== 'undefined') {
-              window.scrollTo({ top: window.innerHeight, behavior: 'smooth' });
+              const globalLenis = (window as any).lenis;
+              if (globalLenis) {
+                globalLenis.scrollTo(window.innerHeight, { duration: 1.5 });
+              } else {
+                window.scrollTo({ top: window.innerHeight, behavior: 'smooth' });
+              }
             }
           }}
         >

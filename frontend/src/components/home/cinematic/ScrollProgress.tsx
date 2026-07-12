@@ -28,10 +28,15 @@ export default function ScrollProgress({ scrollYProgress, activeScene }: Props) 
     const docHeight = document.documentElement.scrollHeight - window.innerHeight;
     const targetScroll = docHeight * (index / (SCENE_NAMES.length - 1));
     
-    window.scrollTo({
-      top: targetScroll,
-      behavior: 'smooth'
-    });
+    const globalLenis = (window as any).lenis;
+    if (globalLenis) {
+      globalLenis.scrollTo(targetScroll, { duration: 1.5 });
+    } else {
+      window.scrollTo({
+        top: targetScroll,
+        behavior: 'smooth'
+      });
+    }
   };
 
   return (

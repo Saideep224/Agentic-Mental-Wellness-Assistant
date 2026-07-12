@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useScroll, useSpring, useMotionValueEvent } from 'framer-motion';
-import { Volume2, VolumeX } from 'lucide-react';
 import AmbientBackground from './AmbientBackground';
 import ScrollProgress from './ScrollProgress';
 import IntroScene from './IntroScene';
@@ -20,8 +19,6 @@ import { useAuth } from '@/providers/AuthProvider';
 export default function CinematicHome() {
   const { isAuthenticated } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [activeScene, setActiveScene] = useState(0);
 
   // Track page-level scroll progress
@@ -43,51 +40,7 @@ export default function CinematicHome() {
     setActiveScene(index);
   });
 
-  // Initialize and clean up calm ambient audio
-  useEffect(() => {
-    const audio = new Audio('/music/calm/morgan-ambient-calm-ambient-dreamscape-529861.mp3');
-    audio.loop = true;
-    audio.volume = 0.25;
-    audioRef.current = audio;
 
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-    };
-  }, []);
-
-  const toggleAudio = () => {
-    if (!audioRef.current) return;
-    
-    if (isPlaying) {
-      // Fade out audio before pausing
-      let vol = audioRef.current.volume;
-      const fadeOut = setInterval(() => {
-        vol = Math.max(0, vol - 0.05);
-        if (audioRef.current) audioRef.current.volume = vol;
-        if (vol <= 0) {
-          clearInterval(fadeOut);
-          audioRef.current?.pause();
-          if (audioRef.current) audioRef.current.volume = 0.25;
-          setIsPlaying(false);
-        }
-      }, 50);
-    } else {
-      audioRef.current.volume = 0;
-      audioRef.current.play().catch(() => {});
-      let vol = 0;
-      const fadeIn = setInterval(() => {
-        vol = Math.min(0.25, vol + 0.05);
-        if (audioRef.current) audioRef.current.volume = vol;
-        if (vol >= 0.25) {
-          clearInterval(fadeIn);
-        }
-      }, 50);
-      setIsPlaying(true);
-    }
-  };
 
   return (
     <div ref={containerRef} className="relative h-[2000vh] w-full bg-transparent select-none">
@@ -127,15 +80,6 @@ export default function CinematicHome() {
 
         {/* Layer 2: Interactive Navigation Timeline */}
         <ScrollProgress scrollYProgress={smoothProgress} activeScene={activeScene} />
-
-        {/* Layer 3: Ambient Sound Toggle Button */}
-        <button
-          onClick={toggleAudio}
-          className="fixed bottom-8 left-8 z-50 p-3 rounded-full border border-white/10 bg-[#0a0f28]/60 backdrop-blur-md text-[#8B9BB8] hover:text-white hover:border-cyan-400/20 transition-all duration-300 cursor-pointer shadow-lg"
-          aria-label={isPlaying ? "Mute ambient music" : "Play ambient music"}
-        >
-          {isPlaying ? <Volume2 size={16} /> : <VolumeX size={16} />}
-        </button>
 
       </div>
     </div>

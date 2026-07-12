@@ -47,11 +47,12 @@ def decode_and_verify_token(token: str) -> dict:
             unverified_claims = jwt.get_unverified_claims(token)
             iss = unverified_claims.get("iss")
             if iss and iss.startswith("http"):
-                # Avoid duplicating /auth/v1
-                if "/auth/v1" in iss:
-                    jwks_url = f"{iss.rstrip('/')}/jwks"
+                # Normalize iss to base path + /auth/v1/.well-known/jwks.json
+                base_iss = iss.rstrip('/')
+                if "/auth/v1" not in base_iss:
+                    jwks_url = f"{base_iss}/auth/v1/.well-known/jwks.json"
                 else:
-                    jwks_url = f"{iss.rstrip('/')}/auth/v1/jwks"
+                    jwks_url = f"{base_iss}/.well-known/jwks.json"
                     
                 logger.info(f"[AUTH] Token algorithm: {alg}. Fetching JWKS from: {jwks_url}...")
                 
@@ -169,13 +170,24 @@ async def get_current_user(
     if user is None:
         # Auto-create profile row if it doesn't exist yet (robust sync bridge)
         try:
+            from sqlalchemy.exc import IntegrityError
+            
             email = payload.get("email", "")
+            old_user_id = None
             if email:
                 result_email = await db.execute(select(User).where(User.email == email))
                 existing_user_by_email = result_email.scalar_one_or_none()
                 if existing_user_by_email and existing_user_by_email.id != user_id:
-                    logger.warning(f"[AUTH] Conflict detected: email {email} registered under old user_id {existing_user_by_email.id}. Deleting old profile...")
-                    await db.delete(existing_user_by_email)
+                    logger.warning(f"[AUTH] Conflict detected: email {email} registered under old user_id {existing_user_by_email.id}. Migrating all user data...")
+                    old_user_id = existing_user_by_email.id
+                    
+                    # Rename old email to placeholder
+                    stale_email = f"stale_{old_user_id}_{email}"
+                    from sqlalchemy import text
+                    await db.execute(
+                        text("UPDATE profiles SET email = :stale_email WHERE user_id = :old_id"),
+                        {"stale_email": stale_email, "old_id": str(old_user_id)}
+                    )
                     await db.flush()
             
             if not name:
@@ -191,11 +203,60 @@ async def get_current_user(
                 github_username=github_username,
                 onboarding_completed=onboarding_completed_meta,
             )
-            db.add(user)
-            await db.flush()
+            
+            try:
+                async with db.begin_nested():
+                    db.add(user)
+                    await db.flush()
+            except IntegrityError:
+                # Concurrent request created the new user row
+                result = await db.execute(select(User).where(User.id == user_id))
+                user = result.scalar_one_or_none()
+                if user is None:
+                    raise
+            
+            # If we had a conflict, migrate child tables and delete old profile
+            if old_user_id is not None:
+                from sqlalchemy import text
+                
+                # Delete any blank pre-existing one-to-one records to avoid primary key/unique constraints on merge
+                await db.execute(text("DELETE FROM user_personality WHERE user_id = :new_id"), {"new_id": str(user_id)})
+                await db.execute(text("DELETE FROM user_profile WHERE user_id = :new_id"), {"new_id": str(user_id)})
+                await db.flush()
+                
+                child_tables = [
+                    "conversations",
+                    "chat_messages",
+                    "memories",
+                    "user_personality",
+                    "user_profile",
+                    "user_question_answers",
+                    "mood_logs",
+                    "emotion_logs",
+                    "knowledge_graph",
+                    "user_entities",
+                    "user_relationships"
+                ]
+                for table in child_tables:
+                    logger.info(f"[AUTH] Migrating child references in {table} from {old_user_id} to {user_id}")
+                    await db.execute(
+                        text(f"UPDATE {table} SET user_id = :new_id WHERE user_id = :old_id"),
+                        {"new_id": str(user_id), "old_id": str(old_user_id)}
+                    )
+                await db.flush()
+                
+                # Delete the old profile row
+                logger.info(f"[AUTH] Deleting old profile row for user_id={old_user_id}")
+                await db.execute(
+                    text("DELETE FROM profiles WHERE user_id = :old_id"),
+                    {"old_id": str(old_user_id)}
+                )
+                await db.flush()
+            
             await db.refresh(user)
         except Exception as e:
-            print(f"[Auth Dependency] Failed to auto-create user: {e}")
+            print(f"[Auth Dependency] Failed to auto-create/merge user: {e}")
+            logger.error(f"[Auth Dependency] Failed to auto-create/merge user: {e}", exc_info=True)
             raise credentials_exception
     else:
         # Sync onboarding status and OAuth metadata changes if any

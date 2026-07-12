@@ -96,7 +96,7 @@ async def generate_chat_title_llm(messages: list[dict]) -> str:
     """Use LLM to generate a short, beautiful, and emotionally resonant title (3-5 words) from messages."""
     history_text = "\n".join([f"{m['role']}: {m['content']}" for m in messages[:4]])
     
-    prompt = """You are the Title Generator Agent for Esona, a supportive mental wellness companion.
+    prompt = """You are the Title Generator Agent for Buddy, a supportive mental wellness companion.
 Analyze the following conversation snippet and generate a short, poetic, and emotionally resonant title (3-5 words).
 Do NOT use quotes. Do NOT explain. Use a single relevant emoji at the start.
 Keep it under 35 characters.
@@ -244,13 +244,19 @@ async def _get_or_create_conversation(
                     Conversation.user_id == user_id,
                 )
             )
+
             conv = result.scalar_one_or_none()
             if conv is None:
-                logger.error(f"[DB SELECT] Conversation {conversation_id} not found for user {user_id}.")
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Conversation not found",
+                logger.warning(f"[DB SELECT] Conversation {conversation_id} not found for user {user_id}. Auto-creating to recover state...")
+                conv = Conversation(
+                    id=conversation_id,
+                    user_id=user_id,
+                    title="Buddy Chat",
+                    agent_id="buddy",
+                    active_specialists=[]
                 )
+                db.add(conv)
+                await db.flush()
             logger.info(f"[DB SELECT] Found conversation: id={conv.id}, title='{conv.title}'")
             return conv
         except HTTPException:
@@ -373,7 +379,7 @@ async def summarize_and_store_conversation(db: AsyncSession, user_id: uuid.UUID,
         
     history_text = "\n".join([f"{m['role']}: {m['content']}" for m in messages_to_summarize])
     
-    prompt = f"""You are the Summarization Agent for Esona, a mental wellness companion.
+    prompt = f"""You are the Summarization Agent for Buddy, a mental wellness companion.
 Summarize the emotional context, key topics discussed, and state of mind of the user in this conversation history snippet.
 Keep it extremely concise (under 2-3 sentences). Focus on what triggers, stressors, or breakthrough moments occurred.
 
@@ -1457,7 +1463,7 @@ async def stream_message_sse(
                         await db.flush()
                 
                 if not name:
-                    name = email.split("@")[0] or "Esona User"
+                    name = email.split("@")[0] or "Buddy User"
                     
                 current_user = User(
                     id=user_id,

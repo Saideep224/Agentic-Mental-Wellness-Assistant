@@ -200,6 +200,7 @@ async def create_tables() -> None:
                 await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS coping_mechanisms jsonb DEFAULT '[]';"))
                 await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS support_system text;"))
                 await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS sleep_habits varchar(100);"))
+                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS gender varchar(50);"))
                 await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS personality_json jsonb DEFAULT '{}';"))
                 await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS last_analyzed_at timestamp with time zone;"))
                 
@@ -302,6 +303,7 @@ async def create_tables() -> None:
                     ("user_profile", "coping_mechanisms", "JSON DEFAULT '[]'"),
                     ("user_profile", "support_system", "TEXT"),
                     ("user_profile", "sleep_habits", "VARCHAR(100)"),
+                    ("user_profile", "gender", "VARCHAR(50)"),
                     ("user_profile", "personality_json", "JSON DEFAULT '{}'"),
                     ("user_profile", "last_analyzed_at", "DATETIME"),
                     ("profiles", "onboarding_step", "INTEGER DEFAULT 1"),

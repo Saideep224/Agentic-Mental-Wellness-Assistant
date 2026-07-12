@@ -31,6 +31,7 @@ import MessageBubble from '@/components/chat/MessageBubble';
 import FullPageTransition from '@/components/layout/FullPageTransition';
 import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
+import MusicPlayer from '@/components/chat/MusicPlayer';
 import { useChat } from '@/hooks/useChat';
 import { Conversation } from '@/types';
 import { getToken, getStoredUser } from '@/api';
@@ -40,7 +41,7 @@ import { skipOnboarding } from '@/api/onboarding';
 import { useAuth } from '@/providers/AuthProvider';
 
 const agentSidebarConfig: Record<string, { emoji: string; name: string; role?: string; gradient: string; border: string }> = {
-  buddy: { emoji: '💙', name: 'Esona', gradient: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'rgba(56, 189, 248, 0.3)' },
+  buddy: { emoji: '💙', name: 'Buddy', gradient: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'rgba(56, 189, 248, 0.3)' },
   lex: { emoji: '⚖️', name: 'Lex', role: 'Legal Support', gradient: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)', border: 'rgba(245, 158, 11, 0.3)' },
   maya: { emoji: '👨‍⚕️', name: 'Dr. Maya', role: 'Health Support', gradient: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'rgba(16, 185, 129, 0.3)' },
   ray: { emoji: '👮', name: 'Officer Ray', role: 'Safety & Cyber Support', gradient: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)', border: 'rgba(239, 68, 68, 0.3)' },
@@ -606,6 +607,8 @@ export default function ChatPage() {
                     );
                   })()}
                 </div>
+                {/* Mood-based suggested music playlist player */}
+                <MusicPlayer className="mt-auto pt-2 border-t border-white/5" />
               </div>
             </motion.aside>
           )}
@@ -664,7 +667,7 @@ export default function ChatPage() {
                     </div>
                     {isBuddy && activeConv?.active_specialists && activeConv.active_specialists.length > 0 ? (
                       <p className="text-[11px] text-sky-400 font-medium">
-                        Group Chat with Esona
+                        Group Chat with Buddy
                       </p>
                     ) : (
                       <p className="text-xs flex items-center gap-1" style={{ color: 'var(--accent-emerald)' }}>
@@ -763,7 +766,7 @@ export default function ChatPage() {
                     className="text-2xl font-bold mb-2 glow-text"
                     style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
                   >
-                    Hi{user?.name ? `, ${user.name}` : ''}! I'm Esona 💙
+                    Hi{user?.name ? `, ${user.name}` : ''}! I'm Buddy 💙
                   </h2>
                   <p
                     className="text-base mb-1 max-w-sm"
@@ -838,7 +841,7 @@ export default function ChatPage() {
                             style={{ borderColor: 'rgba(56, 189, 248, 0.25)', boxShadow: '0 8px 32px rgba(56, 189, 248, 0.05)' }}
                           >
                             <p className="text-xs text-[var(--text-secondary)] text-center px-2 leading-relaxed">
-                              Esona suggested involving <strong>{agentSidebarConfig[suggestedSpec]?.name || suggestedSpec}</strong> for specialized {agentSidebarConfig[suggestedSpec]?.role?.toLowerCase() || 'support'}.
+                              Buddy suggested involving <strong>{agentSidebarConfig[suggestedSpec]?.name || suggestedSpec}</strong> for specialized {agentSidebarConfig[suggestedSpec]?.role?.toLowerCase() || 'support'}.
                             </p>
                             <div className="flex gap-3 w-full justify-center">
                               <button

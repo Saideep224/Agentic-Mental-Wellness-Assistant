@@ -124,16 +124,7 @@ export default function LoginPage() {
         if (!data.user) throw new Error('No user returned from Supabase Auth');
         console.log('[Auth] Signup success:', data.user.email);
 
-        // Create initial profile row
-        await supabase.from('profiles').upsert({
-          id: data.user.id,
-          user_id: data.user.id,
-          email: data.user.email,
-          full_name: data.user.user_metadata?.full_name || name.trim() || '',
-          provider: 'credentials',
-          onboarding_completed: false,
-        });
-        console.log('[Auth] New profile inserted/synced with profiles table.');
+
 
         const session = data.session;
         if (!session) {
@@ -161,25 +152,7 @@ export default function LoginPage() {
         if (!data.user) throw new Error('No user returned from Supabase Auth');
         console.log('[Auth] Login success:', data.user.email);
 
-        // Query existing profile to verify onboardingcompleted flag
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('onboarding_completed')
-          .eq('id', data.user.id)
-          .single();
 
-        const onboardingCompleted = profile?.onboarding_completed ?? false;
-
-        // Upsert user profile
-        await supabase.from('profiles').upsert({
-          id: data.user.id,
-          user_id: data.user.id,
-          email: data.user.email,
-          full_name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0] || '',
-          provider: 'credentials',
-          onboarding_completed: onboardingCompleted,
-        });
-        console.log('[Auth] Profile synced on credentials login.');
 
         const session = data.session;
         if (!session) throw new Error('No active session found.');

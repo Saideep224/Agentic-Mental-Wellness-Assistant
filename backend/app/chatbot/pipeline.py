@@ -484,7 +484,7 @@ async def response_agent_node(state: AgentState) -> dict:
 
     if safety_data.get("crisis_detected"):
         tone = "calming"
-        strategy = "Activate Esona Crisis Support Protocol. Focus on validating pain, sharing safety hotlines (e.g. Vandrevala Foundation or AASRA), staying grounded, and being direct. Strictly no humor."
+        strategy = "Activate Buddy Crisis Support Protocol. Focus on validating pain, sharing safety hotlines (e.g. Vandrevala Foundation or AASRA), staying grounded, and being direct. Strictly no humor."
         message_type = "crisis"  # override so the intent block reflects this
     else:
         # Call Orchestrator to decide Tone and Strategy — pass message_type so

@@ -560,3 +560,13 @@ body {
 .animate-shimmer-sweep {
   animation: shimmer-sweep 2.8s cubic-bezier(0.25, 1, 0.5, 1) infinite;
 }
+
+/* Music Equalizer Bar Animation */
+@keyframes eq-bar {
+  0% {
+    height: 10%;
+  }
+  100% {
+    height: 100%;
+  }
+}

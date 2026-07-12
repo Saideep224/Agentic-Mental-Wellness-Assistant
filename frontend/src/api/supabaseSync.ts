@@ -91,8 +91,44 @@ async function ensureSupabaseProfile(user: NonNullable<Awaited<ReturnType<typeof
   const metadata = user.user_metadata || {};
   const provider = user.app_metadata?.provider || user.identities?.[0]?.provider || 'credentials';
 
-  const { error } = await supabase.from('profiles').upsert(
-    {
+  // 1. Fetch to see if the profile exists
+  console.log('[SupabaseSync] Checking if profile exists for user:', user.id);
+  const { data: existingProfile, error: fetchError } = await supabase
+    .from('profiles')
+    .select('id, user_id, email')
+    .eq('user_id', user.id)
+    .single();
+
+  if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "JSON object requested, multiple or no rows returned" (not found)
+    console.warn('[SupabaseSync] Querying profile failed (non-fatal):', fetchError);
+  }
+
+  // 2. If it exists, perform an update (which is safe as it updates the row that already owns the email)
+  if (existingProfile) {
+    console.log('[SupabaseSync] Profile found. Updating metadata...');
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        full_name: metadata.full_name || metadata.name || user.email?.split('@')[0] || 'Esona User',
+        avatar_url: metadata.avatar_url || metadata.picture || null,
+        provider,
+        github_username: provider === 'github' ? metadata.user_name || null : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', user.id);
+
+    if (updateError) {
+      console.error('[SupabaseSync] Profile update failed:', updateError);
+      throw formatSupabaseError('Unable to update your profile metadata', updateError);
+    }
+    return;
+  }
+
+  // 3. If it does not exist, attempt to insert
+  console.log('[SupabaseSync] Profile not found. Inserting new profile...');
+  const { error: insertError } = await supabase
+    .from('profiles')
+    .insert({
       id: user.id,
       user_id: user.id,
       email: user.email || '',
@@ -101,13 +137,38 @@ async function ensureSupabaseProfile(user: NonNullable<Awaited<ReturnType<typeof
       provider,
       github_username: provider === 'github' ? metadata.user_name || null : null,
       updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id' }
-  );
+    });
 
-  if (error) {
-    console.error('[Supabase] Profile upsert failed:', error);
-    throw formatSupabaseError('Unable to sync your profile before saving answers', error);
+  if (insertError) {
+    // Check if it failed due to email unique constraint conflict (code 23505)
+    const isConflict = insertError.code === '23505' || insertError.message?.includes('profiles_email_key');
+    if (isConflict) {
+      console.log('[SupabaseSync] Duplicate email key constraint violation (23505). Triggering backend recovery merge...');
+      const { getToken } = await import('./client');
+      const { getMe } = await import('./auth');
+      const token = getToken();
+      if (token) {
+        try {
+          await getMe(token);
+          console.log('[SupabaseSync] Backend merge completed successfully. Verifying profile exists...');
+          // Fetch again to confirm the backend successfully created/merged the row
+          const { data: verifiedProfile, error: verifyError } = await supabase
+            .from('profiles')
+            .select('id, user_id, email')
+            .eq('user_id', user.id)
+            .single();
+          if (verifyError || !verifiedProfile) {
+            throw new Error('Profile row still missing after backend merge');
+          }
+          console.log('[SupabaseSync] Profile verified in database.');
+          return;
+        } catch (mergeErr: any) {
+          console.error('[SupabaseSync] Backend merge recovery failed:', mergeErr);
+        }
+      }
+    }
+    console.error('[Supabase] Profile insert failed:', insertError);
+    throw formatSupabaseError('Unable to sync your profile before saving answers', insertError);
   }
 }
 

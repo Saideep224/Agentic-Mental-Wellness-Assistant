@@ -44,6 +44,7 @@ class UserPersonalProfile(Base):
     coping_mechanisms: Mapped[List[str]] = mapped_column(JSON, default=list, nullable=False)
     support_system: Mapped[str | None] = mapped_column(Text, nullable=True)
     sleep_habits: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -397,6 +397,20 @@ export const questions: Question[] = [
       { label: "That I just need consistency, not grand gestures", value: "need_consistency", emoji: "🤝" },
     ],
   },
+  {
+    id: 26,
+    text: "What is your gender?",
+    category: "background",
+    categoryLabel: "About You",
+    agentTarget: "context",
+    allowOther: true,
+    options: [
+      { label: "Male", value: "Male", emoji: "👨" },
+      { label: "Female", value: "Female", emoji: "👩" },
+      { label: "Non-binary", value: "Non-binary", emoji: "🏳️‍🌈" },
+      { label: "Prefer not to say", value: "Prefer not to say", emoji: "🤫" },
+    ],
+  },
 ];
 
 export const categories = [
@@ -404,7 +418,7 @@ export const categories = [
     id: "background",
     label: "About You",
     emoji: "👤",
-    description: "Let's start with some basic background to help Esona understand your daily context.",
+    description: "Let's start with some basic background to help Buddy understand your daily context.",
     color: "blue",
   },
   {
@@ -432,7 +446,7 @@ export const categories = [
     id: "communication",
     label: "Communication & Preferences",
     emoji: "💬",
-    description: "Tell us how you'd like Esona to talk with you.",
+    description: "Tell us how you'd like Buddy to talk with you.",
     color: "pink",
   },
 ];

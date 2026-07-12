@@ -53,30 +53,7 @@ export default function AuthCallbackPage() {
           provider = session.user.identities[0].provider;
         }
 
-        // Check if user already exists to keep onboardingCompleted status
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("onboarding_completed")
-          .eq("id", session.user.id)
-          .single();
-          
-        const onboardingCompleted = profile?.onboarding_completed ?? false;
 
-        const avatarUrl = userMeta.avatar_url || userMeta.picture || null;
-        const githubUsername = provider === 'github' ? (userMeta.user_name || null) : null;
-
-        // Upsert profile in Supabase database
-        await supabase.from("profiles").upsert({
-          id: session.user.id,
-          user_id: session.user.id,
-          email: session.user.email,
-          full_name: userMeta.full_name || userMeta.name || session.user.email?.split('@')[0] || 'OAuth User',
-          provider: provider,
-          avatar_url: avatarUrl,
-          github_username: githubUsername,
-          onboarding_completed: onboardingCompleted
-        });
-        console.log('[Auth Callback] Profile upserted with avatar in Supabase database.');
 
         // Sync and register in backend SQLite/Postgres DB using getMe JWT call
         const jwtToken = session.access_token;

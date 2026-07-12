@@ -566,7 +566,7 @@ class ProfileService:
 
             # Build LLM Prompt
             client = get_chat_client()
-            prompt = f"""You are Esona, the user's close friend and empathetic AI wellness companion.
+            prompt = f"""You are Buddy, the user's close friend and empathetic AI wellness companion.
 Generate a short, warm, welcoming, and highly personalized first message greeting for the user opening their chat.
 Use their name if known (e.g. Sai).
 Incorporate context from their profile (interests, hobbies, goals), onboarding answers, recent emotions, and knowledge graph.
@@ -597,7 +597,7 @@ Output ONLY the greeting message text."""
             logger.error(f"Failed to generate personalized greeting: {e}", exc_info=True)
             
         # Fallback greeting
-        return "Hey! I'm Esona, your AI wellness companion. I'm here to listen, support, and help you navigate whatever is on your mind. How are you feeling today?"
+        return "Hey! I'm Buddy, your AI wellness companion. I'm here to listen, support, and help you navigate whatever is on your mind. How are you feeling today?"
 
 
 # Export standard singleton

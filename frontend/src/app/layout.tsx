@@ -82,7 +82,7 @@ export default function RootLayout({
         <link rel="preload" href="/background.png" as="image" />
         <link
           rel="preload"
-          href="/BG1.mp4"
+          href="/BG2.mp4"
           as="video"
           type="video/mp4"
           crossOrigin="anonymous"

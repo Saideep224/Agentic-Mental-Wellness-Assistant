@@ -17,16 +17,29 @@ import { useEffect, useRef, useState } from 'react';
 export default function VideoBackground() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
+  const [videoSrc, setVideoSrc] = useState('/BG2.mp4');
+
+  useEffect(() => {
+    // Determine video source based on local hour on mount
+    const hour = new Date().getHours();
+    // BG1 from 6pm to 5am (hour >= 18 or hour < 5)
+    // BG2 from 5am to 6pm (hour >= 5 and hour < 18)
+    if (hour >= 18 || hour < 5) {
+      setVideoSrc('/BG1.mp4');
+    } else {
+      setVideoSrc('/BG2.mp4');
+    }
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    // `canplay` fires as soon as the browser has buffered enough to start —
-    // this is when we safely reveal the live video (fade the overlay out).
+    // Reset videoReady when source changes so there's no visual flash
+    setVideoReady(false);
+
     const handleCanPlay = () => setVideoReady(true);
 
-    // If the video is already ready (cached), fire immediately.
     if (video.readyState >= 3) {
       setVideoReady(true);
     } else {
@@ -36,7 +49,7 @@ export default function VideoBackground() {
     return () => {
       video.removeEventListener('canplay', handleCanPlay);
     };
-  }, []);
+  }, [videoSrc]);
 
   return (
     <div
@@ -54,6 +67,7 @@ export default function VideoBackground() {
           frame, so there is never a black or blank moment. */}
       <video
         ref={videoRef}
+        key={videoSrc}
         autoPlay
         loop
         muted
@@ -68,7 +82,7 @@ export default function VideoBackground() {
           objectPosition: 'center',
         }}
       >
-        <source src="/BG1.mp4" type="video/mp4" />
+        <source src={videoSrc} type="video/mp4" />
       </video>
 
       {/* Flash-prevention overlay: starts opaque (#040614 = --bg-primary),
@@ -91,7 +105,7 @@ export default function VideoBackground() {
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'rgba(4, 8, 25, 0.72)',
+          background: 'linear-gradient(135deg, rgba(8, 12, 36, 0.72) 0%, rgba(4, 6, 20, 0.86) 100%)',
           zIndex: 2,
         }}
       />
@@ -102,7 +116,7 @@ export default function VideoBackground() {
           position: 'absolute',
           inset: 0,
           background:
-            'radial-gradient(ellipse at center, transparent 50%, rgba(4,6,20,0.55) 100%)',
+            'radial-gradient(ellipse at center, transparent 40%, rgba(4,6,20,0.65) 100%)',
           zIndex: 3,
         }}
       />

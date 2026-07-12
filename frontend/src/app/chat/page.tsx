@@ -372,6 +372,23 @@ export default function ChatPage() {
 
   useEffect(() => {
     setMounted(true);
+    
+    if (typeof window !== 'undefined') {
+      window.scrollTo(0, 0);
+      const htmlStyle = document.documentElement.style;
+      const bodyStyle = document.body.style;
+      
+      const origHtmlOverflow = htmlStyle.overflow;
+      const origBodyOverflow = bodyStyle.overflow;
+      
+      htmlStyle.overflow = 'hidden';
+      bodyStyle.overflow = 'hidden';
+      
+      return () => {
+        htmlStyle.overflow = origHtmlOverflow;
+        bodyStyle.overflow = origBodyOverflow;
+      };
+    }
   }, []);
 
   const { user, token, refreshUser } = useAuth();

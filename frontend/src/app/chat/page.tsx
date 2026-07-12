@@ -123,6 +123,7 @@ export default function ChatPage() {
 
   const { messages, setMessages, isLoading, isStreaming, streamPlaceholder, typingAgentId, sendMessage } = useChat({
     conversationId: activeConversationId,
+    onboardingCompleted: user?.onboardingCompleted || welcomeDismissed,
   });
 
   const latestEmotion = [...messages]

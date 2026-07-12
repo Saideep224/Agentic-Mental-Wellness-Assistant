@@ -8,10 +8,11 @@ import * as api from '@/api';
 interface UseChatOptions {
   conversationId: string | null;
   activeSpecialistId?: string | null;
+  onboardingCompleted?: boolean;
   onSpecialistAction?: (action: 'invited' | 'removed', specialistId: string) => void;
 }
 
-export function useChat({ conversationId, activeSpecialistId, onSpecialistAction }: UseChatOptions) {
+export function useChat({ conversationId, activeSpecialistId, onboardingCompleted = false, onSpecialistAction }: UseChatOptions) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -51,6 +52,11 @@ export function useChat({ conversationId, activeSpecialistId, onSpecialistAction
       }
       
       if (splitMsgs.length === 0) {
+        if (!onboardingCompleted) {
+          setIsLoading(false);
+          setMessages([]);
+          return;
+        }
         setIsLoading(true);
         // Call backend to generate first message
         const response = await api.getFirstMessage(conversationId, token);
@@ -182,7 +188,7 @@ export function useChat({ conversationId, activeSpecialistId, onSpecialistAction
     } finally {
       setIsLoading(false);
     }
-  }, [conversationId]);
+  }, [conversationId, onboardingCompleted]);
 
   // Load messages when conversation changes
   useEffect(() => {

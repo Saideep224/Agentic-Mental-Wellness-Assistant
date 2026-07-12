@@ -103,6 +103,20 @@ export default function SequentialQuestionnaire({
     setError(null);
   }, [currentIndex, currentQuestion, localAnswers]);
 
+  // Lock body scroll on mount, restore on unmount
+  useEffect(() => {
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, []);
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -291,7 +305,7 @@ export default function SequentialQuestionnaire({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-[100] flex items-center justify-center"
-        style={{ background: 'rgba(4, 6, 20, 0.97)' }}
+        style={{ background: '#040614' }}
       >
         <motion.div
           initial={{ scale: 0.9, opacity: 0 }}
@@ -387,11 +401,11 @@ export default function SequentialQuestionnaire({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] flex flex-col"
-      style={{ background: 'rgba(4, 6, 20, 0.98)' }}
+      className="fixed inset-0 z-[100] h-dvh overflow-hidden flex flex-col bg-[#040614]"
+      style={{ background: '#040614' }}
     >
       {/* ── Header ─────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 sm:px-6 pt-4 pb-2">
+      <div className="flex-shrink-0 flex items-center justify-between px-4 sm:px-6 pt-4 pb-3 border-b border-white/5 bg-[#040614]">
         <div>
           <h2
             className="text-lg font-bold"
@@ -422,7 +436,7 @@ export default function SequentialQuestionnaire({
       </div>
 
       {/* ── Position Progress Bar ──────────────────────── */}
-      <div className="px-4 sm:px-6 pb-4">
+      <div className="flex-shrink-0 px-4 sm:px-6 pt-3 pb-3 bg-[#040614]">
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-xs text-slate-500">
             Question {currentIndex + 1} of {totalQuestions}
@@ -446,7 +460,7 @@ export default function SequentialQuestionnaire({
       </div>
 
       {/* ── Question Content ───────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-6 sm:py-10 overscroll-contain bg-[#040614]">
         <div className="max-w-lg mx-auto">
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
@@ -622,7 +636,7 @@ export default function SequentialQuestionnaire({
       </div>
 
       {/* ── Bottom Navigation ──────────────────────────── */}
-      <div className="px-4 sm:px-6 py-4 border-t border-white/5">
+      <div className="flex-shrink-0 px-4 sm:px-6 py-4 border-t border-white/5 bg-[#040614]" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
         <div className="max-w-lg mx-auto flex items-center justify-between">
           <button
             onClick={goBack}

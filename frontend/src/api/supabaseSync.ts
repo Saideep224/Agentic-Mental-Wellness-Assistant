@@ -11,7 +11,7 @@ import { supabase } from '@/database/supabase';
 // TYPES
 // ============================================
 
-type QuestionAnswerSaveInput = {
+export type QuestionAnswerSaveInput = {
   questionId: number;
   questionText: string;
   category: string;
@@ -264,3 +264,68 @@ export async function upsertQuestionAnswersToSupabase(
     throw err;
   }
 }
+
+/**
+ * Save a single onboarding/Knowing Me answer directly to Supabase.
+ */
+export async function upsertSingleAnswerToSupabase(
+  response: QuestionAnswerSaveInput
+): Promise<void> {
+  console.log('[LOG] upsertSingleAnswerToSupabase called, questionId:', response.questionId);
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      console.error('[LOG] [SupabaseSync] Auth user lookup failed:', userError);
+      throw formatSupabaseError('Unable to verify your login session', userError);
+    }
+    if (!user) {
+      console.warn('[LOG] [SupabaseSync] No user session found');
+      throw new Error('You are not signed in. Please log in again before saving answers.');
+    }
+    console.log('[LOG] [SupabaseSync] User found in Supabase Auth:', user.id);
+
+    console.log('[LOG] [SupabaseSync] Ensuring profile exists in Supabase database...');
+    await ensureSupabaseProfile(user);
+
+    const row = {
+      user_id: user.id,
+      question_id: response.questionId,
+      question_text: response.questionText,
+      selected_answer: response.selectedAnswers,
+      category: response.category,
+      custom_answer: response.customAnswer || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    console.log('[LOG] [SupabaseSync] Upserting user_question_answers in Supabase...');
+    const { error } = await supabase
+      .from('user_question_answers')
+      .upsert(row, { onConflict: 'user_id,question_id' });
+
+    if (error) {
+      console.error('[LOG] [SupabaseSync] Knowing Me single answer upsert failed:', error);
+      throw formatSupabaseError('Failed to save your answer', error);
+    }
+    console.log('[LOG] [SupabaseSync] user_question_answers single upsert succeeded');
+  } catch (err: any) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error('[LOG] [SupabaseSync] Exception caught in upsertSingleAnswerToSupabase:', errMsg);
+    const isUserNotFound = 
+      errMsg.includes('user_not_found') || 
+      errMsg.includes('sub claim') || 
+      errMsg.includes('does not exist') ||
+      errMsg.includes('403');
+    
+    if (isUserNotFound) {
+      console.warn('[LOG] [SupabaseSync] User not found or invalid session. Clearing auth and redirecting...', errMsg);
+      if (typeof window !== 'undefined') {
+        const { clearAuth } = await import('./client');
+        clearAuth();
+        console.log('[LOG] [SupabaseSync] Redirecting to /login due to 403/stale session');
+        window.location.href = '/login';
+      }
+    }
+    throw err;
+  }
+}
+

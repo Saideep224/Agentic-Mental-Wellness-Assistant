@@ -47,6 +47,31 @@ export default function MoodMusicPanel({ latestEmotion = 'Neutral', className = 
   const normalizedEmotion = latestEmotion.toLowerCase();
   const config = MOOD_CONFIG[normalizedEmotion] || MOOD_CONFIG['neutral'];
 
+  // Centralized track loader
+  const loadTrack = (track: Track, index: number) => {
+    if (!track) return;
+    
+    if (!audioRef.current && typeof window !== 'undefined') {
+      audioRef.current = new Audio();
+      audioRef.current.volume = isMuted ? 0 : volume;
+    }
+    
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    audio.pause();
+
+    setActiveTrackIndex(index);
+
+    audio.src = track.src;
+    audio.load();
+    audio.currentTime = 0;
+
+    setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
+  };
+
   // 1. Mood Playlist Progression Logic
   useEffect(() => {
     let selectedTracks: Track[] = [];
@@ -86,22 +111,15 @@ export default function MoodMusicPanel({ latestEmotion = 'Neutral', className = 
     }
 
     setPlaylist(selectedTracks);
-    setActiveTrackIndex(0);
-    setIsPlaying(false);
-    setCurrentTime(0);
-    setDuration(0);
-
-    // Stop current audio if playing and load new playlist
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = selectedTracks[0]?.src || '';
-      audioRef.current.load();
+    
+    if (selectedTracks.length > 0) {
+      loadTrack(selectedTracks[0], 0);
     }
   }, [latestEmotion]);
 
   const activeTrack = playlist[activeTrackIndex] || null;
 
-  // 2. Initialize and manage HTMLAudioElement
+  // 2. Initialize and manage HTMLAudioElement Events
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -116,6 +134,8 @@ export default function MoodMusicPanel({ latestEmotion = 'Neutral', className = 
     const handlePause = () => setIsPlaying(false);
     const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
     const handleLoadedMetadata = () => setDuration(audio.duration || 0);
+    const handleError = () => setIsPlaying(false);
+    
     const handleEnded = () => {
       // Auto play next track
       handleNext();
@@ -126,6 +146,7 @@ export default function MoodMusicPanel({ latestEmotion = 'Neutral', className = 
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('error', handleError);
 
     return () => {
       audio.removeEventListener('play', handlePlay);
@@ -133,20 +154,9 @@ export default function MoodMusicPanel({ latestEmotion = 'Neutral', className = 
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('error', handleError);
     };
-  }, [playlist, activeTrackIndex, volume, isMuted]);
-
-  // Load new src on track index change
-  useEffect(() => {
-    if (audioRef.current && activeTrack) {
-      const wasPlaying = isPlaying;
-      audioRef.current.src = activeTrack.src;
-      audioRef.current.load();
-      if (wasPlaying) {
-        audioRef.current.play().catch(err => console.log('Autoplay blocked:', err));
-      }
-    }
-  }, [activeTrackIndex]);
+  }, [playlist, activeTrackIndex, volume, isMuted]); // Re-attach when handlers capture new state
 
   // Cleanup audio on component unmount
   useEffect(() => {
@@ -157,26 +167,60 @@ export default function MoodMusicPanel({ latestEmotion = 'Neutral', className = 
     };
   }, []);
 
-  const handlePlayPause = () => {
-    if (!audioRef.current || !activeTrack) return;
+  const handlePlayPause = async () => {
+    if (!audioRef.current) return;
+    const audio = audioRef.current;
 
     if (isPlaying) {
-      audioRef.current.pause();
+      audio.pause();
     } else {
-      audioRef.current.play().catch(err => {
+      const track = playlist[activeTrackIndex];
+      if (track) {
+        if (!audio.src || !audio.src.endsWith(track.src)) {
+          loadTrack(track, activeTrackIndex);
+        }
+      }
+      try {
+        await audio.play();
+      } catch (err) {
+        setIsPlaying(false);
         console.warn('Playback failed:', err);
-      });
+      }
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (playlist.length === 0) return;
-    setActiveTrackIndex((prev) => (prev + 1) % playlist.length);
+    const nextIdx = (activeTrackIndex + 1) % playlist.length;
+    const wasPlaying = isPlaying;
+    
+    loadTrack(playlist[nextIdx], nextIdx);
+    
+    if (wasPlaying && audioRef.current) {
+      try {
+        await audioRef.current.play();
+      } catch (err) {
+        setIsPlaying(false);
+        console.warn('Autoplay blocked on next:', err);
+      }
+    }
   };
 
-  const handlePrev = () => {
+  const handlePrev = async () => {
     if (playlist.length === 0) return;
-    setActiveTrackIndex((prev) => (prev - 1 + playlist.length) % playlist.length);
+    const prevIdx = (activeTrackIndex - 1 + playlist.length) % playlist.length;
+    const wasPlaying = isPlaying;
+    
+    loadTrack(playlist[prevIdx], prevIdx);
+    
+    if (wasPlaying && audioRef.current) {
+      try {
+        await audioRef.current.play();
+      } catch (err) {
+        setIsPlaying(false);
+        console.warn('Autoplay blocked on prev:', err);
+      }
+    }
   };
 
   const handleProgressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -360,13 +404,15 @@ export default function MoodMusicPanel({ latestEmotion = 'Neutral', className = 
           return (
             <div 
               key={track.id}
-              onClick={() => {
-                setActiveTrackIndex(idx);
-                setIsPlaying(true);
+              onClick={async () => {
+                loadTrack(track, idx);
                 if (audioRef.current) {
-                  audioRef.current.src = track.src;
-                  audioRef.current.load();
-                  audioRef.current.play().catch(err => console.log('Autoplay blocked:', err));
+                  try {
+                    await audioRef.current.play();
+                  } catch (err) {
+                    setIsPlaying(false);
+                    console.warn('Autoplay blocked from playlist:', err);
+                  }
                 }
               }}
               className={`p-2 rounded-xl transition-all duration-200 flex items-center gap-3 cursor-pointer ${

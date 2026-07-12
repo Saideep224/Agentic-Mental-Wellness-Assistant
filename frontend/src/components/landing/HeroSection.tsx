@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/AuthProvider';
 import InteractiveTorch from './InteractiveTorch';
@@ -11,6 +11,7 @@ export default function HeroSection() {
   const [torchState, setTorchState] = useState<'unlit' | 'lighting' | 'revealing_text' | 'revealed_cta'>('unlit');
   const router = useRouter();
   const { isAuthenticated } = useAuth();
+  const shouldReduceMotion = useReducedMotion();
 
   const handleBeginJourney = () => {
     if (isAuthenticated) {
@@ -47,52 +48,85 @@ export default function HeroSection() {
       />
 
       {/* Content */}
-      <div className="relative z-10 text-center max-w-3xl mx-auto">
-        {/* Main title */}
-        <motion.h1
-          initial={{ opacity: 0, y: 30, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.8, ease: 'easeOut' as const }}
-          className="text-7xl sm:text-8xl md:text-9xl font-bold mb-3"
+      <div className="relative z-10 text-center max-w-3xl mx-auto flex flex-col items-center">
+        {/* Title container for "I am" and "Esona" */}
+        <div className="relative inline-block mb-3 sm:mb-4">
+          <motion.span
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.9 }}
+            transition={{ duration: 1.0, ease: 'easeOut', delay: 0.1 }}
+            className="block sm:absolute sm:-top-6 sm:left-1 text-sm sm:text-base md:text-lg font-medium tracking-[0.2em] text-[#C2DBFF] opacity-90 pb-1 sm:pb-0"
+            style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
+          >
+            I am
+          </motion.span>
+          <motion.h1
+            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 25, scale: shouldReduceMotion ? 1 : 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.9, ease: 'easeOut', delay: 0.3 }}
+            className="text-6xl sm:text-8xl md:text-9xl font-bold leading-none select-none pt-1"
+            style={{ 
+              fontFamily: 'var(--font-space-grotesk), sans-serif',
+              background: 'linear-gradient(135deg, #FFFFFF 0%, #D4E8FF 50%, #9BCBFF 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+              filter: 'drop-shadow(0 4px 12px rgba(191, 223, 255, 0.2))'
+            }}
+          >
+            Esona
+          </motion.h1>
+        </div>
+
+        {/* your supportive buddy. */}
+        <motion.p
+          initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: 'easeOut', delay: 0.6 }}
+          className="text-xl sm:text-2xl md:text-3xl font-medium tracking-wide mb-6 sm:mb-8"
           style={{ 
-            fontFamily: 'var(--font-space-grotesk), sans-serif',
-            background: 'linear-gradient(90deg, #FFFFFF 0%, #BFDFFF 50%, #8BC5FF 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text'
+            color: '#AFC7E8', 
+            fontFamily: 'var(--font-space-grotesk), sans-serif', 
+            textShadow: '0 2px 10px rgba(0, 0, 0, 0.4)' 
           }}
         >
-          Esona
-        </motion.h1>
-
-        {/* Subtitle */}
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.2, ease: 'easeOut' as const }}
-          className="text-xl sm:text-2xl mb-8 tracking-wide"
-          style={{ color: '#AFC7E8', fontWeight: 500, fontFamily: 'var(--font-space-grotesk), sans-serif', textShadow: '0 2px 15px rgba(0, 0, 0, 0.4)' }}
-        >
-          The Sound of Understanding
+          your supportive buddy.
         </motion.p>
 
-        {/* Tagline */}
+        {/* Don't worry, I'm here with you. */}
         <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.4, ease: 'easeOut' as const }}
-          className="text-base sm:text-lg max-w-xl mx-auto leading-relaxed"
-          style={{ color: '#D6E2F2', textShadow: '0 2px 20px rgba(0, 0, 0, 0.5)' }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0.95 }}
+          transition={{ duration: 1.0, ease: 'easeOut', delay: 0.9 }}
+          className="text-base sm:text-lg md:text-xl font-light tracking-wide mb-5 sm:mb-6"
+          style={{ 
+            color: '#F0F4FA', 
+            textShadow: '0 0 15px rgba(191, 223, 255, 0.3)' 
+          }}
         >
-          An emotionally intelligent AI companion that remembers, understands, and grows with you.
+          Don't worry, I'm here with you.
+        </motion.p>
+
+        {/* Personal Description */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1.0, ease: 'easeOut', delay: 1.2 }}
+          className="text-sm sm:text-base md:text-lg max-w-[650px] md:max-w-[720px] mx-auto leading-relaxed"
+          style={{ 
+            color: '#A8BDD6', 
+            textShadow: '0 2px 10px rgba(0, 0, 0, 0.5)' 
+          }}
+        >
+          I remember, understand, and grow with you — so you never have to feel like you're talking to a stranger.
         </motion.p>
 
         {/* Interactive Area */}
         <motion.div 
-          className="mt-12 flex flex-col items-center min-h-[280px]"
+          className="mt-8 sm:mt-10 md:mt-12 flex flex-col items-center min-h-[240px] sm:min-h-[260px]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 1, delay: 0.8 }}
+          transition={{ duration: 1, delay: 1.5 }}
         >
           {/* Torch */}
           <div className="mb-4">

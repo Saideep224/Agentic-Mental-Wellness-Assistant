@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Heart, ChevronDown, ChevronUp, Edit2, Save, X,
-  Loader2, Check, Sparkles, AlertCircle
+  Loader2, Check, Sparkles, AlertCircle, ListChecks, Play, ClipboardList
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import EsonaLoader from '@/components/layout/EsonaLoader';
 import { questions } from '@/data/questions';
 import { getToken, submitOnboarding, getOnboardingAnswers, upsertQuestionAnswersToSupabase, recalculateProfile } from '@/api';
 import { useAuth } from '@/providers/AuthProvider';
+import SequentialQuestionnaire from '@/components/knowing-me/SequentialQuestionnaire';
 
 const CATEGORIES = [
   { id: 'background', label: 'About You', emoji: '👤', color: 'blue' },
@@ -67,6 +68,45 @@ export default function KnowingMePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [showQuestionnaire, setShowQuestionnaire] = useState(false);
+  const [questionnaireStartIndex, setQuestionnaireStartIndex] = useState(0);
+
+  const handleStartQuestionnaire = () => {
+    const totalQuestions = questions.length;
+    
+    // Count how many are actually answered
+    const totalAnswered = questions.filter(q => {
+      const ans = editedAnswers.find(a => a.question_id === q.id);
+      return ans && ((ans.selected_answers && ans.selected_answers.length > 0) || Boolean(ans.custom_answer?.trim()));
+    }).length;
+
+    if (totalAnswered === totalQuestions) {
+      setQuestionnaireStartIndex(0);
+      setShowQuestionnaire(true);
+      return;
+    }
+
+    const firstUnansweredIndex = questions.findIndex(q => {
+      const ans = editedAnswers.find(a => a.question_id === q.id);
+      const isAnswered = ans && ((ans.selected_answers && ans.selected_answers.length > 0) || Boolean(ans.custom_answer?.trim()));
+      return !isAnswered;
+    });
+
+    const startIndex = firstUnansweredIndex >= 0 ? firstUnansweredIndex : 0;
+    setQuestionnaireStartIndex(startIndex);
+    setShowQuestionnaire(true);
+  };
+
+  const handleQuestionnaireClose = (didSave: boolean) => {
+    setShowQuestionnaire(false);
+    if (didSave) {
+      const token = getToken();
+      if (token) {
+        fetchAnswers(token);
+      }
+    }
+  };
 
   const fetchAnswers = useCallback(async (token: string) => {
     setIsLoading(true);
@@ -332,7 +372,7 @@ export default function KnowingMePage() {
               {totalAnswered}/{totalQuestions} answered
             </span>
           </div>
-          <div className="h-2 bg-white/5 rounded-full overflow-hidden border border-white/5">
+          <div className="h-2 bg-white/5 rounded-full overflow-hidden border border-white/5 mb-4">
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${progressPercent}%` }}
@@ -344,16 +384,48 @@ export default function KnowingMePage() {
               }}
             />
           </div>
-          {progressPercent < 100 && (
-            <p className="text-xs text-slate-500 mt-2 italic">
-              Complete all questions to unlock full personality insights and adaptive AI conversations.
-            </p>
-          )}
-          {progressPercent === 100 && (
-            <p className="text-xs text-emerald-400 mt-2 flex items-center gap-1">
-              <Check size={12} /> All questions answered! Your AI experience is fully personalized.
-            </p>
-          )}
+          
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-white/5">
+            <div className="flex-1">
+              {progressPercent < 100 && (
+                <p className="text-xs text-slate-500 italic">
+                  Complete all questions to unlock full personality insights and adaptive AI conversations.
+                </p>
+              )}
+              {progressPercent === 100 && (
+                <p className="text-xs text-emerald-400 flex items-center gap-1">
+                  <Check size={12} /> All questions answered! Your AI experience is fully personalized.
+                </p>
+              )}
+            </div>
+            
+            <button
+              onClick={handleStartQuestionnaire}
+              className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer self-start sm:self-auto hover:scale-105 active:scale-95 active:opacity-90"
+              style={{
+                background: 'var(--gradient-primary)',
+                color: 'var(--bg-primary)',
+                boxShadow: '0 0 15px rgba(56, 189, 248, 0.25)',
+              }}
+            >
+              {totalAnswered === 0 ? (
+                <>
+                  <ListChecks size={14} />
+                  Answer All &rarr;
+                </>
+              ) : totalAnswered < 27 ? (
+                <>
+                  <Play size={12} fill="currentColor" />
+                  Continue Answering &rarr;
+                </>
+              ) : (
+                <>
+                  <ClipboardList size={14} />
+                  Review Answers
+                </>
+              )}
+            </button>
+          </div>
         </motion.div>
 
         {/* Success banner */}
@@ -695,6 +767,17 @@ export default function KnowingMePage() {
           Your answers shape your personality insights, emotional profile, and how Esona talks to you. 💙
         </motion.p>
       </main>
+
+      {/* Sequential questionnaire overlay */}
+      <AnimatePresence>
+        {showQuestionnaire && (
+          <SequentialQuestionnaire
+            initialAnswers={editedAnswers}
+            startIndex={questionnaireStartIndex}
+            onClose={handleQuestionnaireClose}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

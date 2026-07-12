@@ -21,6 +21,7 @@ import {
   Loader2,
   UserCheck,
   ArrowRight,
+  Music,
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import EsonaLogo from '@/components/layout/EsonaLogo';
@@ -29,7 +30,7 @@ import MessageBubble from '@/components/chat/MessageBubble';
 import FullPageTransition from '@/components/layout/FullPageTransition';
 import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
-import MusicPlayer from '@/components/chat/MusicPlayer';
+import MoodMusicPanel from '@/components/chat/MoodMusicPanel';
 import { useChat } from '@/hooks/useChat';
 import { Conversation } from '@/types';
 import { getToken, getStoredUser } from '@/api';
@@ -122,6 +123,12 @@ export default function ChatPage() {
   const { messages, setMessages, isLoading, isStreaming, streamPlaceholder, typingAgentId, sendMessage } = useChat({
     conversationId: activeConversationId,
   });
+
+  const latestEmotion = [...messages]
+    .reverse()
+    .find((msg) => msg.emotionDetected)?.emotionDetected || 
+    agentInsights?.current_mood || 
+    'Neutral';
 
   useEffect(() => {
     if (debugOpen && activeConversationId) {
@@ -341,7 +348,7 @@ export default function ChatPage() {
               </div>
             </div>
 
-            {/* Premium Radio Popover in Header */}
+            {/* Premium Mood Popover in Header */}
             <div className="relative flex-shrink-0 flex items-center gap-3 mr-3">
               <div className="relative">
                 <button
@@ -352,8 +359,8 @@ export default function ChatPage() {
                       : 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10'
                   }`}
                 >
-                  <span>📻</span>
-                  <span>Radio</span>
+                  <Music size={13} />
+                  <span>Mood</span>
                 </button>
                 
                 <AnimatePresence>
@@ -362,9 +369,9 @@ export default function ChatPage() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 10 }}
-                      className="absolute right-0 mt-2 z-50 w-72"
+                      className="absolute right-0 mt-2 z-50 w-80"
                     >
-                      <MusicPlayer />
+                      <MoodMusicPanel latestEmotion={latestEmotion} />
                     </motion.div>
                   )}
                 </AnimatePresence>

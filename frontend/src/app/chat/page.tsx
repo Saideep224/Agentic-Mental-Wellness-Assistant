@@ -22,6 +22,7 @@ import {
   UserCheck,
   ArrowRight,
   Music,
+  Sliders,
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import EsonaLogo from '@/components/layout/EsonaLogo';
@@ -51,13 +52,228 @@ const agentSidebarConfig: Record<string, { emoji: string; name: string; role?: s
   relationship: { emoji: '💜', name: 'Relationship Coach', role: 'Relationship Support', gradient: 'linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)', border: 'rgba(168, 85, 247, 0.3)' },
 };
 
+interface BackgroundSettingsPanelProps {
+  preferences: { enabled: boolean; blur: number; dim: number };
+  onSave: (prefs: { enabled: boolean; blur: number; dim: number }) => void;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  isMobile: boolean;
+  onClose: () => void;
+}
+
+function BackgroundSettingsPanel({ preferences, onSave, containerRef, isMobile, onClose }: BackgroundSettingsPanelProps) {
+  const [enabled, setEnabled] = useState(preferences.enabled);
+  const [blur, setBlur] = useState(preferences.blur);
+  const [dim, setDim] = useState(preferences.dim);
+
+  // Sync state if preferences change from outside (e.g. preset selection or initial load)
+  useEffect(() => {
+    setEnabled(preferences.enabled);
+    setBlur(preferences.blur);
+    setDim(preferences.dim);
+  }, [preferences]);
+
+  const updateGlobalCSS = (b: number, d: number, e: boolean) => {
+    if (containerRef.current) {
+      if (e) {
+        containerRef.current.style.setProperty('--chat-bg-blur', `${b}px`);
+        containerRef.current.style.setProperty('--chat-bg-dim', `${d / 100}`);
+        const bgLayer = containerRef.current.querySelector('.chat-bg-layer') as HTMLElement;
+        if (bgLayer) {
+          bgLayer.style.transform = b > 0 ? 'scale(1.03)' : 'scale(1)';
+        }
+      } else {
+        containerRef.current.style.setProperty('--chat-bg-blur', '0px');
+        containerRef.current.style.setProperty('--chat-bg-dim', '1');
+      }
+    }
+  };
+
+  const handleToggle = () => {
+    const nextEnabled = !enabled;
+    setEnabled(nextEnabled);
+    updateGlobalCSS(blur, dim, nextEnabled);
+    onSave({ enabled: nextEnabled, blur, dim });
+  };
+
+  const handleBlurChange = (val: number) => {
+    setBlur(val);
+    updateGlobalCSS(val, dim, enabled);
+    onSave({ enabled, blur: val, dim });
+  };
+
+  const handleDimChange = (val: number) => {
+    setDim(val);
+    updateGlobalCSS(blur, val, enabled);
+    onSave({ enabled, blur, dim: val });
+  };
+
+  const applyPreset = (presetBlur: number, presetDim: number) => {
+    if (!enabled) return;
+    setBlur(presetBlur);
+    setDim(presetDim);
+    updateGlobalCSS(presetBlur, presetDim, true);
+    onSave({ enabled: true, blur: presetBlur, dim: presetDim });
+  };
+
+  // Determine current preset name if it matches exactly
+  const getPresetName = () => {
+    if (!enabled) return 'Off';
+    if (blur === 0 && dim === 20) return 'Clear';
+    if (blur === 5 && dim === 35) return 'Soft';
+    if (blur === 10 && dim === 50) return 'Calm';
+    if (blur === 20 && dim === 75) return 'Focus';
+    return 'Custom';
+  };
+
+  const presetName = getPresetName();
+
+  return (
+    <div
+      className={`p-4 bg-[#070913] border border-cyan-500/15 shadow-[0_0_15px_rgba(6,182,212,0.12)] space-y-4 select-none ${
+        isMobile ? 'rounded-t-2xl pb-8 border-t border-x-0 border-b-0' : 'rounded-xl'
+      }`}
+      style={{
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
+      }}
+    >
+      {/* Mobile drag handle indicator */}
+      {isMobile && (
+        <div 
+          className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-2 cursor-pointer" 
+          onClick={onClose} 
+        />
+      )}
+
+      {/* Header Info Hierarchy */}
+      <div className="flex items-center justify-between border-b border-white/5 pb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">
+            BACKGROUND
+          </span>
+          {presetName === 'Custom' && (
+            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/25 uppercase tracking-wider">
+              Custom
+            </span>
+          )}
+          {presetName !== 'Custom' && presetName !== 'Off' && (
+            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/25 uppercase tracking-wider">
+              {presetName}
+            </span>
+          )}
+        </div>
+        {isMobile && (
+          <button 
+            onClick={onClose} 
+            className="text-slate-400 hover:text-white text-xs font-medium cursor-pointer"
+          >
+            Close
+          </button>
+        )}
+      </div>
+
+      {/* Main control toggle - Row 1 */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-slate-300">
+          Background
+        </span>
+        <button
+          onClick={handleToggle}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none cursor-pointer ${
+            enabled ? 'bg-cyan-500' : 'bg-slate-800'
+          }`}
+        >
+          <span
+            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform duration-200 ${
+              enabled ? 'translate-x-4.5' : 'translate-x-1'
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* Quick Appearance Presets - Row 2 */}
+      <div className={`space-y-2 border-t border-white/5 pt-3 transition-opacity duration-200 ${enabled ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          Appearance
+        </span>
+        <div className="grid grid-cols-4 gap-2">
+          {(['Clear', 'Soft', 'Calm', 'Focus'] as const).map((name) => {
+            const isActive = presetName === name;
+            const getPresetValues = (pName: string) => {
+              if (pName === 'Clear') return { blur: 0, dim: 20 };
+              if (pName === 'Soft') return { blur: 5, dim: 35 };
+              if (pName === 'Calm') return { blur: 10, dim: 50 };
+              return { blur: 20, dim: 75 };
+            };
+            const vals = getPresetValues(name);
+            return (
+              <button
+                key={name}
+                onClick={() => applyPreset(vals.blur, vals.dim)}
+                disabled={!enabled}
+                className={`px-2 py-1.5 text-[10px] font-medium rounded transition-all duration-200 cursor-pointer ${
+                  isActive
+                    ? 'bg-cyan-500/10 border border-cyan-500/40 text-cyan-400 font-semibold'
+                    : 'bg-white/5 border border-white/5 text-slate-400 hover:bg-white/10 hover:text-white disabled:hover:text-slate-400'
+                }`}
+              >
+                {name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Sliders - Row 3 */}
+      <div className={`space-y-4 pt-1 transition-opacity duration-200 ${enabled ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
+        {/* Blur slider */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-xs">
+            <span className="text-slate-400">Blur</span>
+            <span className="font-medium text-slate-200">{blur}px</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="24"
+            step="1"
+            value={blur}
+            disabled={!enabled}
+            onChange={(e) => handleBlurChange(parseInt(e.target.value, 10))}
+            className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+          />
+        </div>
+
+        {/* Dim slider */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-xs">
+            <span className="text-slate-400">Dim</span>
+            <span className="font-medium text-slate-200">{dim}%</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="90"
+            step="5"
+            value={dim}
+            disabled={!enabled}
+            onChange={(e) => handleDimChange(parseInt(e.target.value, 10))}
+            className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const router = useRouter();
   const pathname = usePathname();
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [musicPlayerOpen, setMusicPlayerOpen] = useState(false);
+  const [bgPanelOpen, setBgPanelOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -65,6 +281,51 @@ export default function ChatPage() {
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [dismissedSuggestions, setDismissedSuggestions] = useState<string[]>([]);
+
+  // Background preferences state
+  const [bgPreferences, setBgPreferences] = useState({
+    enabled: true,
+    blur: 6,
+    dim: 40,
+  });
+  const [videoSrc, setVideoSrc] = useState('/BG2.mp4');
+
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Load preferences from localStorage and select background source
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    try {
+      const stored = localStorage.getItem('esona_chat_background_preferences');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (
+          parsed &&
+          typeof parsed.enabled === 'boolean' &&
+          typeof parsed.blur === 'number' &&
+          typeof parsed.dim === 'number'
+        ) {
+          setBgPreferences(parsed);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load background preferences:', err);
+    }
+
+    const hour = new Date().getHours();
+    if (hour >= 18 || hour < 5) {
+      setVideoSrc('/BG1.mp4');
+    } else {
+      setVideoSrc('/BG2.mp4');
+    }
+
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+    };
+  }, []);
 
   // Track accordion state for the Live Agent Debug Panel
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -304,15 +565,46 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col relative overflow-hidden">
-      {/* Immersive blur overlay */}
+    <div
+      ref={containerRef}
+      className="h-screen flex flex-col relative overflow-hidden bg-[#040614]"
+      style={{
+        ['--chat-bg-blur' as any]: `${bgPreferences.enabled ? bgPreferences.blur : 0}px`,
+        ['--chat-bg-dim' as any]: `${bgPreferences.enabled ? bgPreferences.dim / 100 : 1}`,
+      }}
+    >
+      {/* ── Cinematic Background Video Layer ── */}
+      {bgPreferences.enabled && (
+        <div
+          className="absolute inset-0 transition-transform duration-300 chat-bg-layer"
+          style={{
+            zIndex: 0,
+            filter: 'blur(var(--chat-bg-blur))',
+            transform: bgPreferences.blur > 0 ? 'scale(1.03)' : 'scale(1)',
+            pointerEvents: 'none',
+            overflow: 'hidden',
+          }}
+        >
+          <video
+            autoPlay
+            loop
+            muted
+            playsInline
+            poster="/background.png"
+            className="w-full h-full object-cover animate-fade-in"
+            style={{ opacity: 0.95 }}
+          >
+            <source src={videoSrc} type="video/mp4" />
+          </video>
+        </div>
+      )}
+
+      {/* ── Background Dim Overlay Layer ── */}
       <div
-        className="fixed inset-0 pointer-events-none"
+        className="absolute inset-0 pointer-events-none transition-colors duration-200"
         style={{
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          background: 'rgba(8, 12, 28, 0.45)',
-          zIndex: 0,
+          zIndex: 1,
+          backgroundColor: 'rgba(4, 6, 20, var(--chat-bg-dim))',
         }}
       />
 
@@ -376,6 +668,55 @@ export default function ChatPage() {
                     >
                       <MoodMusicPanel latestEmotion={latestEmotion} />
                     </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            {/* Background Settings Popover */}
+            <div className="relative flex-shrink-0 flex items-center gap-3 mr-3">
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setBgPanelOpen(!bgPanelOpen);
+                    setMusicPlayerOpen(false); // Close mood when opening bg settings
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                    bgPanelOpen 
+                      ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400' 
+                      : 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10'
+                  }`}
+                >
+                  <Sliders size={13} />
+                  <span>Background</span>
+                </button>
+                
+                <AnimatePresence>
+                  {bgPanelOpen && !isMobile && (
+                    <>
+                      {/* Click outside backdrop for desktop */}
+                      <div 
+                        className="fixed inset-0 z-40 bg-transparent cursor-default" 
+                        onClick={() => setBgPanelOpen(false)}
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute right-0 mt-2 z-50 w-72"
+                      >
+                        <BackgroundSettingsPanel
+                          preferences={bgPreferences}
+                          onSave={(prefs) => {
+                            setBgPreferences(prefs);
+                            localStorage.setItem('esona_chat_background_preferences', JSON.stringify(prefs));
+                          }}
+                          containerRef={containerRef}
+                          isMobile={false}
+                          onClose={() => setBgPanelOpen(false)}
+                        />
+                      </motion.div>
+                    </>
                   )}
                 </AnimatePresence>
               </div>
@@ -964,6 +1305,42 @@ export default function ChatPage() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Mobile Background Settings Bottom Sheet */}
+      <AnimatePresence>
+        {bgPanelOpen && isMobile && (
+          <>
+            {/* Click-outside backdrop for mobile */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/60"
+              onClick={() => setBgPanelOpen(false)}
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              className="fixed bottom-0 left-0 right-0 w-full z-50"
+            >
+              <BackgroundSettingsPanel
+                preferences={bgPreferences}
+                onSave={(prefs) => {
+                  setBgPreferences(prefs);
+                  localStorage.setItem('esona_chat_background_preferences', JSON.stringify(prefs));
+                }}
+                containerRef={containerRef}
+                isMobile={true}
+                onClose={() => setBgPanelOpen(false)}
+              />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
+
+

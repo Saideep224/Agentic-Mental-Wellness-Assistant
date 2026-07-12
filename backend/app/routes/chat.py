@@ -657,157 +657,26 @@ async def send_message(
         # 5. Run agent graph
         logger.info(f"[AI AGENT] Running multi-agent cognitive graph for user message...")
 
-        # --- Intent-based specialist routing ---
-        current_specialists: list = list(conversation.active_specialists or [])
-        
-        # Find the last suggested specialist from history
-        last_suggested = None
-        if history:
-            for m in reversed(history):
-                if m.get("role") == "assistant":
-                    analysis = m.get("agent_analysis", {})
-                    if analysis and "suggested_specialist" in analysis:
-                        last_suggested = analysis["suggested_specialist"]
-                    break
-
-        specialist_action, action_target = detect_specialist_action(body.message, current_specialists, last_suggested)
-        specialist_action_event = None
-        if specialist_action == "invite" and action_target:
-            if action_target not in current_specialists:
-                current_specialists.append(action_target)
-                conversation.active_specialists = current_specialists
-                db.add(conversation)
-                await db.commit()
-                await db.refresh(conversation)
-                specialist_action_event = {"action": "invited", "specialist_id": action_target}
-                logger.info(f"[SPECIALIST INTENT] Invited specialist '{action_target}' to conversation {conversation_id_resolved}")
-        elif specialist_action == "remove" and action_target:
-            if action_target in current_specialists:
-                current_specialists.remove(action_target)
-                conversation.active_specialists = current_specialists
-                db.add(conversation)
-                await db.commit()
-                await db.refresh(conversation)
-                specialist_action_event = {"action": "removed", "specialist_id": action_target}
-                logger.info(f"[SPECIALIST INTENT] Removed specialist '{action_target}' from conversation {conversation_id_resolved}")
-        # --- End intent-based routing ---
-
         specialist_id = None
-        if conversation.agent_id and conversation.agent_id != "buddy":
-            specialist_id = conversation.agent_id
-        elif conversation.active_specialists:
-            specialist_id = conversation.active_specialists[0]
-
         specialist_response = None
         suggested_specialist = None
 
         try:
-            if specialist_id:
-                # 1. Run preprocessing (cog analyzer + memory) to extract shared context
-                from app.chatbot.pipeline import preprocessing_node
-                initial_state = {
-                    "user_message": body.message,
-                    "user_id": str(current_user.id),
-                    "conversation_id": str(conversation_id_resolved),
-                    "conversation_history": history,
-                    "emotional_profile": emotional_profile,
-                    "db": db,
-                    "router_decision": {},
-                    "emotion_analysis": {},
-                    "personality_analysis": {},
-                    "context_analysis": {},
-                    "memories": [],
-                    "recommendations": [],
-                    "comfort_kit": {},
-                    "response": "",
-                    "mood_score": 0.5,
-                    "detected_emotion": "neutral",
-                    "personality_agent": {},
-                    "emotion_agent": {},
-                    "behavior_agent": {},
-                    "growth_agent": {},
-                    "intent_agent": {},
-                    "safety_agent": {},
-                    "memory_extraction": {},
-                    "response_strategy": {},
-                    "orchestrated_prompt_summary": "",
-                    "agent_analysis": {},
-                }
-                cog_res = await preprocessing_node(initial_state)
-                
-                # 2. Invoke the specialist agent via AI Router
-                from app.services.ai_router import ai_router
-                spec_res = await ai_router.generate_response(
-                    db=db,
-                    user_id=str(current_user.id),
-                    agent_id=specialist_id,
-                    user_message=body.message,
-                    conversation_history=history,
-                    cog_res=cog_res
-                )
-                specialist_response = spec_res["response"]
-
-                # Check Buddy Intervention
-                should_intervene, reason = check_buddy_intervention(body.message, specialist_id, specialist_response, cog_res)
-
-                if should_intervene:
-                    # 3. Inject specialist response into Buddy's graph as system note and dialog turn
-                    if reason == "technical":
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend."
-                    else:
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
-                    
-                    updated_history = history + [
-                        {"role": "system", "content": system_note},
-                        {"role": "assistant", "content": specialist_response, "sender_type": specialist_id}
-                    ]
-
-                    # Run Buddy graph with specialist injected
-                    result = await run_agent_graph(
-                        user_message=body.message,
-                        user_id=str(current_user.id),
-                        conversation_history=updated_history,
-                        emotional_profile=emotional_profile,
-                        conversation_id=conversation_id_resolved,
-                        db=db,
-                    )
-                else:
-                    # Buddy remains silent
-                    result = {
-                        "response": None,
-                        "detected_emotion": cog_res.get("detected_emotion", "neutral"),
-                        "detected_emotion_confidence": cog_res.get("detected_emotion_confidence", 1.0),
-                        "mood_score": cog_res.get("mood_score", 0.5),
-                        "emotion_agent": cog_res.get("emotion_agent", {}),
-                        "emotion_dimensions": cog_res.get("emotion_dimensions", {}),
-                        "agent_analysis": {},
-                    }
-            else:
-                # No specialist active, run normal Buddy graph
-                result = await run_agent_graph(
-                    user_message=body.message,
-                    user_id=str(current_user.id),
-                    conversation_history=history,
-                    emotional_profile=emotional_profile,
-                    conversation_id=conversation_id_resolved,
-                    db=db,
-                )
+            # Run Esona (Buddy) cognitive graph directly
+            result = await run_agent_graph(
+                user_message=body.message,
+                user_id=str(current_user.id),
+                conversation_history=history,
+                emotional_profile=emotional_profile,
+                conversation_id=conversation_id_resolved,
+                db=db,
+            )
 
             logger.info(f"[AI AGENT SUCCESS] Multi-agent processing complete.")
             full_response = result.get("response", "I'm here for you. Could you tell me more?")
             detected_emotion = result.get("detected_emotion", None)
             mood_score = result.get("mood_score", None)
             agent_analysis = result.get("agent_analysis", {})
-
-            # Check if Buddy should recommend a specialist (only on Buddy chat, when no specialist is active)
-            if not specialist_id and conversation.agent_id == "buddy":
-                suggested_specialist = detect_specialist_recommendation(body.message, agent_analysis, history)
-                if suggested_specialist:
-                    from app.agents.specialist_registry import SPECIALIST_REGISTRY
-                    spec_info = SPECIALIST_REGISTRY[suggested_specialist]
-                    rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
-                    full_response += rec_suffix
-                    agent_analysis["suggested_specialist"] = suggested_specialist
 
         except Exception as agent_err:
             logger.error(f"[AI AGENT ERROR] Multi-agent execution failed: {agent_err}. Falling back to randomized human reply.", exc_info=True)
@@ -1037,158 +906,26 @@ async def generate_and_persist_sse_response(
             )
             conversation = conversation_res.scalar_one_or_none()
 
-            # --- Intent-based specialist routing (SSE path) ---
-            current_specialists: list = list((conversation.active_specialists if conversation else None) or [])
-            
-            # Find the last suggested specialist from history
-            last_suggested = None
-            if history:
-                for m in reversed(history):
-                    if m.get("role") == "assistant":
-                        analysis = m.get("agent_analysis", {})
-                        if analysis and "suggested_specialist" in analysis:
-                            last_suggested = analysis["suggested_specialist"]
-                        break
-
-            specialist_action, action_target = detect_specialist_action(message, current_specialists, last_suggested)
-            sse_specialist_action_event = None
-            if conversation:
-                if specialist_action == "invite" and action_target:
-                    if action_target not in current_specialists:
-                        current_specialists.append(action_target)
-                        conversation.active_specialists = current_specialists
-                        db.add(conversation)
-                        await db.commit()
-                        await db.refresh(conversation)
-                        sse_specialist_action_event = {"action": "invited", "specialist_id": action_target}
-                        logger.info(f"[SSE SPECIALIST INTENT] Invited specialist '{action_target}' to conversation {conversation_id}")
-                elif specialist_action == "remove" and action_target:
-                    if action_target in current_specialists:
-                        current_specialists.remove(action_target)
-                        conversation.active_specialists = current_specialists
-                        db.add(conversation)
-                        await db.commit()
-                        await db.refresh(conversation)
-                        sse_specialist_action_event = {"action": "removed", "specialist_id": action_target}
-                        logger.info(f"[SSE SPECIALIST INTENT] Removed specialist '{action_target}' from conversation {conversation_id}")
-            # --- End intent-based routing ---
-
             specialist_id = None
-            if conversation:
-                if conversation.agent_id and conversation.agent_id != "buddy":
-                    specialist_id = conversation.agent_id
-                elif conversation.active_specialists:
-                    specialist_id = conversation.active_specialists[0]
-
             specialist_response = None
             suggested_specialist = None
+            sse_specialist_action_event = None
 
-            if specialist_id:
-                # 1. Run preprocessing (cog analyzer + memory) to extract shared context
-                from app.chatbot.pipeline import preprocessing_node
-                initial_state = {
-                    "user_message": message,
-                    "user_id": str(current_user_id),
-                    "conversation_id": str(conversation_id),
-                    "conversation_history": history,
-                    "emotional_profile": emotional_profile,
-                    "db": db,
-                    "router_decision": {},
-                    "emotion_analysis": {},
-                    "personality_analysis": {},
-                    "context_analysis": {},
-                    "memories": [],
-                    "recommendations": [],
-                    "comfort_kit": {},
-                    "response": "",
-                    "mood_score": 0.5,
-                    "detected_emotion": "neutral",
-                    "personality_agent": {},
-                    "emotion_agent": {},
-                    "behavior_agent": {},
-                    "growth_agent": {},
-                    "intent_agent": {},
-                    "safety_agent": {},
-                    "memory_extraction": {},
-                    "response_strategy": {},
-                    "orchestrated_prompt_summary": "",
-                    "agent_analysis": {},
-                }
-                cog_res = await preprocessing_node(initial_state)
-                
-                # 2. Invoke the specialist agent via AI Router
-                from app.services.ai_router import ai_router
-                spec_res = await ai_router.generate_response(
-                    db=db,
-                    user_id=str(current_user_id),
-                    agent_id=specialist_id,
-                    user_message=message,
-                    conversation_history=history,
-                    cog_res=cog_res
-                )
-                specialist_response = spec_res["response"]
-
-                # Check Buddy Intervention
-                should_intervene, reason = check_buddy_intervention(message, specialist_id, specialist_response, cog_res)
-
-                if should_intervene:
-                    # 3. Inject specialist response into Buddy's graph as system note and dialog turn
-                    if reason == "technical":
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. The user needs a quick translation. Generate a short, casual, friend-like translation or explanation (e.g. 'he means the property papers 😭' or similar). Keep it under 15 words, lowercase, informal, using emojis like a close friend."
-                    else:
-                        system_note = f"System Note: The specialist {specialist_id} just advised: '{specialist_response}'. Empathize with the user, act as the emotional anchor, and translate any complex concepts."
-                    
-                    updated_history = history + [
-                        {"role": "system", "content": system_note},
-                        {"role": "assistant", "content": specialist_response, "sender_type": specialist_id}
-                    ]
-
-                    # Run Buddy graph with specialist injected
-                    result = await run_agent_graph(
-                        user_message=message,
-                        user_id=str(current_user_id),
-                        conversation_history=updated_history,
-                        emotional_profile=emotional_profile,
-                        conversation_id=conversation_id,
-                        db=db,
-                    )
-                else:
-                    # Buddy remains silent
-                    result = {
-                        "response": None,
-                        "detected_emotion": cog_res.get("detected_emotion", "neutral"),
-                        "detected_emotion_confidence": cog_res.get("detected_emotion_confidence", 1.0),
-                        "mood_score": cog_res.get("mood_score", 0.5),
-                        "emotion_agent": cog_res.get("emotion_agent", {}),
-                        "emotion_dimensions": cog_res.get("emotion_dimensions", {}),
-                        "agent_analysis": {},
-                    }
-            else:
-                # No specialist active, run normal Buddy graph
-                result = await run_agent_graph(
-                    user_message=message,
-                    user_id=str(current_user_id),
-                    conversation_history=history,
-                    emotional_profile=emotional_profile,
-                    conversation_id=conversation_id,
-                    db=db,
-                )
+            # Run Esona (Buddy) cognitive graph directly
+            result = await run_agent_graph(
+                user_message=message,
+                user_id=str(current_user_id),
+                conversation_history=history,
+                emotional_profile=emotional_profile,
+                conversation_id=conversation_id,
+                db=db,
+            )
 
             logger.info(f"[SSE AI SUCCESS] Agent processing complete.")
             full_response = result.get("response", "I'm here for you. Could you tell me more?")
             detected_emotion = result.get("detected_emotion", None)
             mood_score = result.get("mood_score", None)
             agent_analysis = result.get("agent_analysis", {})
-
-            # Check if Buddy should recommend a specialist
-            if not specialist_id and conversation and conversation.agent_id == "buddy":
-                suggested_specialist = detect_specialist_recommendation(message, agent_analysis, history)
-                if suggested_specialist:
-                    from app.agents.specialist_registry import SPECIALIST_REGISTRY
-                    spec_info = SPECIALIST_REGISTRY[suggested_specialist]
-                    rec_suffix = f"\n\nI think {spec_info['name']} may be able to explain the {spec_info['role'].lower()} side of this situation. Would you like me to connect you?"
-                    full_response += rec_suffix
-                    agent_analysis["suggested_specialist"] = suggested_specialist
 
         except Exception as agent_err:
             logger.error(f"[SSE AI ERROR] Agent graph execution failed: {agent_err}. Falling back to randomized human reply.", exc_info=True)

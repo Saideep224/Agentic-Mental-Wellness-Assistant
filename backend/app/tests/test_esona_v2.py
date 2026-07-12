@@ -463,68 +463,7 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res_crisis["safety_agent"]["crisis_detected"], True)
         await self.db.rollback()
 
-    async def test_specialist_connection_flow(self):
-        """Test `/connect-specialist` and `/disconnect-specialist` endpoint logic directly."""
-        from app.routes.conversations import connect_specialist, disconnect_specialist, ConnectSpecialistRequest
-        from app.models.conversation import Message
-        from sqlalchemy import select
 
-        # Mock the body
-        body = ConnectSpecialistRequest(specialist_id="maya")
-
-        # 1. Connect Dr. Maya
-        res = await connect_specialist(
-            conversation_id=self.conv_id,
-            body=body,
-            current_user=self.user,
-            db=self.db
-        )
-
-        # Connect should return 7 messages (4 Buddy, 3 Specialist)
-        self.assertEqual(len(res), 7)
-        self.assertEqual(res[0].sender_type, "buddy")
-        self.assertEqual(res[0].content, "hey 😊")
-        self.assertEqual(res[4].sender_type, "maya")
-        self.assertEqual(res[4].content, f"hey {self.user.name} 👋")
-
-        # 2. Check DB does not have any system join message
-        db_messages_result = await self.db.execute(
-            select(Message).where(Message.conversation_id == self.conv_id)
-        )
-        db_messages = db_messages_result.scalars().all()
-        # Ensure none of them are system messages
-        system_msgs = [m for m in db_messages if m.sender_type == "system"]
-        self.assertEqual(len(system_msgs), 0)
-
-        # 3. Test connecting again - should return empty list
-        res_dup = await connect_specialist(
-            conversation_id=self.conv_id,
-            body=body,
-            current_user=self.user,
-            db=self.db
-        )
-        self.assertEqual(len(res_dup), 0)
-
-        # 4. Disconnect specialist
-        res_disc = await disconnect_specialist(
-            conversation_id=self.conv_id,
-            current_user=self.user,
-            db=self.db
-        )
-        # Should return 1 message (Buddy's farewell)
-        self.assertEqual(len(res_disc), 1)
-        self.assertEqual(res_disc[0].sender_type, "buddy")
-        self.assertIn("disconnected", res_disc[0].content)
-
-        # Verify no system leave message is in DB
-        db_messages_result = await self.db.execute(
-            select(Message).where(Message.conversation_id == self.conv_id)
-        )
-        db_messages = db_messages_result.scalars().all()
-        system_msgs = [m for m in db_messages if m.sender_type == "system"]
-        self.assertEqual(len(system_msgs), 0)
-
-        await self.db.rollback()
 
     def test_buddy_intervention_logic(self):
         """Test Buddy's selective silence/intervention check helper."""
@@ -595,42 +534,7 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(best_emotion, "Sadness")
         self.assertEqual(score, 1.0)
 
-    def test_relationship_coach_routing_delay(self):
-        """Verify relationship coach routing is delayed under turns threshold."""
-        from app.routes.chat import detect_specialist_recommendation
-        
-        agent_analysis = {
-            "detected_emotion_confidence": 0.85,
-            "context_analysis": {
-                "topic": "relationship",
-                "specialist_recommendation": "relationship"
-            }
-        }
-        
-        # Turn 1: 0 user messages in history, total turns = 1. Should be delayed (return None)
-        res1 = detect_specialist_recommendation("we got broke uppp", agent_analysis, history=[])
-        self.assertIsNone(res1)
-        
-        # Turn 2: 1 user message in history, total turns = 2. Should be delayed (return None)
-        history_2 = [{"role": "user", "content": "hello"}]
-        res2 = detect_specialist_recommendation("we got broke uppp", agent_analysis, history_2)
-        self.assertIsNone(res2)
-        
-        # Turn 3: 2 user messages in history, total turns = 3. Should recommend (return "relationship")
-        history_3 = [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"}, {"role": "user", "content": "we had a fight"}]
-        res3 = detect_specialist_recommendation("we got broke uppp", agent_analysis, history_3)
-        self.assertEqual(res3, "relationship")
 
-        # Verify confidence threshold: if confidence < 0.75, returns None
-        low_confidence_analysis = {
-            "detected_emotion_confidence": 0.60,
-            "context_analysis": {
-                "topic": "relationship",
-                "specialist_recommendation": "relationship"
-            }
-        }
-        res_low_conf = detect_specialist_recommendation("we got broke uppp", low_confidence_analysis, history_3)
-        self.assertIsNone(res_low_conf)
 
     @patch("app.utils.llm.generate_chat_completion_with_fallback")
     async def test_personalized_first_message_system(self, mock_llm):

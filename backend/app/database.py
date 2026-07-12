@@ -261,6 +261,16 @@ async def create_tables() -> None:
                 await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS custom_answer text;"))
                 await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
                 await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();"))
+
+                # ── user_question_answers check constraint update ──────────
+                try:
+                    await conn.execute(text("ALTER TABLE user_question_answers DROP CONSTRAINT IF EXISTS user_question_answers_question_id_check;"))
+                except Exception as drop_err:
+                    logger.warning(f"Could not drop question_id constraint: {drop_err}")
+                try:
+                    await conn.execute(text("ALTER TABLE user_question_answers ADD CONSTRAINT user_question_answers_question_id_check CHECK (question_id BETWEEN 1 AND 26);"))
+                except Exception as add_err:
+                    logger.warning(f"Could not add question_id constraint (1..26): {add_err}")
             else:
                 # SQLite: try/except each individually since SQLite doesn't support IF NOT EXISTS for columns
                 _sqlite_add_cols = [

@@ -6,8 +6,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
   MessageCircle,
-  PanelLeftClose,
-  PanelLeftOpen,
   Sparkles,
   Edit2,
   Trash2,
@@ -58,9 +56,7 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(
-    typeof window !== 'undefined' ? window.innerWidth > 768 : true
-  );
+  const [musicPlayerOpen, setMusicPlayerOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -117,34 +113,14 @@ export default function ChatPage() {
 
   const { user, refreshUser } = useAuth();
 
-  const [connectingSpecialistId, setConnectingSpecialistId] = useState<string | null>(null);
-  const [removingSpecialistId, setRemovingSpecialistId] = useState<string | null>(null);
   const [tempSystemEvent, setTempSystemEvent] = useState<{ text: string; id: string } | null>(null);
   const [staggerTypingAgentId, setStaggerTypingAgentId] = useState<string | null>(null);
 
   const activeConv = conversations.find((c) => c.id === activeConversationId);
   const activeAgentId = activeConv?.agent_id || 'buddy';
-  const activeSpecialistId = activeConv?.active_specialists?.[0] || null;
 
   const { messages, setMessages, isLoading, isStreaming, streamPlaceholder, typingAgentId, sendMessage } = useChat({
     conversationId: activeConversationId,
-    activeSpecialistId,
-    onSpecialistAction: (action, specialistId) => {
-      if (!activeConversationId) return;
-      setConversations((prev) =>
-        prev.map((conv) => {
-          if (conv.id !== activeConversationId) return conv;
-          const current: string[] = (conv as any).active_specialists || [];
-          let updated: string[];
-          if (action === 'invited') {
-            updated = current.includes(specialistId) ? current : [...current, specialistId];
-          } else {
-            updated = current.filter((s) => s !== specialistId);
-          }
-          return { ...conv, active_specialists: updated } as any;
-        })
-      );
-    },
   });
 
   useEffect(() => {
@@ -212,7 +188,7 @@ export default function ChatPage() {
       setConversations(convos);
       if (convos.length > 0) {
         if (!activeConversationId) {
-          const buddyConv = convos.find((c) => c.agent_id === 'buddy') || convos[0];
+          const buddyConv = convos.find((c) => c.agent_id === 'buddy' || !c.agent_id) || convos[0];
           setActiveConversationId(buddyConv.id);
         }
       }
@@ -234,82 +210,7 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
-  const handleConnectSpecialist = async (specialistId: string) => {
-    const token = api.getToken();
-    if (!token) return;
 
-    setConnectingSpecialistId(specialistId);
-
-    try {
-      // Find if a conversation with this expert already exists in state
-      const existingConv = conversations.find(c => c.agent_id === specialistId);
-      if (existingConv) {
-        setActiveConversationId(existingConv.id);
-      } else {
-        // If it does not exist, create it via API
-        const config = agentSidebarConfig[specialistId] || { name: specialistId };
-        const res = await api.createConversation(token, config.name, specialistId);
-        setConversations((prev) => [res, ...prev]);
-        setActiveConversationId(res.id);
-      }
-    } catch (err) {
-      console.error('Failed to open expert conversation:', err);
-    } finally {
-      setConnectingSpecialistId(null);
-    }
-  };
-
-  const handleDisconnectSpecialist = async (specialistId: string) => {
-    if (!activeConversationId) return;
-    const token = api.getToken();
-    if (!token) return;
-
-    setRemovingSpecialistId(specialistId);
-
-    try {
-      const newMsgs = await api.disconnectSpecialist(activeConversationId, token);
-      
-      // Update conversations first
-      await loadConversations();
-      
-      setRemovingSpecialistId(null);
-
-      // Show "<Agent Name> left the conversation." toast banner for 2 seconds
-      const specName = agentSidebarConfig[specialistId]?.name || specialistId;
-      setTempSystemEvent({ text: `${specName} left the conversation.`, id: Date.now().toString() });
-      setTimeout(() => {
-        setTempSystemEvent(null);
-      }, 2000);
-
-      // Sequentially stagger appending the disconnect messages (farewell from Buddy)
-      let currentIdx = 0;
-      const appendNextMessage = () => {
-        if (currentIdx >= newMsgs.length) {
-          setStaggerTypingAgentId(null);
-          focusInput();
-          return;
-        }
-
-        const msg = newMsgs[currentIdx];
-        setStaggerTypingAgentId('buddy');
-
-        setTimeout(() => {
-          setMessages((prev) => [...prev, {
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          }]);
-          currentIdx++;
-          appendNextMessage();
-        }, 800); // 800ms delay for farewell message typing
-      };
-
-      appendNextMessage();
-
-    } catch (err) {
-      console.error('Failed to disconnect specialist:', err);
-      setRemovingSpecialistId(null);
-    }
-  };
 
   const handleSend = async (content: string) => {
     if (!activeConversationId) return;
@@ -408,323 +309,67 @@ export default function ChatPage() {
       <Navbar />
 
       <div className="flex-1 flex pt-20 overflow-hidden relative" style={{ zIndex: 1 }}>
-        {/* Sidebar */}
-        <AnimatePresence>
-          {sidebarOpen && (
-            <motion.aside
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 280, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
-              className="h-full overflow-hidden flex-shrink-0 border-r"
-              style={{ borderColor: 'var(--glass-border)' }}
-            >
-              <div className="h-full flex flex-col p-3 w-[280px]">
-                {/* Contacts Header */}
-                <div className="px-3 py-2 flex items-center justify-between mb-4 border-b border-white/5">
-                  <span className="font-bold text-base tracking-wide text-[var(--text-primary)]">
-                    Contacts
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span className="text-[10px] text-emerald-400 font-semibold uppercase">Online</span>
-                  </div>
-                </div>
 
-                {/* Contacts list */}
-                <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                  {(() => {
-                    const buddyConvos = conversations.filter((c) => c.agent_id === 'buddy' || !c.agent_id);
-                    
-                    const EXPERTS_LIST = [
-                      { id: 'maya', name: 'Dr. Maya', role: 'Health Support', emoji: '👨‍⚕️', gradient: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'rgba(16, 185, 129, 0.3)' },
-                      { id: 'finance', name: 'Finance Coach', role: 'Financial Support', emoji: '💰', gradient: 'linear-gradient(135deg, #db2777 0%, #be185d 100%)', border: 'rgba(236, 72, 153, 0.3)' },
-                      { id: 'mentor', name: 'Career Coach', role: 'Career Support', emoji: '📚', gradient: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)', border: 'rgba(139, 92, 246, 0.3)' },
-                      { id: 'relationship', name: 'Relationship Coach', role: 'Relationship Support', emoji: '💜', gradient: 'linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)', border: 'rgba(168, 85, 247, 0.3)' },
-                      { id: 'lex', name: 'Legal Advisor', role: 'Legal Support', emoji: '⚖️', gradient: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)', border: 'rgba(245, 158, 11, 0.3)' },
-                    ];
-
-                    const renderContactItem = (convo: Conversation) => {
-                      const info = agentSidebarConfig[convo.agent_id || 'buddy'] || {
-                        name: convo.title || 'Support Agent',
-                        emoji: '🤝',
-                        gradient: 'linear-gradient(135deg, #64748b 0%, #475569 100%)',
-                        border: 'rgba(148, 163, 184, 0.3)',
-                        role: undefined
-                      };
-                      const isActive = activeConversationId === convo.id;
-                      
-                      return (
-                        <div
-                          key={convo.id}
-                          onClick={() => {
-                            setActiveConversationId(convo.id);
-                          }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer border"
-                          style={{
-                            background: isActive
-                              ? 'rgba(56, 189, 248, 0.08)'
-                              : 'transparent',
-                            borderColor: isActive
-                              ? 'rgba(56, 189, 248, 0.15)'
-                              : 'transparent',
-                          }}
-                        >
-                          {/* Avatar */}
-                          <div className="relative flex-shrink-0">
-                            <div
-                              className="w-10 h-10 rounded-full flex items-center justify-center text-lg select-none"
-                              style={{
-                                background: info.gradient,
-                                boxShadow: isActive ? `0 0 10px ${info.border}` : 'none',
-                              }}
-                            >
-                              {info.emoji}
-                            </div>
-                            <div 
-                              className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-[#090d1a] bg-emerald-500"
-                              title="Online"
-                            />
-                          </div>
-
-                          {/* Details */}
-                          <div className="flex-1 min-w-0 flex flex-col justify-center">
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="font-semibold text-xs text-[var(--text-primary)] truncate">
-                                {info.name}
-                              </span>
-                              {convo.lastMessageTimestamp && (
-                                <span className="text-[9px] text-[var(--text-muted)] flex-shrink-0">
-                                  {formatDate(convo.lastMessageTimestamp)}
-                                </span>
-                              )}
-                            </div>
-                            {info.role && (
-                              <span className="text-[9px] text-[var(--text-muted)] font-medium -mt-0.5">
-                                {info.role}
-                              </span>
-                            )}
-                            {convo.lastMessage ? (
-                              <p className="text-[11px] text-[var(--text-muted)] truncate mt-0.5 leading-tight">
-                                {convo.lastMessage}
-                              </p>
-                            ) : (
-                              <p className="text-[11px] text-[var(--text-muted)] italic truncate mt-0.5 leading-tight">
-                                No messages yet
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    };
-
-                    const renderStaticExpertItem = (expert: typeof EXPERTS_LIST[0]) => {
-                      // Check if a conversation for this expert already exists
-                      const existingConv = conversations.find((c) => c.agent_id === expert.id);
-                      const isActive = existingConv ? activeConversationId === existingConv.id : false;
-                      
-                      const handleSelect = async () => {
-                        if (existingConv) {
-                          setActiveConversationId(existingConv.id);
-                        } else {
-                          // Create conversation on demand
-                          try {
-                            const token = getToken();
-                            if (!token) return;
-                            const res = await api.createConversation(token, expert.name, expert.id);
-                            setConversations((prev) => [res, ...prev]);
-                            setActiveConversationId(res.id);
-                          } catch (err) {
-                            console.error('Failed to create expert conversation:', err);
-                          }
-                        }
-                      };
-
-                      return (
-                        <div
-                          key={expert.id}
-                          onClick={handleSelect}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer border"
-                          style={{
-                            background: isActive
-                              ? 'rgba(56, 189, 248, 0.08)'
-                              : 'transparent',
-                            borderColor: isActive
-                              ? 'rgba(56, 189, 248, 0.15)'
-                              : 'transparent',
-                          }}
-                        >
-                          {/* Avatar */}
-                          <div className="relative flex-shrink-0">
-                            <div
-                              className="w-10 h-10 rounded-full flex items-center justify-center text-lg select-none"
-                              style={{
-                                background: expert.gradient,
-                                boxShadow: isActive ? `0 0 10px ${expert.border}` : 'none',
-                              }}
-                            >
-                              {expert.emoji}
-                            </div>
-                            <div 
-                              className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-[#090d1a] bg-emerald-500"
-                              title="Online"
-                            />
-                          </div>
-
-                          {/* Details */}
-                          <div className="flex-1 min-w-0 flex flex-col justify-center">
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="font-semibold text-xs text-[var(--text-primary)] truncate">
-                                {expert.name}
-                              </span>
-                              {existingConv?.lastMessageTimestamp && (
-                                <span className="text-[9px] text-[var(--text-muted)] flex-shrink-0">
-                                  {formatDate(existingConv.lastMessageTimestamp)}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[9px] text-[var(--text-muted)] font-medium -mt-0.5">
-                              {expert.role}
-                            </span>
-                            {existingConv?.lastMessage ? (
-                              <p className="text-[11px] text-[var(--text-muted)] truncate mt-0.5 leading-tight">
-                                {existingConv.lastMessage}
-                              </p>
-                            ) : (
-                              <p className="text-[11px] text-[var(--text-muted)] italic truncate mt-0.5 leading-tight opacity-50">
-                                Tap to open chat
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    };
-
-                    return (
-                      <>
-                        {buddyConvos.map((c) => renderContactItem(c))}
-                      </>
-                    );
-                  })()}
-                </div>
-                {/* Mood-based suggested music playlist player */}
-                <MusicPlayer className="mt-auto pt-2 border-t border-white/5" />
-              </div>
-            </motion.aside>
-          )}
-        </AnimatePresence>
 
         {/* Main chat area */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Chat header */}
           <div
-            className="flex items-center gap-4 px-4 py-3 border-b"
+            className="flex items-center justify-between px-4 py-3 border-b"
             style={{ borderColor: 'var(--glass-border)' }}
           >
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 rounded-lg transition-colors cursor-pointer hover:bg-white/5 flex-shrink-0"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-            </button>
-
-            {(() => {
-              const activeConv = conversations.find(c => c.id === activeConversationId);
-              const info = activeConv ? agentSidebarConfig[activeConv.agent_id || 'buddy'] : agentSidebarConfig.buddy;
-              const isBuddy = activeConv?.agent_id === 'buddy';
-              
-              return (
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  {isBuddy ? (
-                    <EsonaLogo 
-                      size={36} 
-                      showParticles={false} 
-                      glowIntensity="low" 
-                      aiState={isStreaming ? 'speaking' : isLoading ? 'listening' : 'idle'}
-                    />
-                  ) : (
-                    <div
-                      className="w-9 h-9 rounded-full flex items-center justify-center text-lg select-none flex-shrink-0"
-                      style={{
-                        background: info.gradient,
-                        boxShadow: `0 0 10px ${info.border}`,
-                      }}
-                    >
-                      {info.emoji}
-                    </div>
-                  )}
-                  <div className="min-w-0 flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                        {info.name}
-                      </p>
-                      {info.role && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[var(--text-muted)] flex-shrink-0">
-                          {info.role}
-                        </span>
-                      )}
-                    </div>
-                    {isBuddy && activeConv?.active_specialists && activeConv.active_specialists.length > 0 ? (
-                      <p className="text-[11px] text-sky-400 font-medium">
-                        Group Chat with Buddy
-                      </p>
-                    ) : (
-                      <p className="text-xs flex items-center gap-1" style={{ color: 'var(--accent-emerald)' }}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
-                        Online
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Connected Specialist Pills (only in Buddy chat) */}
-                  {isBuddy && activeConv?.active_specialists && activeConv.active_specialists.length > 0 && (
-                    <div className="hidden sm:flex items-center gap-2 ml-4 overflow-x-auto py-1 custom-scrollbar">
-                      {activeConv.active_specialists.map((specId) => {
-                        const specInfo = agentSidebarConfig[specId];
-                        if (!specInfo) return null;
-                        return (
-                          <div 
-                            key={specId} 
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border text-white flex-shrink-0"
-                            style={{
-                              background: specInfo.gradient,
-                              borderColor: specInfo.border,
-                              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
-                            }}
-                          >
-                            {removingSpecialistId === specId ? (
-                              <span className="flex items-center gap-0.5">
-                                Removing {specInfo.name}
-                                <span className="animate-bounce">.</span>
-                                <span className="animate-bounce [animation-delay:0.2s]">.</span>
-                                <span className="animate-bounce [animation-delay:0.4s]">.</span>
-                              </span>
-                            ) : (
-                              <>
-                                <span>{specInfo.emoji}</span>
-                                <span>{specInfo.name}</span>
-                                <button
-                                  disabled={removingSpecialistId !== null}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDisconnectSpecialist(specId);
-                                  }}
-                                  className="ml-1 p-0.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors cursor-pointer text-[10px] leading-none font-bold"
-                                  title="Disconnect Specialist"
-                                >
-                                  ✕
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <EsonaLogo 
+                size={36} 
+                showParticles={false} 
+                glowIntensity="low" 
+                aiState={isStreaming ? 'speaking' : isLoading ? 'listening' : 'idle'}
+              />
+              <div className="min-w-0 flex flex-col">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                    Esona
+                  </p>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[var(--text-muted)] flex-shrink-0">
+                    AI Wellness Companion
+                  </span>
                 </div>
-              );
-            })()}
+                <p className="text-xs flex items-center gap-1" style={{ color: 'var(--accent-emerald)' }}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                  Online
+                </p>
+              </div>
+            </div>
+
+            {/* Premium Radio Popover in Header */}
+            <div className="relative flex-shrink-0 flex items-center gap-3 mr-3">
+              <div className="relative">
+                <button
+                  onClick={() => setMusicPlayerOpen(!musicPlayerOpen)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                    musicPlayerOpen 
+                      ? 'bg-sky-500/10 border-sky-500/30 text-sky-400' 
+                      : 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10'
+                  }`}
+                >
+                  <span>📻</span>
+                  <span>Radio</span>
+                </button>
+                
+                <AnimatePresence>
+                  {musicPlayerOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute right-0 mt-2 z-50 w-72"
+                    >
+                      <MusicPlayer />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
 
             {/* Hidden Dev Insights Toggle */}
             <div className="ml-auto flex-shrink-0">
@@ -823,61 +468,9 @@ export default function ChatPage() {
               ) : (
                 <>
                   {messages.map((message) => {
-                    const activeConv = conversations.find(c => c.id === activeConversationId);
-                    const suggestedSpec = message.agentAnalysis?.suggested_specialist;
-                    const isAlreadyConnected = activeConv?.active_specialists?.includes(suggestedSpec);
-                    const isDismissed = dismissedSuggestions.includes(message.id);
-                    const showSuggestion = false;
-
                     return (
                       <div key={message.id} className="space-y-3">
                         <MessageBubble message={message} />
-                        {showSuggestion && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="flex flex-col items-center my-4 p-4 rounded-2xl border bg-black/40 backdrop-blur-md max-w-sm mx-auto space-y-3"
-                            style={{ borderColor: 'rgba(56, 189, 248, 0.25)', boxShadow: '0 8px 32px rgba(56, 189, 248, 0.05)' }}
-                          >
-                            <p className="text-xs text-[var(--text-secondary)] text-center px-2 leading-relaxed">
-                              Buddy suggested involving <strong>{agentSidebarConfig[suggestedSpec]?.name || suggestedSpec}</strong> for specialized {agentSidebarConfig[suggestedSpec]?.role?.toLowerCase() || 'support'}.
-                            </p>
-                            <div className="flex gap-3 w-full justify-center">
-                              <button
-                                disabled={connectingSpecialistId !== null}
-                                onClick={() => handleConnectSpecialist(suggestedSpec)}
-                                className={`px-5 py-2 rounded-xl text-xs font-semibold shadow-lg transition-all duration-200 ${
-                                  connectingSpecialistId !== null
-                                    ? 'bg-sky-500/50 text-white/70 cursor-not-allowed'
-                                    : 'bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 text-white shadow-sky-500/10 cursor-pointer'
-                                }`}
-                              >
-                                {connectingSpecialistId === suggestedSpec ? (
-                                  <span className="flex items-center gap-0.5">
-                                    Opening {agentSidebarConfig[suggestedSpec]?.name || suggestedSpec}
-                                    <span className="animate-bounce">.</span>
-                                    <span className="animate-bounce [animation-delay:0.2s]">.</span>
-                                    <span className="animate-bounce [animation-delay:0.4s]">.</span>
-                                  </span>
-                                ) : (
-                                  'Open Chat'
-                                )}
-                              </button>
-                              <button
-                                disabled={connectingSpecialistId !== null}
-                                onClick={() => setDismissedSuggestions((prev) => [...prev, message.id])}
-                                className={`px-5 py-2 border rounded-xl text-xs font-semibold transition-all duration-200 ${
-                                  connectingSpecialistId !== null
-                                    ? 'bg-white/0 border-white/5 text-[var(--text-muted)] cursor-not-allowed'
-                                    : 'bg-white/5 hover:bg-white/10 border-white/10 text-[var(--text-secondary)] cursor-pointer'
-                                }`}
-                              >
-                                Not Now
-                              </button>
-                            </div>
-                          </motion.div>
-                        )}
                       </div>
                     );
                   })}

@@ -233,6 +233,8 @@ async def submit_onboarding(
                 profile_updates["advice_preference"] = val
             elif ans.question_id == 5:
                 profile_updates["primary_support_need"] = val
+            elif ans.question_id == 26:
+                profile_updates["gender"] = val
 
     if profile_updates:
         from app.services.profile_service import profile_service

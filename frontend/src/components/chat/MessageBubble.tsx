@@ -86,7 +86,8 @@ const agentConfig: Record<string, { emoji: string; name: string; gradient: strin
 
 export default function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
-  const senderType = message.sender_type || (isUser ? 'user' : 'buddy');
+  const isSystem = (message.role as string) === 'system' || message.sender_type === 'system';
+  const senderType = isSystem ? 'system' : (isUser ? 'user' : 'buddy');
   const config = agentConfig[senderType];
   const emotionDisplay = isUser ? getEmotionDisplay(message.emotionDetected, message.emotionScore, message.moodScore) : null;
 

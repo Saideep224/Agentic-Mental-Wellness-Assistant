@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class OnboardingAnswer(BaseModel):
     """A single answer from the onboarding questionnaire."""
-    question_id: int = Field(..., ge=1, le=25)
+    question_id: int = Field(..., ge=1, le=26)
     category: str = Field(
         ...,
         description="One of: background, personality, emotions, comfort, communication",
@@ -17,21 +17,21 @@ class OnboardingAnswer(BaseModel):
 
 
 class OnboardingSubmitRequest(BaseModel):
-    """Body for POST /api/onboarding/submit – all 25 answers at once."""
+    """Body for POST /api/onboarding/submit – all answers at once."""
     answers: list[OnboardingAnswer] = Field(
-        ..., min_length=25, max_length=25,
-        description="Exactly 25 onboarding answers",
+        ..., min_length=25, max_length=26,
+        description="Onboarding answers",
     )
 
 
 class OnboardingStepRequest(BaseModel):
     """Request for POST /api/onboarding/step."""
-    step: int = Field(..., ge=1, le=25)
+    step: int = Field(..., ge=1, le=26)
 
 
 class OnboardingStatusResponse(BaseModel):
     """Response for GET /api/onboarding/status."""
     onboarding_completed: bool
-    total_questions: int = 25
+    total_questions: int = 26
     answers_submitted: int = 0
     onboarding_step: int | None = 1

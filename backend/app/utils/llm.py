@@ -152,8 +152,8 @@ async def generate_chat_completion_with_fallback(
 
     last_error = None
     for name, base_url, api_key, model in providers:
-        # Retry up to 3 attempts per provider
-        max_attempts = 3
+        # Retry up to 2 attempts per provider for fast real-time chat fallback
+        max_attempts = 2
         for attempt in range(max_attempts):
             try:
                 logger.info(f"Attempting chat completion with provider {name} using model {model} (Attempt {attempt+1}/{max_attempts})...")
@@ -187,7 +187,7 @@ async def generate_chat_completion_with_fallback(
                 _safe_print(f"[MODEL REQUEST] Provider: {name}, Model: {model}")
                 print("MODEL USED:", model)
                 
-                response = await client.chat.completions.create(**kwargs)
+                response = await client.chat.completions.create(**kwargs, timeout=15.0)
                 choice = response.choices[0]
                 content = choice.message.content
                 print("LLM RESPONSE RECEIVED")

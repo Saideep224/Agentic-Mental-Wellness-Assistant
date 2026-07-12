@@ -99,7 +99,7 @@ export function useOnboarding() {
         const unansweredIdx = firstUnansweredIndex >= 0 ? firstUnansweredIndex : Math.max(0, questions.length - 1);
 
         // Resume at the first unanswered question in canonical order
-        let nextIndex = unansweredIdx;
+        const nextIndex = unansweredIdx;
 
         setCurrentIndex(nextIndex);
 

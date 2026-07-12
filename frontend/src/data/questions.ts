@@ -9,6 +9,7 @@ export const questions: Question[] = [
     agentTarget: "context",
     allowOther: false,
     options: [],
+    inputType: 'age',
   },
   {
     id: 1,

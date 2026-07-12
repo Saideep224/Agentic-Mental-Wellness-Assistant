@@ -16,6 +16,7 @@ export interface Question {
   agentTarget: string;
   options: QuestionOption[];
   allowOther: boolean;
+  inputType?: 'age' | 'number' | 'text';
 }
 
 // ============================================

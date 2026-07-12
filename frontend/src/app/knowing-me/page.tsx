@@ -108,6 +108,7 @@ export default function KnowingMePage() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const fetchAnswers = useCallback(async (token: string) => {
     setIsLoading(true);
     setShowLoader(true);

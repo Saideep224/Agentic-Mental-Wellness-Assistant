@@ -30,11 +30,17 @@ interface SequentialQuestionnaireProps {
 
 // ─── Color helpers (same palette as Knowing Me page) ────────────────
 const CATEGORY_COLORS: Record<string, { accent: string; glow: string; bg: string }> = {
-  background: { accent: 'rgb(59, 130, 246)', glow: 'rgba(59, 130, 246, 0.15)', bg: 'rgba(59, 130, 246, 0.06)' },
-  personality: { accent: 'rgb(56, 189, 248)', glow: 'rgba(56, 189, 248, 0.15)', bg: 'rgba(56, 189, 248, 0.06)' },
-  emotion: { accent: 'rgb(167, 139, 250)', glow: 'rgba(167, 139, 250, 0.15)', bg: 'rgba(167, 139, 250, 0.06)' },
-  hobbies: { accent: 'rgb(52, 211, 153)', glow: 'rgba(52, 211, 153, 0.15)', bg: 'rgba(52, 211, 153, 0.06)' },
-  communication: { accent: 'rgb(244, 114, 182)', glow: 'rgba(244, 114, 182, 0.15)', bg: 'rgba(244, 114, 182, 0.06)' },
+  background: { accent: '#3b82f6', glow: 'rgba(59, 130, 246, 0.15)', bg: 'rgba(59, 130, 246, 0.06)' },
+  personality: { accent: '#38bdf8', glow: 'rgba(56, 189, 248, 0.15)', bg: 'rgba(56, 189, 248, 0.06)' },
+  emotion: { accent: '#a78bfa', glow: 'rgba(167, 139, 250, 0.15)', bg: 'rgba(167, 139, 250, 0.06)' },
+  hobbies: { accent: '#34d399', glow: 'rgba(52, 211, 153, 0.15)', bg: 'rgba(52, 211, 153, 0.06)' },
+  communication: { accent: '#f472b6', glow: 'rgba(244, 114, 182, 0.15)', bg: 'rgba(244, 114, 182, 0.06)' },
+};
+
+const DEFAULT_QUESTION_COLORS = {
+  accent: '#38bdf8',
+  glow: 'rgba(56, 189, 248, 0.25)',
+  bg: 'rgba(56, 189, 248, 0.08)'
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -87,7 +93,7 @@ export default function SequentialQuestionnaire({
 
   const currentQuestion = questions[currentIndex];
   const totalQuestions = questions.length;
-  const colors = CATEGORY_COLORS[currentQuestion?.category] || CATEGORY_COLORS.background;
+  const colors = (currentQuestion && CATEGORY_COLORS[currentQuestion.category]) || DEFAULT_QUESTION_COLORS;
 
   // Load saved answer when navigating to a question
   useEffect(() => {
@@ -154,7 +160,7 @@ export default function SequentialQuestionnaire({
     if (!q) return 'Invalid question';
 
     // Age question (Q27) — special validation
-    if (q.id === 27) {
+    if (q.inputType === 'age') {
       const ageStr = customText.trim();
       if (!ageStr) return 'Please enter your age.';
       if (!/^\d+$/.test(ageStr)) return 'Please enter a valid age as a whole number.';
@@ -172,7 +178,7 @@ export default function SequentialQuestionnaire({
   };
 
   const hasAnswerContent = (): boolean => {
-    if (currentQuestion?.id === 27) return customText.trim().length > 0;
+    if (currentQuestion?.inputType === 'age') return customText.trim().length > 0;
     return selectedOptions.length > 0 || customText.trim().length > 0;
   };
 
@@ -204,8 +210,8 @@ export default function SequentialQuestionnaire({
       const answerPayload = {
         questionId: q.id,
         category: q.category,
-        selectedAnswers: q.id === 27 ? [] : selectedOptions,
-        customAnswer: q.id === 27 ? customText.trim() : (customText.trim() || undefined),
+        selectedAnswers: q.inputType === 'age' ? [] : selectedOptions,
+        customAnswer: q.inputType === 'age' ? customText.trim() : (customText.trim() || undefined),
       };
 
       // Save to backend (handles upsert + profile field sync)
@@ -393,6 +399,26 @@ export default function SequentialQuestionnaire({
   const q = currentQuestion;
   if (!q) return null;
 
+  const isAgeQuestion = q.inputType === 'age' || q.id === 27;
+
+  // Next is disabled if saving, or if it is age question and the age input is invalid
+  const isNextDisabled = () => {
+    if (isSaving) return true;
+    if (isAgeQuestion) {
+      const ageStr = customText.trim();
+      if (!ageStr) return true;
+      if (!/^\d+$/.test(ageStr)) return true;
+      const ageVal = parseInt(ageStr, 10);
+      if (ageVal < 1 || ageVal > 120) return true;
+    }
+    return false;
+  };
+
+  const nextButtonDisabled = isNextDisabled();
+
+  // Short questions are centered vertically with translation/padding to sit slightly above center
+  const isShortQuestion = isAgeQuestion || q.options.length <= 4;
+
   const positionProgress = ((currentIndex + 1) / totalQuestions) * 100;
   const categoryLabel = CATEGORY_LABELS[q.category] || q.categoryLabel;
 
@@ -461,7 +487,7 @@ export default function SequentialQuestionnaire({
 
       {/* ── Question Content ───────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-6 sm:py-10 overscroll-contain bg-[#040614]">
-        <div className="max-w-lg mx-auto">
+        <div className={`max-w-lg mx-auto ${isShortQuestion ? 'min-h-full flex flex-col justify-center pb-20 sm:pb-28' : ''}`}>
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
               key={q.id}
@@ -492,7 +518,7 @@ export default function SequentialQuestionnaire({
               </div>
 
               {/* Answer input */}
-              {q.id === 27 ? (
+              {isAgeQuestion ? (
                 /* ── Age: numeric input ── */
                 <div className="space-y-2">
                   <input
@@ -651,15 +677,17 @@ export default function SequentialQuestionnaire({
           </button>
 
           <motion.button
-            whileHover={{ scale: isSaving ? 1 : 1.02 }}
-            whileTap={{ scale: isSaving ? 1 : 0.98 }}
+            whileHover={{ scale: nextButtonDisabled ? 1 : 1.02 }}
+            whileTap={{ scale: nextButtonDisabled ? 1 : 0.98 }}
             onClick={goNext}
-            disabled={isSaving}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 cursor-pointer disabled:opacity-60"
+            disabled={nextButtonDisabled}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 cursor-pointer"
             style={{
               background: `linear-gradient(135deg, ${colors.accent}, ${colors.accent}cc)`,
               color: 'var(--bg-primary)',
-              boxShadow: `0 0 16px ${colors.glow}`,
+              boxShadow: nextButtonDisabled ? 'none' : `0 0 16px ${colors.glow}`,
+              opacity: nextButtonDisabled ? 0.4 : 1,
+              cursor: nextButtonDisabled ? 'not-allowed' : 'pointer',
             }}
           >
             {isSaving ? (

@@ -16,7 +16,7 @@ type AuthMode = 'login' | 'register';
 export default function LoginPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading, login: authLogin } = useAuth();
-  const [mode, setMode] = useState<AuthMode>('login');
+  const [mode, setMode] = useState<AuthMode>('register');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');

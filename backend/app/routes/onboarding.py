@@ -45,6 +45,7 @@ QUESTION_TEXT_BY_ID = {
     24: "Your social battery lately?",
     25: "What do you wish people understood about you?",
     26: "What is your gender?",
+    27: "What is your age?",
 }
 
 
@@ -140,7 +141,7 @@ async def save_onboarding_answer(
         if val == "other" and answer.custom_answer:
             val = answer.custom_answer
             
-    if val and answer.question_id in (1, 2, 3, 4, 5, 26):
+    if val and answer.question_id in (1, 2, 3, 4, 5, 26, 27):
         from app.services.profile_service import profile_service
         profile_map = {
             1: "profession",
@@ -148,7 +149,8 @@ async def save_onboarding_answer(
             3: "current_challenge",
             4: "advice_preference",
             5: "primary_support_need",
-            26: "gender"
+            26: "gender",
+            27: "age"
         }
         field_name = profile_map[answer.question_id]
         await profile_service.update_profile(db, current_user.id, {field_name: val})
@@ -169,11 +171,11 @@ async def submit_onboarding(
     Accept 26 questions with selected answers, store them in the DB,
     and trigger the background process to analyze them and create the initial EmotionalProfile.
     """
-    # 1. Validation check (must be exactly 26 answers)
-    if len(body.answers) != 26:
+    # 1. Validation check (must be 26 or 27 answers)
+    if len(body.answers) not in (26, 27):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Expected exactly 26 answers, got {len(body.answers)}",
+            detail=f"Expected 26 or 27 answers, got {len(body.answers)}",
         )
 
     # 2. Upsert responses so edits update existing answers without duplicates.
@@ -235,6 +237,8 @@ async def submit_onboarding(
                 profile_updates["primary_support_need"] = val
             elif ans.question_id == 26:
                 profile_updates["gender"] = val
+            elif ans.question_id == 27:
+                profile_updates["age"] = val
 
     if profile_updates:
         from app.services.profile_service import profile_service

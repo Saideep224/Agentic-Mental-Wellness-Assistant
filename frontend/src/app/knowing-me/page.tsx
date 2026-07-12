@@ -14,11 +14,11 @@ import { getToken, submitOnboarding, getOnboardingAnswers, upsertQuestionAnswers
 import { useAuth } from '@/providers/AuthProvider';
 
 const CATEGORIES = [
-  { id: 'background', label: 'About You', emoji: '👤', color: 'blue', range: [1, 5] },
-  { id: 'personality', label: 'Personality & Behavior', emoji: '🧠', color: 'cyan', range: [6, 10] },
-  { id: 'emotion', label: 'Emotional State & Stress', emoji: '💭', color: 'purple', range: [11, 15] },
-  { id: 'hobbies', label: 'Hobbies & Comfort Zone', emoji: '🌿', color: 'emerald', range: [16, 20] },
-  { id: 'communication', label: 'Communication & Preferences', emoji: '💬', color: 'pink', range: [21, 25] },
+  { id: 'background', label: 'About You', emoji: '👤', color: 'blue' },
+  { id: 'personality', label: 'Personality & Behavior', emoji: '🧠', color: 'cyan' },
+  { id: 'emotion', label: 'Emotional State & Stress', emoji: '💭', color: 'purple' },
+  { id: 'hobbies', label: 'Hobbies & Comfort Zone', emoji: '🌿', color: 'emerald' },
+  { id: 'communication', label: 'Communication & Preferences', emoji: '💬', color: 'pink' },
 ];
 
 const COLOR_MAP: Record<string, { border: string; glow: string; bg: string; text: string }> = {
@@ -195,6 +195,25 @@ export default function KnowingMePage() {
     const startTime = Date.now();
 
     try {
+      // Validate Age question (ID 27) if present in edited answers
+      const ageAnswer = editedAnswers.find(a => a.question_id === 27);
+      if (ageAnswer) {
+        const ageStr = (ageAnswer.custom_answer || '').trim();
+        if (!ageStr) {
+          throw new Error("Age is required.");
+        }
+        if (!/^\d+$/.test(ageStr)) {
+          throw new Error("Please enter a valid age as a whole number.");
+        }
+        const ageVal = parseInt(ageStr, 10);
+        if (ageVal <= 0) {
+          throw new Error("Age must be greater than zero.");
+        }
+        if (ageVal > 120) {
+          throw new Error("Please enter a valid age.");
+        }
+      }
+
       const completeAnswers = questions.map(q => {
         const edited = editedAnswers.find(a => a.question_id === q.id);
         if (edited) {
@@ -395,7 +414,7 @@ export default function KnowingMePage() {
               const colorSet = COLOR_MAP[cat.color];
               const isExpanded = expandedCategories.has(cat.id);
               const isEditing = editingCategory === cat.id;
-              const catQuestions = questions.filter(q => q.id >= cat.range[0] && q.id <= cat.range[1]);
+              const catQuestions = questions.filter(q => q.category === cat.id);
                 const catAnswered = catQuestions.filter(q => {
                   const ans = editedAnswers.find(a => a.question_id === q.id);
                   return ans && ((ans.selected_answers && ans.selected_answers.length > 0) || Boolean(ans.custom_answer?.trim()));
@@ -483,97 +502,115 @@ export default function KnowingMePage() {
                             const selectedLabels = q.options
                               .filter(opt => selectedVals.includes(opt.value))
                               .map(opt => `${opt.emoji} ${opt.label}`);
-                            if (selectedVals.includes('other') && customVal) {
+                            if (q.id === 27 && customVal) {
+                              selectedLabels.push(`🎂 ${customVal} years old`);
+                            } else if (selectedVals.includes('other') && customVal) {
                               selectedLabels.push(`✏️ ${customVal}`);
                             }
+
+                            const displayNum = questions.indexOf(q) + 1;
 
                             return (
                               <div key={q.id} className="space-y-2 pb-4 border-b border-white/[0.03] last:border-0 last:pb-0">
                                 <p className="text-sm font-semibold text-slate-200">
                                   <span className="text-xs font-bold mr-2 px-1.5 py-0.5 rounded" style={{ background: colorSet.bg, color: colorSet.text }}>
-                                    Q{q.id}
+                                    Q{displayNum}
                                   </span>
                                   {q.text}
                                 </p>
 
                                 {isEditing ? (
                                   <div className="space-y-2 pt-1">
-                                    <div className="grid grid-cols-1 gap-1.5">
-                                      {q.options.map(opt => {
-                                        const isSelected = selectedVals.includes(opt.value);
-                                        return (
-                                          <label
-                                            key={opt.value}
-                                            onClick={() => handleToggleOption(q.id, opt.value)}
-                                            className="flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition-all duration-200 group"
-                                            style={{
-                                              background: isSelected ? colorSet.bg : 'rgba(255, 255, 255, 0.02)',
-                                              border: `1px solid ${isSelected ? colorSet.border : 'rgba(255, 255, 255, 0.04)'}`,
-                                            }}
-                                          >
-                                            <div
-                                              className="w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all duration-200"
+                                    {q.id === 27 ? (
+                                      <div className="flex flex-col gap-1.5">
+                                        <input
+                                          type="text"
+                                          pattern="\d*"
+                                          inputMode="numeric"
+                                          value={customVal}
+                                          onChange={(e) => handleCustomTextChange(q.id, e.target.value)}
+                                          placeholder="Enter your age (e.g. 21)"
+                                          className="w-full px-3 py-2 text-xs rounded-lg glass-input text-white"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="grid grid-cols-1 gap-1.5">
+                                        {q.options.map(opt => {
+                                          const isSelected = selectedVals.includes(opt.value);
+                                          return (
+                                            <label
+                                              key={opt.value}
+                                              onClick={() => handleToggleOption(q.id, opt.value)}
+                                              className="flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition-all duration-200 group"
                                               style={{
-                                                borderColor: isSelected ? colorSet.text : 'rgba(255, 255, 255, 0.15)',
-                                                background: isSelected ? colorSet.text : 'transparent',
+                                                background: isSelected ? colorSet.bg : 'rgba(255, 255, 255, 0.02)',
+                                                border: `1px solid ${isSelected ? colorSet.border : 'rgba(255, 255, 255, 0.04)'}`,
                                               }}
                                             >
-                                              {isSelected && <Check size={10} className="text-white" />}
-                                            </div>
-                                            <span className="text-sm">{opt.emoji}</span>
-                                            <span
-                                              className="text-xs font-medium"
-                                              style={{ color: isSelected ? colorSet.text : 'var(--text-secondary)' }}
-                                            >
-                                              {opt.label}
-                                            </span>
-                                          </label>
-                                        );
-                                      })}
+                                              <div
+                                                className="w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all duration-200"
+                                                style={{
+                                                  borderColor: isSelected ? colorSet.text : 'rgba(255, 255, 255, 0.15)',
+                                                  background: isSelected ? colorSet.text : 'transparent',
+                                                }}
+                                              >
+                                                {isSelected && <Check size={10} className="text-white" />}
+                                              </div>
+                                              <span className="text-sm">{opt.emoji}</span>
+                                              <span
+                                                className="text-xs font-medium"
+                                                style={{ color: isSelected ? colorSet.text : 'var(--text-secondary)' }}
+                                              >
+                                                {opt.label}
+                                              </span>
+                                            </label>
+                                          );
+                                        })}
 
-                                      {q.allowOther && (
-                                        <div className="space-y-1.5">
-                                          <label
-                                            onClick={() => handleToggleOption(q.id, 'other')}
-                                            className="flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition-all duration-200"
-                                            style={{
-                                              background: selectedVals.includes('other') ? colorSet.bg : 'rgba(255, 255, 255, 0.02)',
-                                              border: `1px solid ${selectedVals.includes('other') ? colorSet.border : 'rgba(255, 255, 255, 0.04)'}`,
-                                            }}
-                                          >
-                                            <div
-                                              className="w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all duration-200"
+                                        {q.allowOther && (
+                                          <div className="space-y-1.5">
+                                            <label
+                                              onClick={() => handleToggleOption(q.id, 'other')}
+                                              className="flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition-all duration-200"
                                               style={{
-                                                borderColor: selectedVals.includes('other') ? colorSet.text : 'rgba(255, 255, 255, 0.15)',
-                                                background: selectedVals.includes('other') ? colorSet.text : 'transparent',
+                                                background: selectedVals.includes('other') ? colorSet.bg : 'rgba(255, 255, 255, 0.02)',
+                                                border: `1px solid ${selectedVals.includes('other') ? colorSet.border : 'rgba(255, 255, 255, 0.04)'}`,
                                               }}
                                             >
-                                              {selectedVals.includes('other') && <Check size={10} className="text-white" />}
-                                            </div>
-                                            <span className="text-sm">✏️</span>
-                                            <span className="text-xs font-medium" style={{ color: selectedVals.includes('other') ? colorSet.text : 'var(--text-secondary)' }}>
-                                              Something else...
-                                            </span>
-                                          </label>
+                                              <div
+                                                className="w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all duration-200"
+                                                style={{
+                                                  borderColor: selectedVals.includes('other') ? colorSet.text : 'rgba(255, 255, 255, 0.15)',
+                                                  background: selectedVals.includes('other') ? colorSet.text : 'transparent',
+                                                }}
+                                              >
+                                                {selectedVals.includes('other') && <Check size={10} className="text-white" />}
+                                              </div>
+                                              <span className="text-sm">✏️</span>
+                                              <span className="text-xs font-medium" style={{ color: selectedVals.includes('other') ? colorSet.text : 'var(--text-secondary)' }}>
+                                                Something else...
+                                              </span>
+                                            </label>
 
-                                          {selectedVals.includes('other') && (
-                                            <motion.div
-                                              initial={{ opacity: 0, height: 0 }}
-                                              animate={{ opacity: 1, height: 'auto' }}
-                                              className="pl-9"
-                                            >
-                                              <input
-                                                type="text"
-                                                value={customVal}
-                                                onChange={(e) => handleCustomTextChange(q.id, e.target.value)}
-                                                placeholder="Type your own answer..."
-                                                className="w-full px-3 py-2 text-xs rounded-lg glass-input"
-                                              />
-                                            </motion.div>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
+                                            {selectedVals.includes('other') && (
+                                              <motion.div
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: 'auto' }}
+                                                className="pl-9"
+                                              >
+                                                <input
+                                                  type="text"
+                                                  value={customVal}
+                                                  onChange={(e) => handleCustomTextChange(q.id, e.target.value)}
+                                                  placeholder="Type your own answer..."
+                                                  className="w-full px-3 py-2 text-xs rounded-lg glass-input"
+                                                />
+                                              </motion.div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 ) : (
                                   <div className="flex flex-wrap gap-1.5 pt-1 pl-1">

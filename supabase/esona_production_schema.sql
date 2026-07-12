@@ -28,7 +28,7 @@ alter table public.profiles add column if not exists last_login timestamptz;
 create table if not exists public.user_question_answers (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(user_id) on delete cascade,
-  question_id integer not null check (question_id between 1 and 26),
+  question_id integer not null check (question_id between 1 and 27),
   question_text text not null default '',
   selected_answer jsonb not null default '[]'::jsonb,
   category text not null,

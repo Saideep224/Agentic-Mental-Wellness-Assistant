@@ -265,18 +265,34 @@ export default function OnboardingPage() {
 
         {/* Options */}
         <div className="space-y-3 mb-4">
-          {currentQuestion.options.map((option, i) => (
-            <OptionCard
-              key={option.value}
-              option={option}
-              index={i}
-              isSelected={selectedOptions.includes(option.value)}
-              onSelect={() => selectOption(option.value)}
-            />
-          ))}
+          {currentQuestion.id === 27 ? (
+            <div className="flex flex-col gap-2">
+              <input
+                type="text"
+                pattern="\d*"
+                inputMode="numeric"
+                value={customText}
+                onChange={(e) => {
+                  setCustomText(e.target.value);
+                }}
+                placeholder="Enter your age (e.g. 21)"
+                className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition-all text-center text-lg font-semibold"
+              />
+            </div>
+          ) : (
+            currentQuestion.options.map((option, i) => (
+              <OptionCard
+                key={option.value}
+                option={option}
+                index={i}
+                isSelected={selectedOptions.includes(option.value)}
+                onSelect={() => selectOption(option.value)}
+              />
+            ))
+          )}
 
           {/* Other option */}
-          {currentQuestion.allowOther && (
+          {currentQuestion.id !== 27 && currentQuestion.allowOther && (
             <OptionCard
               option={{ label: "Something else...", value: "other", emoji: "✏️" }}
               index={currentQuestion.options.length}
@@ -287,11 +303,13 @@ export default function OnboardingPage() {
         </div>
 
         {/* Custom text input */}
-        <OtherInput
-          isVisible={selectedOptions.includes('other')}
-          value={customText}
-          onChange={setCustomText}
-        />
+        {currentQuestion.id !== 27 && (
+          <OtherInput
+            isVisible={selectedOptions.includes('other')}
+            value={customText}
+            onChange={setCustomText}
+          />
+        )}
 
         {/* Error */}
         <AnimatePresence>

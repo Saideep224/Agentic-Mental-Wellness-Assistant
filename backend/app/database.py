@@ -268,9 +268,9 @@ async def create_tables() -> None:
                 except Exception as drop_err:
                     logger.warning(f"Could not drop question_id constraint: {drop_err}")
                 try:
-                    await conn.execute(text("ALTER TABLE user_question_answers ADD CONSTRAINT user_question_answers_question_id_check CHECK (question_id BETWEEN 1 AND 26);"))
+                    await conn.execute(text("ALTER TABLE user_question_answers ADD CONSTRAINT user_question_answers_question_id_check CHECK (question_id BETWEEN 1 AND 27);"))
                 except Exception as add_err:
-                    logger.warning(f"Could not add question_id constraint (1..26): {add_err}")
+                    logger.warning(f"Could not add question_id constraint (1..27): {add_err}")
             else:
                 # SQLite: try/except each individually since SQLite doesn't support IF NOT EXISTS for columns
                 _sqlite_add_cols = [

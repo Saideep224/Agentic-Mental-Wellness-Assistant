@@ -98,18 +98,8 @@ export function useOnboarding() {
         });
         const unansweredIdx = firstUnansweredIndex >= 0 ? firstUnansweredIndex : Math.max(0, questions.length - 1);
 
-        // Fetch onboarding step from backend status
+        // Resume at the first unanswered question in canonical order
         let nextIndex = unansweredIdx;
-        try {
-          const savedStatus = await api.getOnboardingStatus(token);
-          const savedStep = savedStatus.onboarding_step || 1;
-          const savedStepIdx = savedStep - 1;
-          if (savedStepIdx > 0 && savedStepIdx < questions.length) {
-            nextIndex = savedStepIdx;
-          }
-        } catch (statusErr) {
-          console.warn('[Onboarding] Could not load onboarding status, falling back to unanswered index:', statusErr);
-        }
 
         setCurrentIndex(nextIndex);
 
@@ -244,7 +234,31 @@ export function useOnboarding() {
 
   const goToNext = useCallback(() => {
     const hasCustomText = customText.trim().length > 0;
-    if (selectedOptions.length === 0 && !hasCustomText) return;
+    
+    // Validate Age question (ID 27)
+    if (currentQuestion.id === 27) {
+      const ageStr = customText.trim();
+      if (!ageStr) {
+        setError("Age is required.");
+        return;
+      }
+      if (!/^\d+$/.test(ageStr)) {
+        setError("Please enter a valid age as a whole number.");
+        return;
+      }
+      const ageVal = parseInt(ageStr, 10);
+      if (ageVal <= 0) {
+        setError("Age must be greater than zero.");
+        return;
+      }
+      if (ageVal > 120) {
+        setError("Please enter a valid age.");
+        return;
+      }
+      setError(null);
+    } else {
+      if (selectedOptions.length === 0 && !hasCustomText) return;
+    }
 
     const response: OnboardingResponse = {
       questionId: currentQuestion.id,

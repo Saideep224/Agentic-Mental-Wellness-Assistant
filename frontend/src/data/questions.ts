@@ -2,6 +2,15 @@ import { Question } from '@/types';
 
 export const questions: Question[] = [
   {
+    id: 27,
+    text: "What is your age?",
+    category: "background",
+    categoryLabel: "About You",
+    agentTarget: "context",
+    allowOther: false,
+    options: [],
+  },
+  {
     id: 1,
     text: "What is your profession or current occupation?",
     category: "background",

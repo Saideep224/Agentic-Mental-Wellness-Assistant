@@ -23,94 +23,95 @@ const SCENE_CONFIGS: Record<number, {
   fogOpacity: number;
   particlesCount: number;
   particlesColor: string;
+  glowColor: string;
   showRays: boolean;
   raysOpacity: number;
 }> = {
-  // 0: INTRO - Deep dark underwater, almost black/navy, subtle light rays from top
   0: {
     bg: 'linear-gradient(to bottom, #02040b 0%, #010205 100%)',
     glow: 'radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.04) 0%, transparent 70%)',
     glowOpacity: 0.3,
     fogOpacity: 0.15,
-    particlesCount: 20,
-    particlesColor: 'rgba(34, 211, 238, 0.08)',
+    particlesCount: 25,
+    particlesColor: 'rgba(103, 232, 249, 0.8)', // Cyan-300
+    glowColor: 'rgba(56, 189, 248, 0.85)',
     showRays: true,
     raysOpacity: 0.15,
   },
-  // 1: THOUGHTS - Almost black / floating particles representing hidden thoughts
   1: {
     bg: 'linear-gradient(to bottom, #010204 0%, #000001 100%)',
     glow: 'radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.01) 0%, transparent 50%)',
     glowOpacity: 0.05,
     fogOpacity: 0.1,
-    particlesCount: 48, 
-    particlesColor: 'rgba(255, 255, 255, 0.06)',
+    particlesCount: 50, 
+    particlesColor: 'rgba(255, 255, 255, 0.75)', // White
+    glowColor: 'rgba(255, 255, 255, 0.6)',
     showRays: false,
     raysOpacity: 0,
   },
-  // 2: LISTENING - Blue light slowly appears
   2: {
     bg: 'linear-gradient(to bottom, #010512 0%, #010205 100%)',
     glow: 'radial-gradient(circle at 50% 50%, rgba(34, 211, 238, 0.06) 0%, transparent 70%)',
     glowOpacity: 0.45,
     fogOpacity: 0.2,
-    particlesCount: 24,
-    particlesColor: 'rgba(34, 211, 238, 0.08)',
+    particlesCount: 30,
+    particlesColor: 'rgba(103, 232, 249, 0.8)', // Cyan-300
+    glowColor: 'rgba(56, 189, 248, 0.85)',
     showRays: true,
     raysOpacity: 0.18,
   },
-  // 3: EMOTION - Soft caustics and blue glows appearing
   3: {
     bg: 'linear-gradient(to bottom, #02071a 0%, #010209 100%)',
     glow: 'radial-gradient(circle at 50% 40%, rgba(34, 211, 238, 0.08) 0%, rgba(123, 140, 255, 0.03) 60%, transparent 100%)',
     glowOpacity: 0.65,
     fogOpacity: 0.25,
-    particlesCount: 28,
-    particlesColor: 'rgba(34, 211, 238, 0.1)',
+    particlesCount: 35,
+    particlesColor: 'rgba(103, 232, 249, 0.85)', // Cyan-300
+    glowColor: 'rgba(56, 189, 248, 0.9)',
     showRays: true,
     raysOpacity: 0.22,
   },
-  // 4: MEMORY - Fog / blurry lights
   4: {
     bg: 'linear-gradient(to bottom, #010410 0%, #000105 100%)',
     glow: 'radial-gradient(circle at 40% 60%, rgba(167, 139, 250, 0.05) 0%, rgba(56, 189, 248, 0.03) 50%, transparent 100%)',
     glowOpacity: 0.5,
     fogOpacity: 0.55, 
-    particlesCount: 15,
-    particlesColor: 'rgba(167, 139, 250, 0.06)',
+    particlesCount: 20,
+    particlesColor: 'rgba(196, 181, 253, 0.8)', // Purple-300
+    glowColor: 'rgba(167, 139, 250, 0.8)',
     showRays: false,
     raysOpacity: 0,
   },
-  // 5: KG - Pure dark background + glowing graph
   5: {
     bg: 'linear-gradient(to bottom, #010103 0%, #000000 100%)',
     glow: 'radial-gradient(circle at 50% 50%, transparent 100%)',
     glowOpacity: 0,
     fogOpacity: 0.05,
-    particlesCount: 0, 
-    particlesColor: 'transparent',
+    particlesCount: 20, 
+    particlesColor: 'rgba(103, 232, 249, 0.75)', // Cyan-300
+    glowColor: 'rgba(56, 189, 248, 0.8)',
     showRays: false,
     raysOpacity: 0,
   },
-  // 6: PERSONALITY - Soft blue-purple atmosphere
   6: {
     bg: 'linear-gradient(to bottom, #020516 0%, #01020b 100%)',
     glow: 'radial-gradient(circle at 50% 30%, rgba(123, 140, 255, 0.07) 0%, rgba(244, 114, 182, 0.02) 60%, transparent 100%)',
     glowOpacity: 0.55,
     fogOpacity: 0.25,
-    particlesCount: 22,
-    particlesColor: 'rgba(123, 140, 255, 0.08)',
+    particlesCount: 30,
+    particlesColor: 'rgba(165, 180, 252, 0.8)', // Indigo-300
+    glowColor: 'rgba(129, 140, 248, 0.8)',
     showRays: true,
     raysOpacity: 0.15,
   },
-  // 7: FINAL - Rise towards moonlit ocean surface
   7: {
     bg: 'linear-gradient(to bottom, #030e2a 0%, #010410 100%)',
     glow: 'radial-gradient(circle at 50% -10%, rgba(56, 189, 248, 0.18) 0%, rgba(34, 211, 238, 0.06) 50%, transparent 100%)',
     glowOpacity: 0.75,
     fogOpacity: 0.15,
-    particlesCount: 32,
-    particlesColor: 'rgba(34, 211, 238, 0.12)',
+    particlesCount: 40,
+    particlesColor: 'rgba(103, 232, 249, 0.95)', // Cyan-300
+    glowColor: 'rgba(34, 211, 238, 0.9)',
     showRays: true,
     raysOpacity: 0.35, 
   },
@@ -122,13 +123,14 @@ export default function AmbientBackground({ activeScene }: AmbientBackgroundProp
 
   useEffect(() => {
     // Generate particles on client to prevent SSR/hydration mismatch
-    const generated = Array.from({ length: 50 }).map((_, i) => ({
+    // Increase generated count to 60 for beautiful stellar density
+    const generated = Array.from({ length: 60 }).map((_, i) => ({
       id: i,
-      size: Math.random() * 4 + 1.5, // 1.5px to 5.5px (tiny floating particles)
+      size: Math.random() * 3.5 + 1.2, // 1.2px to 4.7px size
       left: `${Math.random() * 100}%`,
-      top: `${Math.random() * 100}%`,
-      delay: Math.random() * 5,
-      duration: Math.random() * 12 + 8, // 8s to 20s
+      top: '105%', // Always start from off-screen bottom
+      delay: Math.random() * 16, // Delay spread matching duration to distribute on load
+      duration: Math.random() * 10 + 10, // Float time: 10s to 20s
     }));
     setParticles(generated);
   }, []);
@@ -137,6 +139,26 @@ export default function AmbientBackground({ activeScene }: AmbientBackgroundProp
 
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
+      {/* CSS-based keyframe animations for ultra-smooth rendering & negative delay support */}
+      <style>{`
+        @keyframes floatSpaceStars {
+          0% {
+            transform: translateY(0) scale(0.8);
+            opacity: 0;
+          }
+          10% {
+            opacity: 0.85;
+          }
+          90% {
+            opacity: 0.85;
+          }
+          100% {
+            transform: translateY(-112vh) scale(1.1);
+            opacity: 0;
+          }
+        }
+      `}</style>
+
       {/* Background gradient transition */}
       <motion.div
         className="absolute inset-0"
@@ -191,7 +213,7 @@ export default function AmbientBackground({ activeScene }: AmbientBackgroundProp
         transition={{ duration: 1.2 }}
       />
 
-      {/* Floating Particles */}
+      {/* Floating Space Particles */}
       {!shouldReduceMotion && (
         <div className="absolute inset-0">
           {particles.map((p, idx) => {
@@ -199,27 +221,18 @@ export default function AmbientBackground({ activeScene }: AmbientBackgroundProp
             if (!isVisible) return null;
 
             return (
-              <motion.div
+              <div
                 key={p.id}
-                className="absolute rounded-full blur-[0.5px]"
+                className="absolute rounded-full transition-colors duration-1000"
                 style={{
-                  width: p.size,
-                  height: p.size,
+                  width: `${p.size}px`,
+                  height: `${p.size}px`,
                   left: p.left,
-                  top: p.top,
+                  top: '105%',
                   background: config.particlesColor,
-                  boxShadow: `0 0 6px ${config.particlesColor}`,
-                }}
-                animate={{
-                  y: [0, -70, 0],
-                  x: [0, Math.random() * 24 - 12, 0],
-                  opacity: [0.1, 0.45, 0.1],
-                }}
-                transition={{
-                  duration: p.duration,
-                  delay: p.delay,
-                  repeat: Infinity,
-                  ease: 'easeInOut',
+                  boxShadow: `0 0 6px ${config.glowColor}, 0 0 12px rgba(56, 189, 248, 0.35)`,
+                  animation: `floatSpaceStars ${p.duration}s linear infinite`,
+                  animationDelay: `-${p.delay}s`, // Instantly initializes particles distributed in height
                 }}
               />
             );

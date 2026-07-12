@@ -62,6 +62,7 @@ export default function ChatPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [skipLoading, setSkipLoading] = useState(false);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [dismissedSuggestions, setDismissedSuggestions] = useState<string[]>([]);
 
@@ -112,7 +113,7 @@ export default function ChatPage() {
     setMounted(true);
   }, []);
 
-  const { user, refreshUser } = useAuth();
+  const { user, token, refreshUser } = useAuth();
 
   const [tempSystemEvent, setTempSystemEvent] = useState<{ text: string; id: string } | null>(null);
   const [staggerTypingAgentId, setStaggerTypingAgentId] = useState<string | null>(null);
@@ -206,16 +207,16 @@ export default function ChatPage() {
 
   // Load conversations — hide page loader only after data arrives (min 1000ms)
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || !token) return;
     const t0 = Date.now();
     loadConversations().finally(() => {
       const elapsed = Date.now() - t0;
       const remaining = Math.max(0, 1000 - elapsed);
       setTimeout(() => setIsLoadingPage(false), remaining);
     });
-    // Only run once on mount — subsequent chat switches don't re-show the page loader
+    // Only run once when token becomes available — subsequent chat switches don't re-show the page loader
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted]);
+  }, [mounted, token]);
 
 
 
@@ -231,6 +232,7 @@ export default function ChatPage() {
     setSkipLoading(true);
     try {
       await skipOnboarding(token);
+      setWelcomeDismissed(true);
       
       // Load conversations (which automatically creates the Buddy conversation if missing)
       const convos = await api.getConversations(token);
@@ -402,7 +404,7 @@ export default function ChatPage() {
           {/* Messages area */}
           <div className="flex-1 overflow-hidden">
             <ChatContainer>
-              {messages.length === 0 && !isLoading ? (
+              {!user?.onboardingCompleted && !welcomeDismissed && messages.length === 0 && !isLoading ? (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}

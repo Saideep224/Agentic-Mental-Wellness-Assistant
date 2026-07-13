@@ -6,9 +6,10 @@ import { Question } from '@/types';
 interface QuestionCardProps {
   question: Question;
   direction: number;
+  displayNumber: number;
 }
 
-export default function QuestionCard({ question, direction }: QuestionCardProps) {
+export default function QuestionCard({ question, direction, displayNumber }: QuestionCardProps) {
   return (
     <motion.div
       key={question.id}
@@ -31,7 +32,7 @@ export default function QuestionCard({ question, direction }: QuestionCardProps)
           {question.categoryLabel}
         </div>
         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          Q{question.id}
+          Q{displayNumber}
         </span>
       </div>
 

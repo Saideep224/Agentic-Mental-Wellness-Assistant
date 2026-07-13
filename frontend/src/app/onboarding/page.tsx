@@ -15,12 +15,46 @@ import EsonaLogo from '@/components/layout/EsonaLogo';
 import { getToken, getStoredUser, setStoredUser, getOnboardingStatus } from '@/api';
 import FullPageTransition from '@/components/layout/FullPageTransition';
 
+// Category colors for atmospheric focus glows
+const CATEGORY_COLORS: Record<string, { accent: string; glow: string; bg: string }> = {
+  background: { accent: '#3b82f6', glow: 'rgba(59, 130, 246, 0.20)', bg: 'rgba(59, 130, 246, 0.08)' },
+  personality: { accent: '#38bdf8', glow: 'rgba(56, 189, 248, 0.20)', bg: 'rgba(56, 189, 248, 0.08)' },
+  emotion: { accent: '#a78bfa', glow: 'rgba(167, 139, 250, 0.20)', bg: 'rgba(167, 139, 250, 0.08)' },
+  hobbies: { accent: '#34d399', glow: 'rgba(52, 211, 153, 0.20)', bg: 'rgba(52, 211, 153, 0.08)' },
+  communication: { accent: '#f472b6', glow: 'rgba(244, 114, 182, 0.20)', bg: 'rgba(244, 114, 182, 0.08)' },
+};
+
+const DEFAULT_COLORS = { accent: '#38bdf8', glow: 'rgba(56, 189, 248, 0.25)', bg: 'rgba(56, 189, 248, 0.08)' };
+
+// Helper text based on question type / configuration
+const getHelperText = (q: any) => {
+  if (q.inputType === 'age') {
+    return 'Enter your age.';
+  }
+  if (q.inputType === 'text') {
+    return "Share as much or as little as you'd like.";
+  }
+  
+  // Single select questions
+  const singleSelectIds = [4, 7, 24, 26];
+  if (singleSelectIds.includes(q.id)) {
+    return 'Choose the option that feels closest to you.';
+  }
+  
+  if (q.allowOther) {
+    return 'Select one or more choices, or add your own answer.';
+  }
+  
+  return 'Select one or more choices.';
+};
+
 export default function OnboardingPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   // showLoader is reserved for onboarding-complete redirect sequence (not used for status check)
   const [showLoader, setShowLoader] = useState(false);
   const [isVerifyingStatus, setIsVerifyingStatus] = useState(true);
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const {
     currentQuestion,
     currentIndex,
@@ -211,8 +245,43 @@ export default function OnboardingPage() {
   const canGoNext = selectedOptions.length > 0 || customText.trim().length > 0;
   const isLastQuestion = currentIndex === totalQuestions - 1;
 
+  const colors = CATEGORY_COLORS[currentCategory] || DEFAULT_COLORS;
+
+  // Development runtime inspection logging
+  console.log('Question ID:', currentQuestion.id);
+  console.log('Question Text:', currentQuestion.text);
+  console.log('Question Type:', currentQuestion.inputType || 'select');
+  console.log('Current Index:', currentIndex);
+  console.log('Display Number:', currentIndex + 1);
+
   return (
-    <main className="min-h-screen flex flex-col px-4 pt-4 pb-20">
+    <main className="min-h-screen flex flex-col px-4 pt-4 pb-20 relative z-10">
+      {/* Background Overlay Treatments */}
+      <div className="absolute inset-0 -z-10 pointer-events-none">
+        {/* Layer 1: Dark overlay for overall readability */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: 'linear-gradient(180deg, rgba(4, 6, 20, 0.75) 0%, rgba(4, 6, 20, 0.55) 40%, rgba(4, 6, 20, 0.60) 70%, rgba(4, 6, 20, 0.85) 100%)',
+          }}
+        />
+        {/* Layer 2: Center-focused radial gradient for question focus */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: 'radial-gradient(ellipse at center, rgba(3, 7, 20, 0.70) 0%, rgba(3, 7, 20, 0.40) 45%, rgba(3, 7, 20, 0.05) 80%)',
+          }}
+        />
+        {/* Layer 3: Atmospheric category glow */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `radial-gradient(ellipse at center 40%, ${colors.glow} 0%, transparent 60%)`,
+            opacity: 0.5,
+          }}
+        />
+      </div>
+
       {/* Back to Login at the top left */}
       <div className="max-w-2xl mx-auto w-full flex justify-start mt-2">
         <motion.button
@@ -255,28 +324,47 @@ export default function OnboardingPage() {
             key={currentQuestion.id}
             question={currentQuestion}
             direction={direction}
+            displayNumber={currentIndex + 1}
           />
         </AnimatePresence>
 
         {/* Small Helper Text */}
         <p className="text-xs text-slate-400 mb-3 text-center italic">
-          Select one or more choices or type your own answer for personalized responses.
+          {getHelperText(currentQuestion)}
         </p>
 
         {/* Options */}
         <div className="space-y-3 mb-4">
-          {currentQuestion.id === 27 ? (
+          {currentQuestion.inputType === 'age' || currentQuestion.id === 27 ? (
             <div className="flex flex-col gap-2">
               <input
                 type="text"
                 pattern="\d*"
                 inputMode="numeric"
                 value={customText}
+                onFocus={() => setIsInputFocused(true)}
+                onBlur={() => setIsInputFocused(false)}
                 onChange={(e) => {
                   setCustomText(e.target.value);
                 }}
                 placeholder="Enter your age (e.g. 21)"
-                className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition-all text-center text-lg font-semibold"
+                className="w-full px-4 py-3.5 rounded-xl text-center text-base font-semibold focus:outline-none transition-all duration-200 placeholder-slate-400"
+                style={{
+                  background: 'rgba(8, 15, 35, 0.70)',
+                  border: isInputFocused 
+                    ? '1px solid rgba(34, 211, 238, 0.7)' 
+                    : customText 
+                    ? '1px solid rgba(34, 211, 238, 0.4)' 
+                    : '1px solid rgba(148, 163, 184, 0.25)',
+                  boxShadow: isInputFocused 
+                    ? '0 0 16px rgba(34, 211, 238, 0.3)' 
+                    : customText 
+                    ? '0 0 10px rgba(34, 211, 238, 0.15)' 
+                    : '0 2px 4px rgba(0, 0, 0, 0.2)',
+                  backdropFilter: 'blur(8px)',
+                  color: '#f8fafc',
+                  caretColor: 'var(--accent-cyan)',
+                }}
               />
             </div>
           ) : (
@@ -292,7 +380,7 @@ export default function OnboardingPage() {
           )}
 
           {/* Other option */}
-          {currentQuestion.id !== 27 && currentQuestion.allowOther && (
+          {(currentQuestion.inputType !== 'age' && currentQuestion.id !== 27) && currentQuestion.allowOther && (
             <OptionCard
               option={{ label: "Something else...", value: "other", emoji: "✏️" }}
               index={currentQuestion.options.length}
@@ -303,7 +391,7 @@ export default function OnboardingPage() {
         </div>
 
         {/* Custom text input */}
-        {currentQuestion.id !== 27 && (
+        {(currentQuestion.inputType !== 'age' && currentQuestion.id !== 27) && (
           <OtherInput
             isVisible={selectedOptions.includes('other')}
             value={customText}
@@ -331,8 +419,16 @@ export default function OnboardingPage() {
         </AnimatePresence>
       </div>
 
+      {/* Bottom gradient for navigation readability */}
+      <div
+        className="absolute bottom-0 left-0 right-0 h-40 pointer-events-none -z-10"
+        style={{
+          background: 'linear-gradient(to top, rgba(4, 6, 20, 0.90) 0%, rgba(4, 6, 20, 0.60) 50%, transparent 100%)',
+        }}
+      />
+
       {/* Navigation buttons */}
-      <div className="max-w-2xl mx-auto w-full flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-8">
+      <div className="max-w-2xl mx-auto w-full flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-8 relative z-10">
         <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
           <motion.button
             whileHover={{ scale: 1.03 }}
@@ -341,8 +437,8 @@ export default function OnboardingPage() {
             disabled={currentIndex === 0}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
-              background: 'rgba(255, 255, 255, 0.03)',
-              border: '1px solid var(--glass-border)',
+              background: 'rgba(8, 15, 35, 0.60)',
+              border: '1px solid rgba(148, 163, 184, 0.20)',
               color: 'var(--text-secondary)',
             }}
           >
@@ -358,7 +454,12 @@ export default function OnboardingPage() {
             whileTap={{ scale: 0.97 }}
             onClick={() => setShowSkipModal(true)}
             disabled={isSubmitting}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-white/5"
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer"
+            style={{
+              background: 'rgba(8, 15, 35, 0.60)',
+              border: '1px solid rgba(148, 163, 184, 0.20)',
+              color: 'rgba(203, 213, 225, 0.8)',
+            }}
           >
             <SkipForward size={14} />
             Skip Questions
@@ -370,7 +471,12 @@ export default function OnboardingPage() {
             whileTap={{ scale: 0.97 }}
             onClick={saveAndContinueLater}
             disabled={isSubmitting}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer text-sky-400 hover:text-sky-200 hover:bg-sky-500/10 border border-sky-500/20"
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer"
+            style={{
+              background: 'rgba(8, 15, 35, 0.60)',
+              border: '1px solid rgba(34, 211, 238, 0.4)',
+              color: 'var(--accent-cyan)',
+            }}
           >
             <Sparkles size={14} />
             Save & Continue Later
@@ -383,13 +489,16 @@ export default function OnboardingPage() {
             whileTap={{ scale: canGoNext ? 0.97 : 1 }}
             onClick={goToNext}
             disabled={!canGoNext || isSubmitting}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer"
             style={{
               background: canGoNext
                 ? 'var(--gradient-primary)'
-                : 'rgba(255, 255, 255, 0.03)',
-              color: canGoNext ? 'var(--bg-primary)' : 'var(--text-muted)',
+                : 'rgba(30, 40, 60, 0.6)',
+              color: canGoNext ? 'var(--bg-primary)' : 'rgba(148, 163, 184, 0.6)',
               boxShadow: canGoNext ? 'var(--glow-cyan)' : 'none',
+              border: canGoNext ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
+              opacity: canGoNext ? 1 : 0.55,
+              cursor: canGoNext ? 'pointer' : 'not-allowed',
             }}
           >
             {isSubmitting ? (

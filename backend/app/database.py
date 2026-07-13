@@ -70,7 +70,6 @@ if settings.is_postgres:
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     
-    engine_kwargs["prepared_statement_cache_size"] = 0
     connect_args["statement_cache_size"] = 0
     connect_args["ssl"] = ctx
     engine_kwargs["pool_size"] = 10

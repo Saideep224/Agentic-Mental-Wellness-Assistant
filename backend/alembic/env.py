@@ -72,7 +72,22 @@ async def run_async_migrations() -> None:
 
 def run_migrations_online() -> None:
     """Entry-point for online migrations – delegates to async runner."""
-    asyncio.run(run_async_migrations())
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        # Running inside an active loop (e.g. unit tests). Run in a separate thread to prevent RuntimeError.
+        import threading
+        def run_in_thread():
+            asyncio.run(run_async_migrations())
+        
+        thread = threading.Thread(target=run_in_thread)
+        thread.start()
+        thread.join()
+    else:
+        asyncio.run(run_async_migrations())
 
 
 if context.is_offline_mode():

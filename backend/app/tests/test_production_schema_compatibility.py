@@ -19,7 +19,7 @@ import app.config
 test_db_filename = f"./test_compat_{uuid.uuid4().hex}.db"
 app.config.settings.DATABASE_URL = f"sqlite+aiosqlite:///{test_db_filename}"
 
-from app.database import Base, create_tables
+from app.database import Base
 from app.models import User, Conversation, Message
 
 class ProductionSchemaCompatibilityTestCase(unittest.IsolatedAsyncioTestCase):
@@ -151,9 +151,10 @@ class ProductionSchemaCompatibilityTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_migration_upgrades_legacy_schema_and_backfills(self):
         """Verify that the upgrade migration adds the 'emotion' column and backfills historical data."""
-        # 1. Run migrations / create_tables startup logic
-        # This will trigger table creation for rest of models and run ALTER TABLE and update statements
-        await create_tables()
+        from alembic.config import Config
+        from alembic import command
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
 
         # 2. Verify column existence in SQLite table info
         async with self.engine.connect() as conn:

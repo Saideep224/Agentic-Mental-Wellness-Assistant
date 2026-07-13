@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.database import create_tables, engine
+from app.database import engine
 from app.routes import auth_router, chat_router, conversations_router, onboarding_router, dashboard_router, insights_router
 from app.routes.dashboard import mood_router
 
@@ -84,16 +84,13 @@ async def lifespan(app: FastAPI):
             logger.critical("[DB] Critical connection failure in production environment. Aborting startup.")
             raise RuntimeError(f"Database connection verification failed: {e}") from e
 
-    try:
-        # Create database tables automatically in dev/production if not present
-        await create_tables()
-        logger.info("Database tables initialized successfully.")
-    except Exception as e:
-        logger.critical(f"Database initialization failed: {e}", exc_info=True)
-        if is_render or settings.is_postgres:
-            raise RuntimeError(f"Database table initialization failed: {e}") from e
     yield
     logger.info("Shutting down Esona API...")
+    try:
+        await engine.dispose()
+        logger.info("[DB] Database engine disposed successfully.")
+    except Exception as dispose_err:
+        logger.warning(f"[DB Warning] Failed to dispose database engine: {dispose_err}")
 
 
 # ── App setup ─────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, ArrowRight, Sparkles, Loader2, SkipForward, AlertTriangle } from 'lucide-react';
@@ -80,11 +80,23 @@ export default function OnboardingPage() {
     isLoadingData,
   } = useOnboarding();
 
+  const mountTimeRef = useRef<number>(0);
+  const hasLoggedTimingRef = useRef<boolean>(false);
+
   useEffect(() => {
+    mountTimeRef.current = performance.now();
     setMounted(true);
   }, []);
 
-  // Check auth and onboarding status
+  // Performance logging for question loading
+  useEffect(() => {
+    if (!isLoadingData && mountTimeRef.current > 0 && !hasLoggedTimingRef.current) {
+      const duration = performance.now() - mountTimeRef.current;
+      console.log(`[PERF] getOnboardingAnswers (question data loading) duration: ${duration.toFixed(2)} ms`);
+    }
+  }, [isLoadingData]);
+
+  // Check auth and onboarding status with timeout budget
   useEffect(() => {
     const token = getToken();
     console.log('[LOG] [OnboardingPage StatusCheck] hasToken:', !!token);
@@ -95,24 +107,30 @@ export default function OnboardingPage() {
     }
 
     const checkStatus = async () => {
-      // First check local storage
       const user = getStoredUser();
-      if (user) {
-        console.log('[LOG] [OnboardingPage StatusCheck] storedUser found:', user.email, 'onboardingCompleted:', user.onboardingCompleted);
-      } else {
-        console.log('[LOG] [OnboardingPage StatusCheck] no storedUser found');
-      }
       if (user && user.onboardingCompleted) {
         console.log('[LOG] [OnboardingPage StatusCheck] Redirecting to /chat because onboarding is marked complete locally');
         router.push('/chat');
         return;
       }
 
-      // Double-check with backend
+      let hasTimedOut = false;
+      const budgetTimeout = setTimeout(() => {
+        hasTimedOut = true;
+        const totalBlockingTime = performance.now() - mountTimeRef.current;
+        console.log(`[PERF] [onboarding] Status check exceeded 2000ms budget. Unblocking UI. Total blocking loader duration: ${totalBlockingTime.toFixed(2)} ms`);
+        setIsVerifyingStatus(false);
+      }, 2000);
+
       try {
         console.log('[LOG] [OnboardingPage StatusCheck] Verifying onboarding status with backend...');
+        const statusStartTime = performance.now();
         const status = await getOnboardingStatus(token);
-        console.log('[LOG] [OnboardingPage StatusCheck] Backend onboarding status returned:', status);
+        const statusDuration = performance.now() - statusStartTime;
+        console.log(`[PERF] getOnboardingStatus API duration: ${statusDuration.toFixed(2)} ms`);
+
+        clearTimeout(budgetTimeout);
+
         if (status.completed) {
           if (user) {
             user.onboardingCompleted = true;
@@ -124,7 +142,12 @@ export default function OnboardingPage() {
       } catch (err) {
         console.error('[LOG] [OnboardingPage StatusCheck] Failed to check onboarding status:', err);
       } finally {
-        setIsVerifyingStatus(false);
+        clearTimeout(budgetTimeout);
+        if (!hasTimedOut) {
+          const totalBlockingTime = performance.now() - mountTimeRef.current;
+          console.log(`[PERF] [onboarding] Status check completed within budget. Total blocking loader duration: ${totalBlockingTime.toFixed(2)} ms`);
+          setIsVerifyingStatus(false);
+        }
       }
     };
 
@@ -144,15 +167,11 @@ export default function OnboardingPage() {
     }
   }, [isComplete, router]);
 
-  if (!mounted || isVerifyingStatus || isLoadingData) {
+  if (!mounted || isVerifyingStatus) {
     return (
       <AnimatePresence>
         <FullPageTransition
-          message={
-            isVerifyingStatus
-              ? 'Checking your progress...'
-              : 'Loading your questions...'
-          }
+          message="Checking your progress..."
         />
       </AnimatePresence>
     );
@@ -318,105 +337,114 @@ export default function OnboardingPage() {
       </div>
 
       {/* Question */}
-      <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
-        <AnimatePresence mode="wait">
-          <QuestionCard
-            key={currentQuestion.id}
-            question={currentQuestion}
-            direction={direction}
-            displayNumber={currentIndex + 1}
-          />
-        </AnimatePresence>
-
-        {/* Small Helper Text */}
-        <p className="text-xs text-slate-400 mb-3 text-center italic">
-          {getHelperText(currentQuestion)}
-        </p>
-
-        {/* Options */}
-        <div className="space-y-3 mb-4">
-          {currentQuestion.inputType === 'age' || currentQuestion.id === 27 ? (
-            <div className="flex flex-col gap-2">
-              <input
-                type="text"
-                pattern="\d*"
-                inputMode="numeric"
-                value={customText}
-                onFocus={() => setIsInputFocused(true)}
-                onBlur={() => setIsInputFocused(false)}
-                onChange={(e) => {
-                  setCustomText(e.target.value);
-                }}
-                placeholder="Enter your age (e.g. 21)"
-                className="w-full px-4 py-3.5 rounded-xl text-center text-base font-semibold focus:outline-none transition-all duration-200 placeholder-slate-400"
-                style={{
-                  background: 'rgba(8, 15, 35, 0.70)',
-                  border: isInputFocused 
-                    ? '1px solid rgba(34, 211, 238, 0.7)' 
-                    : customText 
-                    ? '1px solid rgba(34, 211, 238, 0.4)' 
-                    : '1px solid rgba(148, 163, 184, 0.25)',
-                  boxShadow: isInputFocused 
-                    ? '0 0 16px rgba(34, 211, 238, 0.3)' 
-                    : customText 
-                    ? '0 0 10px rgba(34, 211, 238, 0.15)' 
-                    : '0 2px 4px rgba(0, 0, 0, 0.2)',
-                  backdropFilter: 'blur(8px)',
-                  color: '#f8fafc',
-                  caretColor: 'var(--accent-cyan)',
-                }}
+      <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full min-h-[350px]">
+        {isLoadingData ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-400">
+            <Loader2 className="animate-spin text-sky-400" size={32} />
+            <p className="text-sm font-medium">Syncing your progress...</p>
+          </div>
+        ) : (
+          <>
+            <AnimatePresence mode="wait">
+              <QuestionCard
+                key={currentQuestion.id}
+                question={currentQuestion}
+                direction={direction}
+                displayNumber={currentIndex + 1}
               />
+            </AnimatePresence>
+
+            {/* Small Helper Text */}
+            <p className="text-xs text-slate-400 mb-3 text-center italic">
+              {getHelperText(currentQuestion)}
+            </p>
+
+            {/* Options */}
+            <div className="space-y-3 mb-4">
+              {currentQuestion.inputType === 'age' || currentQuestion.id === 27 ? (
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="text"
+                    pattern="\d*"
+                    inputMode="numeric"
+                    value={customText}
+                    onFocus={() => setIsInputFocused(true)}
+                    onBlur={() => setIsInputFocused(false)}
+                    onChange={(e) => {
+                      setCustomText(e.target.value);
+                    }}
+                    placeholder="Enter your age (e.g. 21)"
+                    className="w-full px-4 py-3.5 rounded-xl text-center text-base font-semibold focus:outline-none transition-all duration-200 placeholder-slate-400"
+                    style={{
+                      background: 'rgba(8, 15, 35, 0.70)',
+                      border: isInputFocused 
+                        ? '1px solid rgba(34, 211, 238, 0.7)' 
+                        : customText 
+                        ? '1px solid rgba(34, 211, 238, 0.4)' 
+                        : '1px solid rgba(148, 163, 184, 0.25)',
+                      boxShadow: isInputFocused 
+                        ? '0 0 16px rgba(34, 211, 238, 0.3)' 
+                        : customText 
+                        ? '0 0 10px rgba(34, 211, 238, 0.15)' 
+                        : '0 2px 4px rgba(0, 0, 0, 0.2)',
+                      backdropFilter: 'blur(8px)',
+                      color: '#f8fafc',
+                      caretColor: 'var(--accent-cyan)',
+                    }}
+                  />
+                </div>
+              ) : (
+                currentQuestion.options.map((option, i) => (
+                  <OptionCard
+                    key={option.value}
+                    option={option}
+                    index={i}
+                    isSelected={selectedOptions.includes(option.value)}
+                    onSelect={() => selectOption(option.value)}
+                  />
+                ))
+              )}
+
+              {/* Other option */}
+              {(currentQuestion.inputType !== 'age' && currentQuestion.id !== 27) && currentQuestion.allowOther && (
+                <OptionCard
+                  option={{ label: "Something else...", value: "other", emoji: "✏️" }}
+                  index={currentQuestion.options.length}
+                  isSelected={selectedOptions.includes('other')}
+                  onSelect={() => selectOption('other')}
+                />
+              )}
             </div>
-          ) : (
-            currentQuestion.options.map((option, i) => (
-              <OptionCard
-                key={option.value}
-                option={option}
-                index={i}
-                isSelected={selectedOptions.includes(option.value)}
-                onSelect={() => selectOption(option.value)}
+
+            {/* Custom text input */}
+            {(currentQuestion.inputType !== 'age' && currentQuestion.id !== 27) && (
+              <OtherInput
+                isVisible={selectedOptions.includes('other')}
+                value={customText}
+                onChange={setCustomText}
               />
-            ))
-          )}
+            )}
 
-          {/* Other option */}
-          {(currentQuestion.inputType !== 'age' && currentQuestion.id !== 27) && currentQuestion.allowOther && (
-            <OptionCard
-              option={{ label: "Something else...", value: "other", emoji: "✏️" }}
-              index={currentQuestion.options.length}
-              isSelected={selectedOptions.includes('other')}
-              onSelect={() => selectOption('other')}
-            />
-          )}
-        </div>
-
-        {/* Custom text input */}
-        {(currentQuestion.inputType !== 'age' && currentQuestion.id !== 27) && (
-          <OtherInput
-            isVisible={selectedOptions.includes('other')}
-            value={customText}
-            onChange={setCustomText}
-          />
+            {/* Error */}
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="mt-4 px-4 py-3 rounded-xl text-sm text-center"
+                  style={{
+                    background: 'rgba(244, 114, 182, 0.1)',
+                    border: '1px solid rgba(244, 114, 182, 0.2)',
+                    color: 'var(--accent-pink)',
+                  }}
+                >
+                  {error}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </>
         )}
-
-        {/* Error */}
-        <AnimatePresence>
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="mt-4 px-4 py-3 rounded-xl text-sm text-center"
-              style={{
-                background: 'rgba(244, 114, 182, 0.1)',
-                border: '1px solid rgba(244, 114, 182, 0.2)',
-                color: 'var(--accent-pink)',
-              }}
-            >
-              {error}
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
       {/* Bottom gradient for navigation readability */}
@@ -431,10 +459,10 @@ export default function OnboardingPage() {
       <div className="max-w-2xl mx-auto w-full flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-8 relative z-10">
         <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
           <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
+            whileHover={{ scale: (currentIndex === 0 || isLoadingData) ? 1 : 1.03 }}
+            whileTap={{ scale: (currentIndex === 0 || isLoadingData) ? 1 : 0.97 }}
             onClick={goToPrevious}
-            disabled={currentIndex === 0}
+            disabled={currentIndex === 0 || isLoadingData}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
               background: 'rgba(8, 15, 35, 0.60)',
@@ -450,11 +478,11 @@ export default function OnboardingPage() {
         <div className="flex flex-wrap items-center justify-center gap-3">
           {/* Skip ALL Questions button */}
           <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
+            whileHover={{ scale: (isSubmitting || isLoadingData) ? 1 : 1.03 }}
+            whileTap={{ scale: (isSubmitting || isLoadingData) ? 1 : 0.97 }}
             onClick={() => setShowSkipModal(true)}
-            disabled={isSubmitting}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer"
+            disabled={isSubmitting || isLoadingData}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
               background: 'rgba(8, 15, 35, 0.60)',
               border: '1px solid rgba(148, 163, 184, 0.20)',
@@ -467,11 +495,11 @@ export default function OnboardingPage() {
 
           {/* Save & Continue Later button */}
           <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
+            whileHover={{ scale: (isSubmitting || isLoadingData) ? 1 : 1.03 }}
+            whileTap={{ scale: (isSubmitting || isLoadingData) ? 1 : 0.97 }}
             onClick={saveAndContinueLater}
-            disabled={isSubmitting}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer"
+            disabled={isSubmitting || isLoadingData}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
               background: 'rgba(8, 15, 35, 0.60)',
               border: '1px solid rgba(34, 211, 238, 0.4)',
@@ -485,20 +513,20 @@ export default function OnboardingPage() {
 
         <div className="flex items-center justify-end w-full sm:w-auto">
           <motion.button
-            whileHover={{ scale: canGoNext ? 1.03 : 1 }}
-            whileTap={{ scale: canGoNext ? 0.97 : 1 }}
+            whileHover={{ scale: (canGoNext && !isSubmitting && !isLoadingData) ? 1.03 : 1 }}
+            whileTap={{ scale: (canGoNext && !isSubmitting && !isLoadingData) ? 0.97 : 1 }}
             onClick={goToNext}
-            disabled={!canGoNext || isSubmitting}
+            disabled={!canGoNext || isSubmitting || isLoadingData}
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer"
             style={{
-              background: canGoNext
+              background: (canGoNext && !isLoadingData)
                 ? 'var(--gradient-primary)'
                 : 'rgba(30, 40, 60, 0.6)',
-              color: canGoNext ? 'var(--bg-primary)' : 'rgba(148, 163, 184, 0.6)',
-              boxShadow: canGoNext ? 'var(--glow-cyan)' : 'none',
-              border: canGoNext ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
-              opacity: canGoNext ? 1 : 0.55,
-              cursor: canGoNext ? 'pointer' : 'not-allowed',
+              color: (canGoNext && !isLoadingData) ? 'var(--bg-primary)' : 'rgba(148, 163, 184, 0.6)',
+              boxShadow: (canGoNext && !isLoadingData) ? 'var(--glow-cyan)' : 'none',
+              border: (canGoNext && !isLoadingData) ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
+              opacity: (canGoNext && !isLoadingData) ? 1 : 0.55,
+              cursor: (canGoNext && !isSubmitting && !isLoadingData) ? 'pointer' : 'not-allowed',
             }}
           >
             {isSubmitting ? (

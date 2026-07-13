@@ -71,6 +71,7 @@ if settings.is_postgres:
     ctx.verify_mode = ssl.CERT_NONE
     
     connect_args["prepared_statement_cache_size"] = 0
+    connect_args["statement_cache_size"] = 0
     connect_args["ssl"] = ctx
     engine_kwargs["pool_size"] = 10
     engine_kwargs["max_overflow"] = 20
@@ -169,6 +170,7 @@ async def create_tables() -> None:
                 # ── V2.1 mood / emotion columns ─────────────────────────────
                 "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS mood_score double precision;",
                 "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS detected_emotion text;",
+                "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS emotion varchar(100);",
                 # ── emotion_logs table columns ─────────────────────────────
                 "ALTER TABLE emotion_logs ADD COLUMN IF NOT EXISTS confidence_score double precision;",
                 "ALTER TABLE emotion_logs ADD COLUMN IF NOT EXISTS secondary_emotion text;",
@@ -263,6 +265,26 @@ async def create_tables() -> None:
                 except Exception as stmt_err:
                     logger.warning(f"[Migration Warning] Failed to run statement: {stmt}. Error: {stmt_err}")
 
+            # ── Safely backfill emotion from detected_emotion in PostgreSQL ──
+            try:
+                async with engine.begin() as conn:
+                    # Guarded DO block executing dynamic update to avoid compilation/missing column errors
+                    await conn.execute(text("""
+                        DO $$
+                        BEGIN
+                            IF EXISTS (
+                                SELECT 1 
+                                FROM information_schema.columns 
+                                WHERE table_name='chat_messages' AND column_name='detected_emotion'
+                            ) THEN
+                                EXECUTE 'UPDATE chat_messages SET emotion = detected_emotion WHERE emotion IS NULL AND detected_emotion IS NOT NULL';
+                            END IF;
+                        END $$;
+                    """))
+                logger.info("[Migration] PostgreSQL emotion column backfill completed safely.")
+            except Exception as backfill_err:
+                logger.warning(f"[Migration Warning] PostgreSQL backfill failed: {backfill_err}")
+
             # ── user_question_answers check constraint update ──────────
             try:
                 async with engine.begin() as conn:
@@ -274,98 +296,129 @@ async def create_tables() -> None:
                     await conn.execute(text("ALTER TABLE user_question_answers ADD CONSTRAINT user_question_answers_question_id_check CHECK (question_id BETWEEN 1 AND 27);"))
             except Exception as add_err:
                 logger.warning(f"Could not add question_id constraint (1..27): {add_err}")
-            else:
-                # SQLite: try/except each individually since SQLite doesn't support IF NOT EXISTS for columns
-                _sqlite_add_cols = [
-                    ("chat_messages", "emotion_score", "FLOAT"),
-                    ("chat_messages", "stress_score", "FLOAT"),
-                    ("chat_messages", "anxiety_score", "FLOAT"),
-                    ("chat_messages", "mood_score", "FLOAT"),
-                    ("chat_messages", "detected_emotion", "VARCHAR(100)"),
-                    ("chat_messages", "sender_type", "VARCHAR(50) DEFAULT 'user'"),
-                    ("chat_messages", "agent_analysis", "JSON DEFAULT '{}'"),
-                    ("chat_messages", "emotional_context", "JSON DEFAULT '{}'"),
-                    ("conversations", "agent_id", "VARCHAR(50) DEFAULT 'buddy'"),
-                    ("conversations", "active_specialists", "JSON DEFAULT '[]'"),
-                    ("conversations", "emotional_tag", "VARCHAR(255)"),
-                    ("emotion_logs", "confidence_score", "FLOAT"),
-                    ("emotion_logs", "secondary_emotion", "VARCHAR(100)"),
-                    ("memories", "metadata_json", "JSON DEFAULT '{}'"),
-                    ("memories", "importance_score", "FLOAT DEFAULT 0.5"),
-                    ("memories", "expires_at", "DATETIME"),
-                    ("knowledge_graph", "subject", "VARCHAR(255) DEFAULT 'User'"),
-                    ("knowledge_graph", "predicate", "VARCHAR(255)"),
-                    ("knowledge_graph", "object", "VARCHAR(255)"),
-                    ("knowledge_graph", "confidence", "FLOAT DEFAULT 1.0"),
-                    ("knowledge_graph", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
-                    ("knowledge_graph", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
-                    ("user_profile", "university", "VARCHAR(255)"),
-                    ("user_profile", "name", "VARCHAR(255)"),
-                    ("user_profile", "age", "VARCHAR(50)"),
-                    ("user_profile", "profession", "VARCHAR(255)"),
-                    ("user_profile", "field_of_work", "VARCHAR(255)"),
-                    ("user_profile", "current_challenge", "VARCHAR(255)"),
-                    ("user_profile", "advice_preference", "VARCHAR(255)"),
-                    ("user_profile", "primary_support_need", "VARCHAR(255)"),
-                    ("user_profile", "student_year", "VARCHAR(100)"),
-                    ("user_profile", "communication_style", "VARCHAR(100)"),
-                    ("user_profile", "interests", "JSON DEFAULT '[]'"),
-                    ("user_profile", "hobbies", "JSON DEFAULT '[]'"),
-                    ("user_profile", "goals", "JSON DEFAULT '[]'"),
-                    ("user_profile", "stress_triggers", "JSON DEFAULT '[]'"),
-                    ("user_profile", "coping_mechanisms", "JSON DEFAULT '[]'"),
-                    ("user_profile", "support_system", "TEXT"),
-                    ("user_profile", "sleep_habits", "VARCHAR(100)"),
-                    ("user_profile", "gender", "VARCHAR(50)"),
-                    ("user_profile", "personality_json", "JSON DEFAULT '{}'"),
-                    ("user_profile", "last_analyzed_at", "DATETIME"),
-                    ("profiles", "onboarding_step", "INTEGER DEFAULT 1"),
-                    ("profiles", "personality_profile", "JSON DEFAULT '{}'"),
-                    ("profiles", "interests", "JSON DEFAULT '{}'"),
-                    ("profiles", "communication_style", "TEXT"),
-                    ("profiles", "personality_type", "TEXT"),
-                    ("user_personality", "personality_profile", "JSON DEFAULT '{}'"),
-                    ("user_personality", "personality_type", "JSON DEFAULT '{}'"),
-                    ("user_personality", "communication_style", "JSON DEFAULT '{}'"),
-                    ("user_personality", "interests", "JSON DEFAULT '{}'"),
-                    ("user_personality", "stress_indicators", "JSON DEFAULT '{}'"),
-                    ("user_personality", "personality_type_dict", "JSON DEFAULT '{}'"),
-                    ("user_personality", "emotional_style", "JSON DEFAULT '{}'"),
-                    ("user_personality", "stress_triggers", "JSON DEFAULT '{}'"),
-                    ("user_personality", "strengths", "JSON DEFAULT '{}'"),
-                    ("user_personality", "weaknesses", "JSON DEFAULT '{}'"),
-                    ("user_personality", "onboarding_answers", "JSON DEFAULT '{}'"),
-                    ("user_personality", "onboarding_completed", "BOOLEAN DEFAULT 0"),
-                    ("user_personality", "emotional_baseline", "JSON DEFAULT '{}'"),
-                    ("user_personality", "comfort_preferences", "JSON DEFAULT '{}'"),
-                    ("user_personality", "emotional_summary", "JSON DEFAULT '{}'"),
-                    ("user_personality", "stress_patterns", "JSON DEFAULT '{}'"),
-                    ("user_personality", "emotional_triggers", "JSON DEFAULT '{}'"),
-                    ("user_personality", "preferred_response_style", "JSON DEFAULT '{}'"),
-                    ("user_personality", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
-                    ("user_personality", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
-                    ("user_profile", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
-                    ("user_profile", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
-                    ("user_entities", "entity", "VARCHAR(255)"),
-                    ("user_entities", "type", "VARCHAR(255)"),
-                    ("user_entities", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
-                    ("user_relationships", "source", "VARCHAR(255)"),
-                    ("user_relationships", "relationship", "VARCHAR(255)"),
-                    ("user_relationships", "target", "VARCHAR(255)"),
-                    ("user_relationships", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
-                    ("user_question_answers", "question_id", "INTEGER"),
-                    ("user_question_answers", "question_text", "TEXT"),
-                    ("user_question_answers", "category", "VARCHAR(100)"),
-                    ("user_question_answers", "selected_answer", "JSON DEFAULT '[]'"),
-                    ("user_question_answers", "custom_answer", "TEXT"),
-                    ("user_question_answers", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
-                    ("user_question_answers", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
-                ]
+        else:
+            # SQLite: try/except each individually since SQLite doesn't support IF NOT EXISTS for columns
+            _sqlite_add_cols = [
+                ("chat_messages", "emotion_score", "FLOAT"),
+                ("chat_messages", "stress_score", "FLOAT"),
+                ("chat_messages", "anxiety_score", "FLOAT"),
+                ("chat_messages", "mood_score", "FLOAT"),
+                ("chat_messages", "detected_emotion", "VARCHAR(100)"),
+                ("chat_messages", "emotion", "VARCHAR(100)"),
+                ("chat_messages", "sender_type", "VARCHAR(50) DEFAULT 'user'"),
+                ("chat_messages", "agent_analysis", "JSON DEFAULT '{}'"),
+                ("chat_messages", "emotional_context", "JSON DEFAULT '{}'"),
+                ("conversations", "agent_id", "VARCHAR(50) DEFAULT 'buddy'"),
+                ("conversations", "active_specialists", "JSON DEFAULT '[]'"),
+                ("conversations", "emotional_tag", "VARCHAR(255)"),
+                ("emotion_logs", "confidence_score", "FLOAT"),
+                ("emotion_logs", "secondary_emotion", "VARCHAR(100)"),
+                ("memories", "metadata_json", "JSON DEFAULT '{}'"),
+                ("memories", "importance_score", "FLOAT DEFAULT 0.5"),
+                ("memories", "expires_at", "DATETIME"),
+                ("knowledge_graph", "subject", "VARCHAR(255) DEFAULT 'User'"),
+                ("knowledge_graph", "predicate", "VARCHAR(255)"),
+                ("knowledge_graph", "object", "VARCHAR(255)"),
+                ("knowledge_graph", "confidence", "FLOAT DEFAULT 1.0"),
+                ("knowledge_graph", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                ("knowledge_graph", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                ("user_profile", "university", "VARCHAR(255)"),
+                ("user_profile", "name", "VARCHAR(255)"),
+                ("user_profile", "age", "VARCHAR(50)"),
+                ("user_profile", "profession", "VARCHAR(255)"),
+                ("user_profile", "field_of_work", "VARCHAR(255)"),
+                ("user_profile", "current_challenge", "VARCHAR(255)"),
+                ("user_profile", "advice_preference", "VARCHAR(255)"),
+                ("user_profile", "primary_support_need", "VARCHAR(255)"),
+                ("user_profile", "student_year", "VARCHAR(100)"),
+                ("user_profile", "communication_style", "VARCHAR(100)"),
+                ("user_profile", "interests", "JSON DEFAULT '[]'"),
+                ("user_profile", "hobbies", "JSON DEFAULT '[]'"),
+                ("user_profile", "goals", "JSON DEFAULT '[]'"),
+                ("user_profile", "stress_triggers", "JSON DEFAULT '[]'"),
+                ("user_profile", "coping_mechanisms", "JSON DEFAULT '[]'"),
+                ("user_profile", "support_system", "TEXT"),
+                ("user_profile", "sleep_habits", "VARCHAR(100)"),
+                ("user_profile", "gender", "VARCHAR(50)"),
+                ("user_profile", "personality_json", "JSON DEFAULT '{}'"),
+                ("user_profile", "last_analyzed_at", "DATETIME"),
+                ("profiles", "onboarding_step", "INTEGER DEFAULT 1"),
+                ("profiles", "personality_profile", "JSON DEFAULT '{}'"),
+                ("profiles", "interests", "JSON DEFAULT '{}'"),
+                ("profiles", "communication_style", "TEXT"),
+                ("profiles", "personality_type", "TEXT"),
+                ("user_personality", "personality_profile", "JSON DEFAULT '{}'"),
+                ("user_personality", "personality_type", "JSON DEFAULT '{}'"),
+                ("user_personality", "communication_style", "JSON DEFAULT '{}'"),
+                ("user_personality", "interests", "JSON DEFAULT '{}'"),
+                ("user_personality", "stress_indicators", "JSON DEFAULT '{}'"),
+                ("user_personality", "personality_type_dict", "JSON DEFAULT '{}'"),
+                ("user_personality", "emotional_style", "JSON DEFAULT '{}'"),
+                ("user_personality", "stress_triggers", "JSON DEFAULT '{}'"),
+                ("user_personality", "strengths", "JSON DEFAULT '{}'"),
+                ("user_personality", "weaknesses", "JSON DEFAULT '{}'"),
+                ("user_personality", "onboarding_answers", "JSON DEFAULT '{}'"),
+                ("user_personality", "onboarding_completed", "BOOLEAN DEFAULT 0"),
+                ("user_personality", "emotional_baseline", "JSON DEFAULT '{}'"),
+                ("user_personality", "comfort_preferences", "JSON DEFAULT '{}'"),
+                ("user_personality", "emotional_summary", "JSON DEFAULT '{}'"),
+                ("user_personality", "stress_patterns", "JSON DEFAULT '{}'"),
+                ("user_personality", "emotional_triggers", "JSON DEFAULT '{}'"),
+                ("user_personality", "preferred_response_style", "JSON DEFAULT '{}'"),
+                ("user_personality", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                ("user_personality", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                ("user_profile", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                ("user_profile", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                ("user_entities", "entity", "VARCHAR(255)"),
+                ("user_entities", "type", "VARCHAR(255)"),
+                ("user_entities", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                ("user_relationships", "source", "VARCHAR(255)"),
+                ("user_relationships", "relationship", "VARCHAR(255)"),
+                ("user_relationships", "target", "VARCHAR(255)"),
+                ("user_relationships", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                ("user_question_answers", "question_id", "INTEGER"),
+                ("user_question_answers", "question_text", "TEXT"),
+                ("user_question_answers", "category", "VARCHAR(100)"),
+                ("user_question_answers", "selected_answer", "JSON DEFAULT '[]'"),
+                ("user_question_answers", "custom_answer", "TEXT"),
+                ("user_question_answers", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+                ("user_question_answers", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+            ]
+            async with engine.begin() as conn:
                 for table, col, col_type in _sqlite_add_cols:
                     try:
                         await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type};"))
                     except Exception:
                         pass  # Column already exists — safe to ignore
+
+                # ── Safely backfill emotion from detected_emotion in SQLite ──
+                try:
+                    # Retrieve existing columns to verify presence of both columns
+                    res = await conn.execute(text("PRAGMA table_info(chat_messages);"))
+                    columns = [row[1] for row in res.fetchall()]
+                    if "detected_emotion" in columns and "emotion" in columns:
+                        await conn.execute(text("""
+                            UPDATE chat_messages 
+                            SET emotion = detected_emotion 
+                            WHERE emotion IS NULL 
+                            AND detected_emotion IS NOT NULL;
+                        """))
+                        logger.info("[Migration] SQLite emotion column backfill completed safely.")
+                except Exception as sqlite_backfill_err:
+                    logger.warning(f"[Migration Warning] SQLite backfill failed: {sqlite_backfill_err}")
+
+        # ── Verify and log chat_messages columns ──
+        try:
+            from sqlalchemy import inspect
+            async with engine.begin() as conn:
+                def get_cols(connection):
+                    inspector = inspect(connection)
+                    return [col["name"] for col in inspector.get_columns("chat_messages")]
+                columns = await conn.run_sync(get_cols)
+                logger.info(f"[DB Migration] chat_messages columns verified: {', '.join(columns)}")
+        except Exception as inspect_err:
+            logger.warning(f"[Migration Warning] Failed to inspect chat_messages columns: {inspect_err}")
+
         logger.info("[Migration] Database columns checked/added successfully. All user data preserved.")
     except Exception as migration_err:
         logger.error(f"[Migration Warning] Failed to run database alter migrations: {migration_err}")

@@ -138,10 +138,30 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception in request {request.url}: {exc}", exc_info=True)
-    return JSONResponse(
+    
+    # Generate default error response
+    response = JSONResponse(
         status_code=500,
         content={"detail": "An internal server error occurred. Please try again later."},
     )
+    
+    # Safely attach CORS headers to unhandled 500 exceptions
+    origin = request.headers.get("origin")
+    if origin:
+        import re
+        is_allowed = False
+        if origin in allowed_origins:
+            is_allowed = True
+        elif re.match(r"^https://agentic-mental-wellness-assistant(-[a-z0-9-]+)?\.vercel\.app$", origin):
+            is_allowed = True
+            
+        if is_allowed:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+            
+    return response
 
 
 # ── Include Routes ───────────────────────────────────────────

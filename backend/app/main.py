@@ -54,6 +54,20 @@ async def lifespan(app: FastAPI):
         logger.info("[DB] Database dialect: PostgreSQL")
         logger.info("[DB] Driver: asyncpg")
         logger.info("[DB] Production persistence: external PostgreSQL")
+        
+        # Mask password and print DB URL for troubleshooting
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(settings.DATABASE_URL)
+            password_len = len(parsed.password) if parsed.password else 0
+            if password_len > 2:
+                masked_password = parsed.password[0] + "*" * (password_len - 2) + parsed.password[-1]
+            else:
+                masked_password = "*" * password_len
+            masked_url = f"{parsed.scheme}://{parsed.username}:{masked_password}@{parsed.hostname}:{parsed.port}{parsed.path}"
+            logger.info(f"[DB] Connection URL: {masked_url}")
+        except Exception as e:
+            logger.info(f"[DB] Connection URL could not be parsed: {e}")
     else:
         logger.info("[DB] Database dialect: SQLite")
         logger.info("[DB] Local database path configured")

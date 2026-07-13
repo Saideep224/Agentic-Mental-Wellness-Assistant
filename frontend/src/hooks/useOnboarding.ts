@@ -20,6 +20,7 @@ export function useOnboarding() {
   const [showSkipModal, setShowSkipModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const currentQuestion = questions[currentIndex];
   const totalQuestions = questions.length;
@@ -270,9 +271,16 @@ export function useOnboarding() {
     // Save live to database
     const token = api.getToken();
     if (token) {
-      api.saveOnboardingAnswer(response, token).catch((err) => {
-        console.warn('[Onboarding] Live answer saving failed:', err);
-      });
+      setSaveStatus('saving');
+      api.saveOnboardingAnswer(response, token)
+        .then(() => {
+          setSaveStatus('saved');
+          setTimeout(() => setSaveStatus('idle'), 1500);
+        })
+        .catch((err) => {
+          console.warn('[Onboarding] Live answer saving failed:', err);
+          setSaveStatus('error');
+        });
       // Save next onboarding step live
       const nextIdx = currentIndex + 1;
       if (nextIdx < totalQuestions) {
@@ -376,9 +384,14 @@ export function useOnboarding() {
       };
       
       try {
+        setSaveStatus('saving');
         await api.saveOnboardingAnswer(response, token);
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 1500);
       } catch (err) {
         console.warn('[Onboarding] Failed to save current answer:', err);
+        setSaveStatus('error');
+        throw err;
       }
     }
 
@@ -451,5 +464,6 @@ export function useOnboarding() {
     backToLogin,
     saveAndContinueLater,
     isLoadingData,
+    saveStatus,
   };
 }

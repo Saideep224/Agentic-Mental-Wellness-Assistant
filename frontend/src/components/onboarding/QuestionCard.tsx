@@ -1,24 +1,15 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { Question } from '@/types';
 
 interface QuestionCardProps {
   question: Question;
-  direction: number;
   displayNumber: number;
 }
 
-export default function QuestionCard({ question, direction, displayNumber }: QuestionCardProps) {
+export default function QuestionCard({ question, displayNumber }: QuestionCardProps) {
   return (
-    <motion.div
-      key={question.id}
-      initial={{ opacity: 0, x: direction > 0 ? 80 : -80 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: direction > 0 ? -80 : 80 }}
-      transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-      className="w-full max-w-2xl mx-auto mb-8"
-    >
+    <div className="w-full max-w-2xl mx-auto mb-4 sm:mb-5">
       {/* Category badge */}
       <div className="flex items-center gap-2 mb-4">
         <div
@@ -46,6 +37,6 @@ export default function QuestionCard({ question, direction, displayNumber }: Que
       >
         {question.text}
       </h2>
-    </motion.div>
+    </div>
   );
 }

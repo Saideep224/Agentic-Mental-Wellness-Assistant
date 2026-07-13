@@ -20,6 +20,8 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
   const [streamPlaceholder, setStreamPlaceholder] = useState<string | null>(null);
   const [typingAgentId, setTypingAgentId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const lastSentContentRef = useRef<string | null>(null);
+  const lastClientMessageIdRef = useRef<string | null>(null);
 
   // Load messages for current conversation
   const loadMessages = useCallback(async () => {
@@ -215,6 +217,7 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
       const token = api.getToken();
       if (!token) return;
 
+      lastSentContentRef.current = content.trim();
       console.log("MESSAGE SENT", content);
       setError(null);
 
@@ -334,17 +337,39 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
         cleanUpConnection();
 
         try {
-          const url = `${api.API_BASE}/api/chat/${targetId}/stream?message=${encodeURIComponent(content.trim())}&token=${encodeURIComponent(token)}`;
+          const clientMsgId = lastClientMessageIdRef.current || generateId();
+          lastClientMessageIdRef.current = clientMsgId;
+          const url = `${api.API_BASE}/api/chat/${targetId}/stream?message=${encodeURIComponent(content.trim())}&token=${encodeURIComponent(token)}&client_message_id=${encodeURIComponent(clientMsgId)}`;
           const eventSource = new EventSource(url);
           eventSourceRef.current = eventSource;
 
-          // Timeout if first chunk/placeholder doesn't arrive within 4 seconds (attempt 1) or 8 seconds (attempt 2)
-          const timeoutMs = attempt === 0 ? 4000 : 8000;
+          // Two-phase timeout:
+          // Phase 1 (connection): 15s to receive first event (accommodates Render cold starts)
+          // Phase 2 (inactivity): 60s rolling timer reset by each event (detects dead streams)
+          const CONNECTION_TIMEOUT_MS = 15000;
+          const INACTIVITY_TIMEOUT_MS = 60000;
+          let firstEventReceived = false;
+          let inactivityTimeout: NodeJS.Timeout | null = null;
+
+          const startInactivityTimer = () => {
+            if (inactivityTimeout) clearTimeout(inactivityTimeout);
+            inactivityTimeout = setTimeout(() => {
+              console.warn('[useChat] Stream inactivity timeout (60s with no events).');
+              cleanUpConnection();
+              if (inactivityTimeout) { clearTimeout(inactivityTimeout); inactivityTimeout = null; }
+              setIsStreaming(false);
+              setIsLoading(false);
+              setStreamPlaceholder(null);
+              setError('The response timed out. Please try again.');
+            }, INACTIVITY_TIMEOUT_MS);
+          };
+
           connectionTimeout = setTimeout(() => {
-            console.warn(`[useChat] Stream connection attempt ${attempt + 1} timed out.`);
+            if (firstEventReceived) return; // Already transitioned to inactivity phase
+            console.warn(`[useChat] Stream connection attempt ${attempt + 1} timed out (${CONNECTION_TIMEOUT_MS}ms).`);
             cleanUpConnection();
 
-             if (!isMessageCreated) {
+            if (!isMessageCreated) {
               if (attempt < maxRetries) {
                 console.info(`[useChat] Retrying stream connection (attempt ${attempt + 2}/${maxRetries + 1})...`);
                 setStreamPlaceholder(null);
@@ -353,40 +378,31 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
                 setIsLoading(false);
                 setIsStreaming(false);
                 setStreamPlaceholder(null);
-                setMessages((prev) => {
-                  const fallbackMsg: Message = {
-                    id: generateId(),
-                    role: 'assistant',
-                    content: "my imaginary wifi betrayed me for a second... 😭 wait, what were we saying?",
-                    timestamp: new Date(),
-                  };
-                  return [...prev, fallbackMsg];
-                });
-                setError('Request timed out');
+                setError('Could not connect to Esona. The server may be starting up — please try again.');
               }
             } else {
-              // Message was already created and streaming, handle mid-stream disconnect
               setIsStreaming(false);
               setIsLoading(false);
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === activeBubbleId
-                    ? { ...msg, content: msg.content + "\n\n(wait, my brain froze for a second... 😭 let's try that again.)" }
-                    : msg
-                )
-              );
+              setError('Connection lost during response. Please try again.');
             }
-          }, timeoutMs);
+          }, CONNECTION_TIMEOUT_MS);
 
           eventSource.onmessage = (e) => {
-            // Clear connection timeout on the very first message/chunk received
-            if (connectionTimeout) {
-              clearTimeout(connectionTimeout);
-              connectionTimeout = null;
+            // On first event: clear connection timeout, switch to inactivity phase
+            if (!firstEventReceived) {
+              firstEventReceived = true;
+              if (connectionTimeout) {
+                clearTimeout(connectionTimeout);
+                connectionTimeout = null;
+              }
             }
+            // Reset inactivity timer on every event
+            startInactivityTimer();
 
             try {
               const data = JSON.parse(e.data);
+              // Ignore heartbeat events (just reset the inactivity timer above)
+              if (data.type === 'heartbeat') return;
               if (data.type === 'placeholder') {
                 // Show temporary placeholder bubble via separate state
                 setIsLoading(false);
@@ -464,6 +480,10 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
               } else if (data.type === 'done') {
                 console.log("AI RESPONSE RECEIVED");
                 streamCompleted = true;
+                // Clear the client_message_id on successful completion
+                lastClientMessageIdRef.current = null;
+                // Clear inactivity timer
+                if (inactivityTimeout) { clearTimeout(inactivityTimeout); inactivityTimeout = null; }
                 // Wait for burst queue to empty before finalizing
                 const finalize = setInterval(() => {
                   if (burstQueue.length === 0 && !isProcessingBurst) {
@@ -519,31 +539,12 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
               } else if (data.type === 'error') {
                 console.error('SSE Error event:', data.content);
                 cleanUpConnection();
+                if (inactivityTimeout) { clearTimeout(inactivityTimeout); inactivityTimeout = null; }
                 setIsLoading(false);
                 setIsStreaming(false);
                 setStreamPlaceholder(null);
                 setTypingAgentId(null);
-                setError(data.content || 'Stream error');
-                
-                if (!isMessageCreated) {
-                  setMessages((prev) => {
-                    const errorMsg: Message = {
-                      id: generateId(),
-                      role: 'assistant',
-                      content: "wait, I lost my train of thought for a moment... 😭 let's try that again.",
-                      timestamp: new Date(),
-                    };
-                    return [...prev, errorMsg];
-                  });
-                } else {
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === activeBubbleId
-                        ? { ...msg, content: msg.content + "\n\n(sorry, my brain lagged for a moment... 😭 what were we saying?)" }
-                        : msg
-                    )
-                  );
-                }
+                setError(data.content || 'Something went wrong. Please try again.');
               }
             } catch (parseErr) {
               console.error('Failed to parse SSE message data:', parseErr);
@@ -555,6 +556,7 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
             if (streamCompleted) {
               console.debug('[useChat] EventSource closed after stream completed (expected behavior)');
               cleanUpConnection();
+              if (inactivityTimeout) { clearTimeout(inactivityTimeout); inactivityTimeout = null; }
               return;
             }
             console.error('EventSource connection error:', e);
@@ -562,6 +564,7 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
               clearTimeout(connectionTimeout);
               connectionTimeout = null;
             }
+            if (inactivityTimeout) { clearTimeout(inactivityTimeout); inactivityTimeout = null; }
             cleanUpConnection();
 
             if (!isMessageCreated) {
@@ -575,27 +578,12 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
                 setIsLoading(false);
                 setIsStreaming(false);
                 setStreamPlaceholder(null);
-                setMessages((prev) => {
-                  const fallbackMsg: Message = {
-                    id: generateId(),
-                    role: 'assistant',
-                    content: "my thoughts buffered for a moment 😭 let's try again! what's on your mind?",
-                    timestamp: new Date(),
-                  };
-                  return [...prev, fallbackMsg];
-                });
-                setError('Connection failed');
+                setError('Could not connect to Esona. Please try again.');
               }
             } else {
               setIsStreaming(false);
               setIsLoading(false);
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === activeBubbleId
-                    ? { ...msg, content: msg.content + "\n\n(sorry, my brain lagged for a moment... 😭 what were we saying?)" }
-                    : msg
-                )
-              );
+              setError('Connection lost during response. Please try again.');
             }
           };
         } catch (streamErr) {
@@ -603,19 +591,7 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
           setIsLoading(false);
           setIsStreaming(false);
           setStreamPlaceholder(null);
-          setError('Failed to initialize stream');
-          
-          if (!isMessageCreated) {
-            setMessages((prev) => {
-              const fallbackMsg: Message = {
-                id: generateId(),
-                role: 'assistant',
-                content: "wait, I lost my train of thought for a second... 😭 what was that?",
-                timestamp: new Date(),
-              };
-              return [...prev, fallbackMsg];
-            });
-          }
+          setError('Could not connect to Esona. Please try again.');
         }
       };
 
@@ -624,6 +600,25 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
     },
     [conversationId]
   );
+
+  const retryLastMessage = useCallback(() => {
+    const content = lastSentContentRef.current;
+    if (!content) return;
+    setError(null);
+    // Remove the last user message (it was added optimistically) to avoid duplicates
+    // since sendMessage will re-add it
+    setMessages((prev) => {
+      // Find and remove the last user message that matches
+      const lastUserIdx = prev.map((m, i) => ({ m, i })).filter(({ m }) => m.role === 'user' && m.content === content).pop()?.i;
+      if (lastUserIdx !== undefined) {
+        const newMsgs = [...prev];
+        newMsgs.splice(lastUserIdx, 1);
+        return newMsgs;
+      }
+      return prev;
+    });
+    sendMessage(content);
+  }, [sendMessage]);
 
   return {
     messages,
@@ -635,5 +630,6 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
     error,
     sendMessage,
     loadMessages,
+    retryLastMessage,
   };
 }

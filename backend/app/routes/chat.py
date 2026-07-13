@@ -11,7 +11,7 @@ from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sse_starlette.sse import EventSourceResponse
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from jose import JWTError, jwt
@@ -1217,6 +1217,7 @@ async def stream_message_sse(
     message: str,
     token: str,
     background_tasks: BackgroundTasks,
+    client_message_id: str = None,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -1310,21 +1311,41 @@ async def stream_message_sse(
         logger.info(f"[TYPE LOG] stream_message_sse user: conversation_id type: {type(conversation_id_resolved)}, value: {conversation_id_resolved}")
         logger.info(f"[TYPE LOG] stream_message_sse user: user_id type: {type(current_user.id)}, value: {current_user.id}")
         try:
-            user_msg = Message(
-                conversation_id=conversation_id_resolved,
-                user_id=current_user.id,
-                role=MessageRole.user,
-                content=message,
-            )
-            db.add(user_msg)
-            conversation.updated_at = datetime.now(timezone.utc)
-            db.add(conversation)
-            
-            # Commit the user's message and conversation BEFORE starting stream execution (satisfies Task 4)
-            await db.commit()
-            await db.refresh(conversation)
-            await db.refresh(user_msg)
-            logger.info(f"[DB COMMIT SSE SUCCESS] User message (id={user_msg.id}) and Conversation resolved.")
+            # Deduplicate by client_message_id if provided
+            existing_user_msg = None
+            if client_message_id:
+                dedup_result = await db.execute(
+                    select(Message).where(
+                        and_(
+                            Message.conversation_id == conversation_id_resolved,
+                            Message.role == MessageRole.user,
+                            Message.content == message,
+                        )
+                    ).order_by(Message.created_at.desc()).limit(1)
+                )
+                candidate = dedup_result.scalar_one_or_none()
+                if candidate and candidate.emotional_context and candidate.emotional_context.get("client_message_id") == client_message_id:
+                    existing_user_msg = candidate
+                    logger.info(f"[SSE DEDUP] Duplicate message detected (client_message_id={client_message_id}). Skipping save.")
+
+            if existing_user_msg:
+                user_msg = existing_user_msg
+            else:
+                user_msg = Message(
+                    conversation_id=conversation_id_resolved,
+                    user_id=current_user.id,
+                    role=MessageRole.user,
+                    content=message,
+                    emotional_context={"client_message_id": client_message_id} if client_message_id else None,
+                )
+                db.add(user_msg)
+                conversation.updated_at = datetime.now(timezone.utc)
+                db.add(conversation)
+                
+                await db.commit()
+                await db.refresh(conversation)
+                await db.refresh(user_msg)
+                logger.info(f"[DB COMMIT SSE SUCCESS] User message (id={user_msg.id}) and Conversation resolved.")
         except Exception as db_msg_err:
             logger.error(f"[DB COMMIT SSE ERROR] Failed to save user message: {db_msg_err}", exc_info=True)
             await db.rollback()
@@ -1400,15 +1421,29 @@ async def stream_message_sse(
                         emotional_profile=emotional_profile,
                     )
                 )
-                try:
-                    persisted = await asyncio.shield(persist_task)
-                except asyncio.CancelledError:
-                    logger.warning(
-                        "[SSE DISCONNECT] Client disconnected while AI/save task was running. "
-                        "Persistence task remains shielded for conversation_id=%s",
-                        conversation_id_resolved,
-                    )
-                    raise
+                
+                # Send heartbeats every 10s while waiting for the AI response
+                while not persist_task.done():
+                    try:
+                        persisted = await asyncio.wait_for(asyncio.shield(persist_task), timeout=10.0)
+                        break  # Task completed
+                    except asyncio.TimeoutError:
+                        # Task still running, send heartbeat
+                        yield {
+                            "event": "message",
+                            "data": json.dumps({"type": "heartbeat"}),
+                        }
+                        continue
+                    except asyncio.CancelledError:
+                        logger.warning(
+                            "[SSE DISCONNECT] Client disconnected while AI/save task was running. "
+                            "Persistence task remains shielded for conversation_id=%s",
+                            conversation_id_resolved,
+                        )
+                        raise
+                else:
+                    # Task completed during the while check
+                    persisted = persist_task.result()
  
                 full_response = persisted["full_response"]
                 detected_emotion = persisted["detected_emotion"]

@@ -23,6 +23,8 @@ import {
   ArrowRight,
   Music,
   Sliders,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import EsonaLogo from '@/components/layout/EsonaLogo';
@@ -281,6 +283,7 @@ export default function ChatPage() {
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [dismissedSuggestions, setDismissedSuggestions] = useState<string[]>([]);
+  const [conversationLoadFailed, setConversationLoadFailed] = useState(false);
 
   // Background preferences state
   const [bgPreferences, setBgPreferences] = useState({
@@ -399,7 +402,7 @@ export default function ChatPage() {
   const activeConv = conversations.find((c) => c.id === activeConversationId);
   const activeAgentId = activeConv?.agent_id || 'buddy';
 
-  const { messages, setMessages, isLoading, isStreaming, streamPlaceholder, typingAgentId, sendMessage } = useChat({
+  const { messages, setMessages, isLoading, isStreaming, streamPlaceholder, typingAgentId, error: chatError, sendMessage, retryLastMessage } = useChat({
     conversationId: activeConversationId,
     onboardingCompleted: user?.onboardingCompleted || welcomeDismissed,
   });
@@ -473,6 +476,7 @@ export default function ChatPage() {
     try {
       const convos = await api.getConversations(token);
       setConversations(convos);
+      setConversationLoadFailed(false);
       if (convos.length > 0) {
         if (!activeConversationId) {
           const buddyConv = convos.find((c) => c.agent_id === 'buddy' || !c.agent_id) || convos[0];
@@ -481,6 +485,7 @@ export default function ChatPage() {
       }
     } catch (err) {
       console.error('Failed to load conversations:', err);
+      setConversationLoadFailed(true);
     }
   }, [activeConversationId]);
 
@@ -500,8 +505,55 @@ export default function ChatPage() {
 
 
   const handleSend = async (content: string) => {
-    if (!activeConversationId) return;
-    sendMessage(content);
+    // If we already have an active conversation, send immediately
+    if (activeConversationId) {
+      sendMessage(content);
+      return;
+    }
+
+    // No active conversation — auto-create one (handles load timeout / first visit)
+    if (isCreating) return; // Prevent double-click
+    setIsCreating(true);
+
+    try {
+      const token = getToken();
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+
+      // Try to load conversations first (they may have loaded since the timeout)
+      try {
+        const convos = await api.getConversations(token);
+        setConversations(convos);
+        setConversationLoadFailed(false);
+        if (convos.length > 0) {
+          const buddyConv = convos.find((c) => c.agent_id === 'buddy' || !c.agent_id) || convos[0];
+          setActiveConversationId(buddyConv.id);
+          // Small delay so useChat picks up the new conversationId
+          await new Promise((r) => setTimeout(r, 100));
+          sendMessage(content, buddyConv.id);
+          return;
+        }
+      } catch {
+        // Conversations endpoint failed — create a new one directly
+      }
+
+      // Create a new Buddy conversation
+      const newConv = await api.createConversation(token, '💙 Buddy', 'buddy');
+      setConversations((prev) => [newConv, ...prev]);
+      setActiveConversationId(newConv.id);
+      setConversationLoadFailed(false);
+      // Small delay so useChat picks up the new conversationId
+      await new Promise((r) => setTimeout(r, 100));
+      sendMessage(content, newConv.id);
+    } catch (err) {
+      console.error('Failed to create conversation for send:', err);
+      // Show error — don't silently swallow
+      // The user's message was NOT sent, so we don't add it to the list
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleSkipOnboarding = async () => {
@@ -867,8 +919,56 @@ export default function ChatPage() {
             </ChatContainer>
           </div>
 
+          {/* Retry / error banner */}
+          <AnimatePresence>
+            {chatError && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="mx-4 mb-2 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm"
+                style={{
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  color: 'rgba(252, 165, 165, 1)',
+                }}
+              >
+                <AlertCircle size={14} className="flex-shrink-0" />
+                <span className="flex-1">{chatError}</span>
+                <button
+                  onClick={retryLastMessage}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer hover:bg-white/10"
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: 'rgba(252, 165, 165, 1)',
+                  }}
+                >
+                  <RefreshCw size={12} />
+                  Retry
+                </button>
+              </motion.div>
+            )}
+            {conversationLoadFailed && !chatError && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="mx-4 mb-2 flex items-center gap-2 px-4 py-2 rounded-xl text-xs"
+                style={{
+                  background: 'rgba(251, 191, 36, 0.06)',
+                  border: '1px solid rgba(251, 191, 36, 0.15)',
+                  color: 'rgba(253, 224, 71, 0.8)',
+                }}
+              >
+                <AlertCircle size={12} className="flex-shrink-0" />
+                <span>Couldn&apos;t load chat history — you can still start chatting.</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Input */}
-          <ChatInput ref={inputRef} onSend={handleSend} disabled={isLoading} />
+          <ChatInput ref={inputRef} onSend={handleSend} disabled={isLoading || isCreating} />
         </div>
 
         {/* Live Agent Debug Panel */}

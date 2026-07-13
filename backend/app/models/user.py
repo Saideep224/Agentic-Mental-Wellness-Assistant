@@ -93,5 +93,13 @@ class User(Base):
         "UserAnswer", back_populates="user", cascade="all, delete-orphan"
     )
 
+    def __init__(self, **kwargs):
+        # Automatically default profile_id (column 'id') to user_id (column 'user_id')
+        if "profile_id" not in kwargs:
+            val = kwargs.get("id") or kwargs.get("user_id")
+            if val:
+                kwargs["profile_id"] = val
+        super().__init__(**kwargs)
+
     def __repr__(self) -> str:
         return f"<User {self.email}>"

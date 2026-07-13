@@ -43,3 +43,9 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")
     user: Mapped["User"] = relationship("User", back_populates="chat_messages")  # noqa: F821
+
+
+# Backwards-compatible public name. Several routes and tests historically import
+# `Message`; keeping this alias prevents import-time startup failures while the ORM
+# class remains explicitly named ChatMessage and mapped to `chat_messages`.
+Message = ChatMessage

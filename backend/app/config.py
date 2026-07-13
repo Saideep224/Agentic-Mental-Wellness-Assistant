@@ -3,6 +3,7 @@ Application configuration loaded from environment variables.
 Uses pydantic-settings for validation and .env file support.
 """
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +21,17 @@ class Settings(BaseSettings):
     # For local dev: sqlite+aiosqlite:///./esona.db
     # For Supabase: postgresql+asyncpg://postgres.[REF]:[PASS]@aws-0-[REGION].pooler.supabase.com:6543/postgres
     DATABASE_URL: str = "sqlite+aiosqlite:///./esona.db"
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: str) -> str:
+        if not isinstance(v, str):
+            return v
+        if v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql+asyncpg://", 1)
+        return v
 
     # ── Supabase (optional, for direct client access if needed) ─
     SUPABASE_URL: str = ""

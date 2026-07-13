@@ -38,12 +38,46 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Lifecycle event handler for database and other service startups."""
     logger.info("Starting up Esona API...")
+    
+    # 1. Production database guard
+    import os
+    is_render = os.environ.get("RENDER") == "true" or os.environ.get("ENVIRONMENT") == "production"
+    is_sqlite = not settings.is_postgres or "sqlite" in settings.DATABASE_URL or "esona.db" in settings.DATABASE_URL
+    
+    if is_render and is_sqlite:
+        msg = "[DB CRITICAL] Ephemeral SQLite database configured in production/Render environment! Startup aborted to prevent data loss."
+        logger.critical(msg)
+        raise RuntimeError(msg)
+
+    # 2. Log database configuration details safely
+    if settings.is_postgres:
+        logger.info("[DB] Database dialect: PostgreSQL")
+        logger.info("[DB] Driver: asyncpg")
+        logger.info("[DB] Production persistence: external PostgreSQL")
+    else:
+        logger.info("[DB] Database dialect: SQLite")
+        logger.info("[DB] Local database path configured")
+
+    # 3. Connection verification (SELECT 1)
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("[DB] Database connection verified")
+    except Exception as e:
+        logger.critical(f"[DB] Database connection verification failed: {e}")
+        # If in production/Render environment, we MUST abort startup
+        if is_render or settings.is_postgres:
+            logger.critical("[DB] Critical connection failure in production environment. Aborting startup.")
+            raise RuntimeError(f"Database connection verification failed: {e}") from e
+
     try:
         # Create database tables automatically in dev/production if not present
         await create_tables()
         logger.info("Database tables initialized successfully.")
     except Exception as e:
         logger.critical(f"Database initialization failed: {e}", exc_info=True)
+        if is_render or settings.is_postgres:
+            raise RuntimeError(f"Database table initialization failed: {e}") from e
     yield
     logger.info("Shutting down Esona API...")
 

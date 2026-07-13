@@ -8,6 +8,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
+      - key: DATABASE_URL
+        sync: false
       - key: JWT_SECRET
         value: esona-local-dev-jwt-secret-key-2026
       - key: USE_UNCLOSEAI

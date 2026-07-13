@@ -2,10 +2,11 @@
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.onboarding import UserAnswer
 from app.models.user_profile import UserProfile
+from app.models.knowledge_graph import KnowledgeGraphRelation
 from app.services.profile_service import profile_service, invalidate_profile_caches
 
 logger = logging.getLogger(__name__)
@@ -14,8 +15,7 @@ logger = logging.getLogger(__name__)
 def _value(answer: UserAnswer) -> Any:
     selected = list(answer.selected_answers or [])
     custom = (answer.custom_answer or "").strip()
-    if custom and (not selected or any(str(x).lower() in {"other", "custom", "other (please specify)"} for x in selected)):
-        return custom
+    if custom and (not selected or any(str(x).lower() in {"other", "custom", "other (please specify)"} for x in selected)): return custom
     if custom and answer.question_id in {1, 7}: return custom
     if len(selected) == 1: return selected[0]
     return selected or custom
@@ -36,33 +36,18 @@ class OnboardingAnalyzer:
         answers = list(result.scalars().all())
         amap = {a.question_id: _value(a) for a in answers}
         completed = len(amap) >= 27
-
-        personality_profile = {
-            "age": _text(amap.get(1)), "profession": _text(amap.get(2)),
-            "field_of_work": _text(amap.get(3)), "university": _text(amap.get(4)),
-            "student_year": _text(amap.get(5)), "gender": _text(amap.get(6)),
-            "name": _text(amap.get(7)), "current_challenge": _text(amap.get(8)),
-            "advice_preference": _text(amap.get(9)), "primary_support_need": _text(amap.get(10)),
+        personality_profile = {"age": _text(amap.get(1)), "profession": _text(amap.get(2)), "field_of_work": _text(amap.get(3)),
+            "university": _text(amap.get(4)), "student_year": _text(amap.get(5)), "gender": _text(amap.get(6)), "name": _text(amap.get(7)),
+            "current_challenge": _text(amap.get(8)), "advice_preference": _text(amap.get(9)), "primary_support_need": _text(amap.get(10)),
             "interests": _list(amap.get(11)), "hobbies": _list(amap.get(12)), "goals": _list(amap.get(13)),
-            "communication_style": _text(amap.get(17)), "social_energy": _text(amap.get(19)),
-            "confidence_style": _text(amap.get(20)), "emotional_openness": _text(amap.get(21)),
-            "desired_change": _text(amap.get(27)),
-        }
-        emotional_baseline = {"sleep": _text(amap.get(18)), "life_satisfaction": _text(amap.get(26)),
-                              "emotional_openness": _text(amap.get(21)), "confidence": _text(amap.get(20))}
-        emotional_style = {"stress_response": _text(amap.get(22)), "overwhelm_pattern": _text(amap.get(23)),
-                           "criticism_response": _text(amap.get(24)), "social_energy": _text(amap.get(19))}
-        comfort_preferences = {"coping_mechanisms": _list(amap.get(15)), "support_system": _text(amap.get(16)),
-                               "comfort_preference": _text(amap.get(25)), "primary_support_need": _text(amap.get(10))}
-        stress_triggers = {"current_challenge": _text(amap.get(8)), "triggers": _list(amap.get(14)),
-                           "overwhelm_pattern": _text(amap.get(23))}
-        preferred_response_style = {"advice_preference": _text(amap.get(9)),
-                                    "communication_style": _text(amap.get(17)),
-                                    "age_calibration": _text(amap.get(1)),
-                                    "tone_rule": "Match this user's own preferred communication style and emotional openness."}
-        emotional_summary = {"current_challenge": _text(amap.get(8)), "support_need": _text(amap.get(10)),
-                             "stress_response": _text(amap.get(22)), "comfort_preference": _text(amap.get(25)),
-                             "desired_change": _text(amap.get(27))}
+            "communication_style": _text(amap.get(17)), "social_energy": _text(amap.get(19)), "confidence_style": _text(amap.get(20)),
+            "emotional_openness": _text(amap.get(21)), "desired_change": _text(amap.get(27))}
+        emotional_baseline = {"sleep": _text(amap.get(18)), "life_satisfaction": _text(amap.get(26)), "emotional_openness": _text(amap.get(21)), "confidence": _text(amap.get(20))}
+        emotional_style = {"stress_response": _text(amap.get(22)), "overwhelm_pattern": _text(amap.get(23)), "criticism_response": _text(amap.get(24)), "social_energy": _text(amap.get(19))}
+        comfort_preferences = {"coping_mechanisms": _list(amap.get(15)), "support_system": _text(amap.get(16)), "comfort_preference": _text(amap.get(25)), "primary_support_need": _text(amap.get(10))}
+        stress_triggers = {"current_challenge": _text(amap.get(8)), "triggers": _list(amap.get(14)), "overwhelm_pattern": _text(amap.get(23))}
+        preferred_response_style = {"advice_preference": _text(amap.get(9)), "communication_style": _text(amap.get(17)), "age_calibration": _text(amap.get(1)), "tone_rule": "Match this user's own preferred communication style and emotional openness."}
+        emotional_summary = {"current_challenge": _text(amap.get(8)), "support_need": _text(amap.get(10)), "stress_response": _text(amap.get(22)), "comfort_preference": _text(amap.get(25)), "desired_change": _text(amap.get(27))}
 
         profile_result = await db.execute(select(UserProfile).where(UserProfile.user_id == user_id))
         profile = profile_result.scalar_one_or_none()
@@ -80,24 +65,32 @@ class OnboardingAnalyzer:
         profile.onboarding_completed = completed
         profile.interests = {"items": personality_profile["interests"], "hobbies": personality_profile["hobbies"]}
         profile.communication_style = {"preferred_style": personality_profile["communication_style"]}
-        profile.personality_type = {"social_energy": personality_profile["social_energy"],
-                                    "confidence_style": personality_profile["confidence_style"],
-                                    "emotional_openness": personality_profile["emotional_openness"]}
+        profile.personality_type = {"social_energy": personality_profile["social_energy"], "confidence_style": personality_profile["confidence_style"], "emotional_openness": personality_profile["emotional_openness"]}
         profile.updated_at = datetime.now(timezone.utc)
 
-        await profile_service.update_profile(db, user_id, {
-            "age": amap.get(1), "profession": amap.get(2), "field_of_work": amap.get(3),
-            "university": amap.get(4), "student_year": amap.get(5), "gender": amap.get(6), "name": amap.get(7),
-            "current_challenge": amap.get(8), "advice_preference": amap.get(9), "primary_support_need": amap.get(10),
-            "interests": _list(amap.get(11)), "hobbies": _list(amap.get(12)), "goals": _list(amap.get(13)),
-            "stress_triggers": _list(amap.get(14)), "coping_mechanisms": _list(amap.get(15)),
-            "support_system": amap.get(16), "communication_style": amap.get(17), "sleep_habits": amap.get(18),
-        })
+        await profile_service.update_profile(db, user_id, {"age": amap.get(1), "profession": amap.get(2), "field_of_work": amap.get(3),
+            "university": amap.get(4), "student_year": amap.get(5), "gender": amap.get(6), "name": amap.get(7), "current_challenge": amap.get(8),
+            "advice_preference": amap.get(9), "primary_support_need": amap.get(10), "interests": _list(amap.get(11)), "hobbies": _list(amap.get(12)),
+            "goals": _list(amap.get(13)), "stress_triggers": _list(amap.get(14)), "coping_mechanisms": _list(amap.get(15)),
+            "support_system": amap.get(16), "communication_style": amap.get(17), "sleep_habits": amap.get(18)})
+
+        # Seed stable Knowledge Graph facts from onboarding. Chat extraction can add new
+        # facts later; these canonical facts are refreshed whenever Knowing Me changes.
+        await db.execute(delete(KnowledgeGraphRelation).where(KnowledgeGraphRelation.user_id == user_id, KnowledgeGraphRelation.predicate.like("knowing_me_%")))
+        graph_fields = {1: "age", 2: "profession", 3: "field", 4: "university", 5: "student_year", 6: "gender", 7: "name",
+                        8: "challenge", 9: "advice_preference", 10: "support_need", 11: "interest", 12: "hobby", 13: "goal",
+                        14: "stress_trigger", 15: "coping_mechanism", 16: "support_system", 17: "communication_style", 18: "sleep_habit",
+                        19: "social_energy", 20: "confidence_style", 21: "emotional_openness", 22: "stress_response", 23: "overwhelm_pattern",
+                        24: "criticism_response", 25: "comfort_preference", 26: "life_satisfaction", 27: "desired_change"}
+        for qid, predicate in graph_fields.items():
+            for item in _list(amap.get(qid)):
+                if item.strip():
+                    db.add(KnowledgeGraphRelation(user_id=user_id, subject="User", predicate=f"knowing_me_{predicate}", object=item[:255], confidence=1.0))
+
         invalidate_profile_caches(user_id)
         await db.commit()
-        return {"personality_profile": personality_profile, "emotional_baseline": emotional_baseline,
-                "comfort_preferences": comfort_preferences, "emotional_style": emotional_style,
-                "stress_triggers": stress_triggers, "preferred_response_style": preferred_response_style,
+        return {"personality_profile": personality_profile, "emotional_baseline": emotional_baseline, "comfort_preferences": comfort_preferences,
+                "emotional_style": emotional_style, "stress_triggers": stress_triggers, "preferred_response_style": preferred_response_style,
                 "emotional_summary": emotional_summary, "onboarding_completed": completed, "answer_count": len(amap)}
 
 

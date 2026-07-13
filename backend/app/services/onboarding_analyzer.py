@@ -74,8 +74,6 @@ class OnboardingAnalyzer:
             "goals": _list(amap.get(13)), "stress_triggers": _list(amap.get(14)), "coping_mechanisms": _list(amap.get(15)),
             "support_system": amap.get(16), "communication_style": amap.get(17), "sleep_habits": amap.get(18)})
 
-        # Seed stable Knowledge Graph facts from onboarding. Chat extraction can add new
-        # facts later; these canonical facts are refreshed whenever Knowing Me changes.
         await db.execute(delete(KnowledgeGraphRelation).where(KnowledgeGraphRelation.user_id == user_id, KnowledgeGraphRelation.predicate.like("knowing_me_%")))
         graph_fields = {1: "age", 2: "profession", 3: "field", 4: "university", 5: "student_year", 6: "gender", 7: "name",
                         8: "challenge", 9: "advice_preference", 10: "support_need", 11: "interest", 12: "hobby", 13: "goal",
@@ -95,3 +93,15 @@ class OnboardingAnalyzer:
 
 
 onboarding_analyzer = OnboardingAnalyzer()
+
+
+async def analyze_onboarding(user_id, answers=None, db: AsyncSession | None = None) -> Dict[str, Any]:
+    """Backward-compatible service entrypoint used by onboarding routes and service exports.
+
+    The canonical analyzer reads the persisted answers from the database. ``answers`` is
+    accepted only to preserve the historical call signature; saved UserAnswer rows remain
+    the single source of truth.
+    """
+    if db is None:
+        raise ValueError("A database session is required for onboarding analysis")
+    return await onboarding_analyzer.analyze_onboarding_answers(db, user_id)

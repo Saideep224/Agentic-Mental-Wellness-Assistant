@@ -5,6 +5,7 @@ from sqlalchemy.types import TypeDecorator, CHAR
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
@@ -60,6 +61,7 @@ class SafeUUID(TypeDecorator):
 # ── Build connect_args based on database type ────────────────
 connect_args: dict = {}
 engine_kwargs: dict = {"echo": False, "pool_pre_ping": True}
+engine_database_url = settings.DATABASE_URL
 
 if settings.is_postgres:
     # Supabase PostgreSQL via transaction pooler (port 6543)
@@ -72,15 +74,26 @@ if settings.is_postgres:
     
     connect_args["statement_cache_size"] = 0
     connect_args["ssl"] = ctx
-    engine_kwargs["pool_size"] = 10
-    engine_kwargs["max_overflow"] = 20
+    
+    # Use NullPool to avoid double-pooling with PgBouncer
+    engine_kwargs["poolclass"] = NullPool
+    
+    if "prepared_statement_cache_size=" not in engine_database_url:
+        separator = "&" if "?" in engine_database_url else "?"
+        engine_database_url = (
+            f"{engine_database_url}"
+            f"{separator}prepared_statement_cache_size=0"
+        )
+    logger.info("[DB] PostgreSQL asyncpg prepared statement cache disabled via query params")
+    logger.info("[DB] asyncpg statement cache disabled")
+    logger.info("[DB] Supabase transaction pooler compatibility enabled (NullPool)")
 else:
     # SQLite parameters for concurrent write resiliency
     connect_args["timeout"] = 30
 
 # ── Engine ────────────────────────────────────────────────────
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    engine_database_url,
     connect_args=connect_args,
     **engine_kwargs,
 )

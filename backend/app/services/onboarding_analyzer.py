@@ -1,261 +1,104 @@
-"""
-Service to analyze onboarding responses and build the initial EmotionalProfile.
-Uses OpenAI API to parse responses and generate structured personality/emotional insights.
-"""
-
-import json
+"""Deterministic Knowing Me analyzer using all 27 answers."""
 import logging
-import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List
-
-from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.config import settings
-from app.models.user import User
+from app.models.onboarding import UserAnswer
 from app.models.user_profile import UserProfile
-from app.models.conversation import Message
-from app.models.memory import Memory
+from app.services.profile_service import profile_service, invalidate_profile_caches
 
 logger = logging.getLogger(__name__)
 
 
-async def analyze_onboarding(
-    user_id: uuid.UUID,
-    answers: List[Dict[str, Any]],
-    db: AsyncSession,
-) -> UserProfile:
-    """
-    Analyze 20 onboarding responses using OpenAI and save the resulting
-    EmotionalProfile.
-    """
-    logger.info(f"Analyzing onboarding responses for user: {user_id}")
+def _value(answer: UserAnswer) -> Any:
+    selected = list(answer.selected_answers or [])
+    custom = (answer.custom_answer or "").strip()
+    if custom and (not selected or any(str(x).lower() in {"other", "custom", "other (please specify)"} for x in selected)):
+        return custom
+    if custom and answer.question_id in {1, 7}: return custom
+    if len(selected) == 1: return selected[0]
+    return selected or custom
 
-    # Format answers for the prompt
-    formatted_responses = []
-    for ans in answers:
-        q_id = ans.get("question_id")
-        cat = ans.get("category")
-        opts = ans.get("selected_answers", [])
-        custom = ans.get("custom_answer")
-        
-        opts_str = ", ".join([f"'{o}'" for o in opts])
-        custom_str = f" (Custom answer: '{custom}')" if custom else ""
-        formatted_responses.append(
-            f"Question {q_id} [{cat}]: Selected [{opts_str}]{custom_str}"
-        )
 
-    answers_summary = "\n".join(formatted_responses)
+def _text(value: Any) -> str:
+    return ", ".join(map(str, value)) if isinstance(value, list) else str(value or "")
 
-    # Fetch last 50 chat messages from the user/assistant to contextualize the profile
-    try:
-        messages_result = await db.execute(
-            select(Message)
-            .where(Message.user_id == user_id)
-            .order_by(Message.created_at.desc())
-            .limit(50)
-        )
-        db_messages = messages_result.scalars().all()
-        # Sort chronologically
-        db_messages = list(reversed(db_messages))
-        chat_context = "\n".join([
-            f"{'User' if m.role == 'user' else 'Buddy'}: {m.content}"
-            for m in db_messages
-        ])
-    except Exception as e:
-        logger.warning(f"Failed to fetch messages for onboarding analysis: {e}")
-        chat_context = "No chat history available."
 
-    # Fetch recent memories
-    try:
-        memories_result = await db.execute(
-            select(Memory)
-            .where(Memory.user_id == user_id)
-            .order_by(Memory.created_at.desc())
-            .limit(15)
-        )
-        db_memories = memories_result.scalars().all()
-        memories_context = "\n".join([
-            f"- {mem.memory_content} (Type: {mem.memory_type or 'General'})"
-            for mem in db_memories
-        ])
-    except Exception as e:
-        logger.warning(f"Failed to fetch memories for onboarding analysis: {e}")
-        memories_context = "No memories available."
+def _list(value: Any) -> List[str]:
+    if not value: return []
+    return [str(x) for x in value] if isinstance(value, list) else [str(value)]
 
-    system_prompt = """
-    You are an advanced psychological profiling system. Your task is to analyze a user's answers to their onboarding questionnaire, their recent chat history, and their recorded memories to produce a structured, deep emotional and behavioral profile.
-    
-    The inputs are:
-    1. Onboarding answers (from a 25-question onboarding setup or updates).
-    2. Recent chat logs with Esona/Buddy.
-    3. Recorded memories/observations.
 
-    Analyze these sources comprehensively to generate a cohesive, accurate profile.
+class OnboardingAnalyzer:
+    async def analyze_onboarding_answers(self, db: AsyncSession, user_id) -> Dict[str, Any]:
+        result = await db.execute(select(UserAnswer).where(UserAnswer.user_id == user_id).order_by(UserAnswer.question_id))
+        answers = list(result.scalars().all())
+        amap = {a.question_id: _value(a) for a in answers}
+        completed = len(amap) >= 27
 
-    Analyze these answers and output a single JSON object containing exactly these keys:
-    - personality_type: containing 'type' (a descriptive name, e.g. "Thoughtful Introvert", "Empathetic Rescuer", etc.), 'description', 'strengths' (list of strings), 'growth_areas' (list of strings), and 'summary' (a brief overview).
-    - emotional_baseline: containing 'dominant_emotion' (e.g. calm, overwhelmed, anxious, optimistic), 'tendencies' (list of strings describing their recurring moods), 'stress_level' (a rating between 1 and 10), and 'burnout_risk_assessment' (brief textual assessment).
-    - comfort_preferences: containing 'safest_environment' (where they feel emotionally safest), 'escape_mechanisms' (list of things they use to de-stress), and 'mood_boosters' (list of actions/factors that improve their mood).
-    - communication_style: containing 'preferred_style' (e.g. warm & friendly, direct & logical, gentle & validating), 'annoyances' (list of communication patterns that annoy them), and 'comfort_support_type' (what they seek when feeling low: practical advice vs validation/listening).
-    - reply_style: containing 'reply_style' (one of: "short_funny", "short", "deep_emotional", "casual"), 'likes_humor' (boolean), 'paragraph_preference' (one of: "short", "medium", "long"), 'emoji_usage' (one of: "low", "medium", "high"), 'communication_style' (one of: "casual", "gentle", "direct", "funny"), and 'energy' (one of: "playful", "calm", "thoughtful", "supportive").
-    - emotional_summary: containing a descriptive narrative summarizing their current emotional state, baseline, and tendencies.
-    - stress_patterns: containing 'stress_triggers' (list of strings) and 'coping_mechanisms' (list of strings).
-    - emotional_triggers: containing 'triggers' (list of strings) and 'overthinking_tendency' (high/medium/low).
-    - preferred_response_style: containing 'preferred_tone', 'what_helps' (list of strings), and 'what_to_avoid' (list of strings).
-
-    Output ONLY valid JSON. Do not include markdown code block formatting or backticks around the JSON.
-    """
-
-    user_prompt = f"""
-    Analyze the following user data to generate the structured emotional profile:
-    
-    ONBOARDING QUESTIONS AND ANSWERS:
-    {answers_summary}
-    
-    RECENT CHAT CONVERSATION HISTORY:
-    {chat_context}
-    
-    RECORDED MEMORIES / KEY OBSERVATIONS:
-    {memories_context}
-    """
-
-    # Use client to run query
-    client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-
-    try:
-        response = await client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.4,
-            response_format={"type": "json_object"},
-        )
-
-        raw_content = response.choices[0].message.content or "{}"
-        profile_data = json.loads(raw_content)
-
-    except Exception as e:
-        logger.error(f"OpenAI profiling failed: {e}", exc_info=True)
-        # Fallback profile data in case of error
-        profile_data = {
-            "personality_type": {
-                "type": "Thoughtful Processor",
-                "description": "Prefers reflecting internally and values authentic connections.",
-                "strengths": ["Self-reflective", "Empathetic listener"],
-                "growth_areas": ["Managing overthinking"],
-                "summary": "Values quiet reflection and clear, low-pressure support.",
-            },
-            "emotional_baseline": {
-                "dominant_emotion": "neutral",
-                "tendencies": ["calm", "reflective"],
-                "stress_level": 4.0,
-                "burnout_risk_assessment": "Moderate. Keep track of energy level balance.",
-            },
-            "comfort_preferences": {
-                "safest_environment": "Quiet personal space",
-                "escape_mechanisms": ["listening to music", "retreating into hobbies"],
-                "mood_boosters": ["quiet achievements", "sincere connections"],
-            },
-            "communication_style": {
-                "preferred_style": "gentle & validating",
-                "annoyances": ["toxic positivity", "overly formal scripts"],
-                "comfort_support_type": "validation & quiet listening",
-            },
-            "reply_style": {
-                "reply_style": "casual",
-                "likes_humor": True,
-                "paragraph_preference": "short",
-                "emoji_usage": "medium",
-                "communication_style": "casual",
-                "energy": "supportive"
-            },
-            "emotional_summary": {
-                "summary": "Currently in a neutral, calm emotional baseline. Tends to overthink during stress but values self-reflection."
-            },
-            "stress_patterns": {
-                "stress_triggers": ["overwhelming responsibilities", "lack of structure"],
-                "coping_mechanisms": ["music", "retreating into a quiet space"]
-            },
-            "emotional_triggers": {
-                "triggers": ["abrupt communication", "high-pressure expectations"],
-                "overthinking_tendency": "medium"
-            },
-            "preferred_response_style": {
-                "preferred_tone": "gentle & validating",
-                "what_helps": ["validation", "active listening", "calm suggestions"],
-                "what_to_avoid": ["toxic positivity", "robotic motivational lines"]
-            }
+        personality_profile = {
+            "age": _text(amap.get(1)), "profession": _text(amap.get(2)),
+            "field_of_work": _text(amap.get(3)), "university": _text(amap.get(4)),
+            "student_year": _text(amap.get(5)), "gender": _text(amap.get(6)),
+            "name": _text(amap.get(7)), "current_challenge": _text(amap.get(8)),
+            "advice_preference": _text(amap.get(9)), "primary_support_need": _text(amap.get(10)),
+            "interests": _list(amap.get(11)), "hobbies": _list(amap.get(12)), "goals": _list(amap.get(13)),
+            "communication_style": _text(amap.get(17)), "social_energy": _text(amap.get(19)),
+            "confidence_style": _text(amap.get(20)), "emotional_openness": _text(amap.get(21)),
+            "desired_change": _text(amap.get(27)),
         }
+        emotional_baseline = {"sleep": _text(amap.get(18)), "life_satisfaction": _text(amap.get(26)),
+                              "emotional_openness": _text(amap.get(21)), "confidence": _text(amap.get(20))}
+        emotional_style = {"stress_response": _text(amap.get(22)), "overwhelm_pattern": _text(amap.get(23)),
+                           "criticism_response": _text(amap.get(24)), "social_energy": _text(amap.get(19))}
+        comfort_preferences = {"coping_mechanisms": _list(amap.get(15)), "support_system": _text(amap.get(16)),
+                               "comfort_preference": _text(amap.get(25)), "primary_support_need": _text(amap.get(10))}
+        stress_triggers = {"current_challenge": _text(amap.get(8)), "triggers": _list(amap.get(14)),
+                           "overwhelm_pattern": _text(amap.get(23))}
+        preferred_response_style = {"advice_preference": _text(amap.get(9)),
+                                    "communication_style": _text(amap.get(17)),
+                                    "age_calibration": _text(amap.get(1)),
+                                    "tone_rule": "Match this user's own preferred communication style and emotional openness."}
+        emotional_summary = {"current_challenge": _text(amap.get(8)), "support_need": _text(amap.get(10)),
+                             "stress_response": _text(amap.get(22)), "comfort_preference": _text(amap.get(25)),
+                             "desired_change": _text(amap.get(27))}
 
-    # Fetch existing profile if any, or create a new one
-    result = await db.execute(
-        select(UserProfile).where(UserProfile.user_id == user_id)
-    )
-    profile = result.scalar_one_or_none()
+        profile_result = await db.execute(select(UserProfile).where(UserProfile.user_id == user_id))
+        profile = profile_result.scalar_one_or_none()
+        if not profile:
+            profile = UserProfile(user_id=user_id, user_email="")
+            db.add(profile)
+        profile.personality_profile = personality_profile
+        profile.emotional_baseline = emotional_baseline
+        profile.comfort_preferences = comfort_preferences
+        profile.emotional_style = emotional_style
+        profile.stress_triggers = stress_triggers
+        profile.preferred_response_style = preferred_response_style
+        profile.emotional_summary = emotional_summary
+        profile.onboarding_answers = {str(k): v for k, v in amap.items()}
+        profile.onboarding_completed = completed
+        profile.interests = {"items": personality_profile["interests"], "hobbies": personality_profile["hobbies"]}
+        profile.communication_style = {"preferred_style": personality_profile["communication_style"]}
+        profile.personality_type = {"social_energy": personality_profile["social_energy"],
+                                    "confidence_style": personality_profile["confidence_style"],
+                                    "emotional_openness": personality_profile["emotional_openness"]}
+        profile.updated_at = datetime.now(timezone.utc)
 
-    if not profile:
-        profile = UserProfile(user_id=user_id)
-        db.add(profile)
-
-    # Populate sections
-    profile.personality_type = profile_data.get("personality_type", {})
-    profile.emotional_style = profile_data.get("emotional_baseline", {})
-    profile.interests = profile_data.get("comfort_preferences", {})
-    profile.communication_style = profile_data.get("communication_style", {})
-    profile.stress_triggers = profile_data.get("emotional_triggers", {})
-    profile.strengths = {"strengths": profile_data.get("personality_type", {}).get("strengths", [])}
-    profile.weaknesses = {"weaknesses": profile_data.get("personality_type", {}).get("growth_areas", [])}
-    profile.onboarding_answers = {"answers": answers}
-
-    # Onboarding Additions
-    profile.onboarding_completed = True
-    p_type = profile_data.get("personality_type", {}).get("type", "Thoughtful Explorer")
-    c_style = profile_data.get("communication_style", {}).get("preferred_style", "Gentle and validating")
-    p_strengths = profile_data.get("personality_type", {}).get("strengths", [])
-    p_interests = profile_data.get("comfort_preferences", {}).get("escape_mechanisms", [])
-    p_triggers = profile_data.get("stress_patterns", {}).get("stress_triggers", [])
-    p_motivation = profile_data.get("preferred_response_style", {}).get("what_helps", [])
-    
-    profile.personality_profile = {
-        "type": p_type,
-        "communication_style": c_style,
-        "strengths": p_strengths,
-        "interests": p_interests,
-        "stress_triggers": p_triggers,
-        "motivation_style": ", ".join(p_motivation) if isinstance(p_motivation, list) else str(p_motivation),
-        "reply_style": profile_data.get("reply_style", {
-            "reply_style": "casual",
-            "likes_humor": True,
-            "paragraph_preference": "short",
-            "emoji_usage": "medium",
-            "communication_style": "casual",
-            "energy": "supportive"
+        await profile_service.update_profile(db, user_id, {
+            "age": amap.get(1), "profession": amap.get(2), "field_of_work": amap.get(3),
+            "university": amap.get(4), "student_year": amap.get(5), "gender": amap.get(6), "name": amap.get(7),
+            "current_challenge": amap.get(8), "advice_preference": amap.get(9), "primary_support_need": amap.get(10),
+            "interests": _list(amap.get(11)), "hobbies": _list(amap.get(12)), "goals": _list(amap.get(13)),
+            "stress_triggers": _list(amap.get(14)), "coping_mechanisms": _list(amap.get(15)),
+            "support_system": amap.get(16), "communication_style": amap.get(17), "sleep_habits": amap.get(18),
         })
-    }
-    user_result = await db.execute(select(User).where(User.id == user_id))
-    user = user_result.scalar_one_or_none()
-    if user:
-        user.personality_profile = profile.personality_profile
-        user.personality_type = p_type
-        user.communication_style = c_style
-        user.interests = {"items": p_interests}
-        user.onboarding_completed = True
+        invalidate_profile_caches(user_id)
+        await db.commit()
+        return {"personality_profile": personality_profile, "emotional_baseline": emotional_baseline,
+                "comfort_preferences": comfort_preferences, "emotional_style": emotional_style,
+                "stress_triggers": stress_triggers, "preferred_response_style": preferred_response_style,
+                "emotional_summary": emotional_summary, "onboarding_completed": completed, "answer_count": len(amap)}
 
-    profile.personality_type_text = p_type
-    profile.communication_style_text = c_style
 
-    # Backward compatibility
-    profile.emotional_baseline = profile_data.get("emotional_baseline", {})
-    profile.comfort_preferences = profile_data.get("comfort_preferences", {})
-    profile.emotional_summary = profile_data.get("emotional_summary", {})
-    profile.stress_patterns = profile_data.get("stress_patterns", {})
-    profile.emotional_triggers = profile_data.get("emotional_triggers", {})
-    profile.preferred_response_style = profile_data.get("preferred_response_style", {})
-
-    await db.flush()
-    logger.info(f"UserProfile saved successfully for user: {user_id}")
-    return profile
+onboarding_analyzer = OnboardingAnalyzer()

@@ -30,7 +30,20 @@ export async function getFirstMessage(
   conversationId: string,
   token: string
 ): Promise<{ response: string; emotionDetected?: string; moodScore?: number }> {
-  return apiPost(`/api/chat/conversations/${conversationId}/first-message`, {}, token);
+  // A personalized session greeting is an enhancement, not a prerequisite for
+  // opening chat. The previous implementation allowed a 500 from this optional
+  // endpoint to bubble into useChat.loadMessages(), which incorrectly displayed
+  // "Failed to load messages" even when message history had loaded successfully.
+  try {
+    return await apiPost(`/api/chat/conversations/${conversationId}/first-message`, {}, token);
+  } catch (error) {
+    console.warn('[Esona Chat] Optional session greeting unavailable; continuing with chat.', error);
+    return {
+      response: '',
+      emotionDetected: 'neutral',
+      moodScore: 0.5,
+    };
+  }
 }
 
 

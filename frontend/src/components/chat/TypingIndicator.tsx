@@ -67,35 +67,44 @@ export default function TypingIndicator({ agentId = 'buddy' }: TypingIndicatorPr
         </div>
 
         {/* Typing Bubble */}
-        <div
-          className="rounded-2xl flex items-center justify-center"
-          style={{
-            background: 'linear-gradient(135deg, rgba(167, 139, 250, 0.1) 0%, rgba(244, 114, 182, 0.05) 100%)',
-            border: '1px solid rgba(167, 139, 250, 0.18)',
-            boxShadow: '0 4px 15px rgba(167, 139, 250, 0.03)',
-            borderBottomLeftRadius: '6px',
-            borderBottomRightRadius: '18px',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            width: '68px',
-            height: '38px',
-          }}
-        >
-          {/* Animated Dots */}
-          <div className="flex items-center justify-center gap-1.5">
-            {[0, 1, 2].map((i) => (
-              <motion.div
-                key={i}
-                custom={i}
-                variants={dotVariants}
-                animate="animate"
-                className="w-2.5 h-2.5 rounded-full"
-                style={{
-                  backgroundColor: agentId === 'buddy' ? '#38BDF8' : '#A855F7',
-                }}
-              />
-            ))}
+        {/* Typing Bubble and Text Status */}
+        <div className="flex items-center gap-3">
+          <div
+            className="rounded-2xl flex items-center justify-center"
+            style={{
+              background: 'linear-gradient(135deg, rgba(167, 139, 250, 0.1) 0%, rgba(244, 114, 182, 0.05) 100%)',
+              border: '1px solid rgba(167, 139, 250, 0.18)',
+              boxShadow: '0 4px 15px rgba(167, 139, 250, 0.03)',
+              borderBottomLeftRadius: '6px',
+              borderBottomRightRadius: '18px',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              width: '68px',
+              height: '38px',
+            }}
+          >
+            {/* Animated Dots */}
+            <div className="flex items-center justify-center gap-1.5">
+              {[0, 1, 2].map((i) => (
+                <motion.div
+                  key={i}
+                  custom={i}
+                  variants={dotVariants}
+                  animate="animate"
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{
+                    backgroundColor: agentId === 'buddy' ? '#38BDF8' : '#A855F7',
+                  }}
+                />
+              ))}
+            </div>
           </div>
+          <span 
+            className="text-xs font-medium animate-pulse select-none" 
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {config.name} is thinking...
+          </span>
         </div>
       </div>
     </motion.div>

@@ -26,7 +26,14 @@ export default function ScrollProgress({ scrollYProgress, activeScene }: Props) 
     if (typeof window === 'undefined') return;
     
     const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-    const targetScroll = docHeight * (index / (SCENE_NAMES.length - 1));
+    
+    // Map clicked index to warped physical progress offset:
+    const warpedVal = index / (SCENE_NAMES.length - 1);
+    const physicalProgress = warpedVal <= 0.125
+      ? warpedVal * 0.075 / 0.125
+      : 0.075 + (warpedVal - 0.125) * 0.925 / 0.875;
+      
+    const targetScroll = docHeight * physicalProgress;
     
     const globalLenis = (window as any).lenis;
     if (globalLenis) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { useScroll, useSpring, useMotionValueEvent } from 'framer-motion';
+import { useScroll, useSpring, useMotionValueEvent, useTransform } from 'framer-motion';
 import AmbientBackground from './AmbientBackground';
 import ScrollProgress from './ScrollProgress';
 import IntroScene from './IntroScene';
@@ -34,8 +34,12 @@ export default function CinematicHome() {
     restDelta: 0.0001
   });
 
-  // Dynamically update the active scene index based on smooth progress
-  useMotionValueEvent(smoothProgress, "change", (latest) => {
+  // Warp the progress: Scene 01 gets a shorter range (0.075 instead of 0.125, a 40% reduction)
+  // Maps physical scroll progress [0, 0.075, 1.0] -> warped progress [0, 0.125, 1.0]
+  const warpedProgress = useTransform(smoothProgress, [0, 0.075, 1], [0, 0.125, 1]);
+
+  // Dynamically update the active scene index based on warped progress
+  useMotionValueEvent(warpedProgress, "change", (latest) => {
     const index = Math.min(7, Math.floor(latest * 8));
     setActiveScene(index);
   });
@@ -69,17 +73,17 @@ export default function CinematicHome() {
         </div>
 
         {/* Layer 1: Storytelling Scenes (Absolute Stacked) */}
-        <IntroScene progress={smoothProgress} isActive={activeScene === 0} />
-        <HiddenThoughtsScene progress={smoothProgress} isActive={activeScene === 1} />
-        <ListeningScene progress={smoothProgress} isActive={activeScene === 2} />
-        <EmotionScene progress={smoothProgress} isActive={activeScene === 3} />
-        <MemoryScene progress={smoothProgress} isActive={activeScene === 4} />
-        <KnowledgeGraphScene progress={smoothProgress} isActive={activeScene === 5} />
-        <PersonalizationScene progress={smoothProgress} isActive={activeScene === 6} />
-        <FinalScene progress={smoothProgress} isActive={activeScene === 7} />
+        <IntroScene progress={warpedProgress} isActive={activeScene === 0} />
+        <HiddenThoughtsScene progress={warpedProgress} isActive={activeScene === 1} />
+        <ListeningScene progress={warpedProgress} isActive={activeScene === 2} />
+        <EmotionScene progress={warpedProgress} isActive={activeScene === 3} />
+        <MemoryScene progress={warpedProgress} isActive={activeScene === 4} />
+        <KnowledgeGraphScene progress={warpedProgress} isActive={activeScene === 5} />
+        <PersonalizationScene progress={warpedProgress} isActive={activeScene === 6} />
+        <FinalScene progress={warpedProgress} isActive={activeScene === 7} />
 
         {/* Layer 2: Interactive Navigation Timeline */}
-        <ScrollProgress scrollYProgress={smoothProgress} activeScene={activeScene} />
+        <ScrollProgress scrollYProgress={warpedProgress} activeScene={activeScene} />
 
       </div>
     </div>

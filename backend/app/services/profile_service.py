@@ -15,6 +15,15 @@ from app.utils.llm import get_chat_client
 
 logger = logging.getLogger(__name__)
 
+# In-memory caches to prevent redundant profile prompt builds
+_profile_context_cache: dict[str, str] = {}
+_personalization_block_cache: dict[str, str] = {}
+
+def invalidate_profile_caches(user_id: Union[uuid.UUID, str]):
+    uid_str = str(user_id)
+    _profile_context_cache.pop(uid_str, None)
+    _personalization_block_cache.pop(uid_str, None)
+
 PROFILE_FACT_EXTRACTION_PROMPT = """You are a Profile Fact Extraction Agent.
 Analyze the user's message and extract any personal details or facts about the user.
 Extract ONLY facts that are explicitly mentioned. Do not assume or extrapolate.
@@ -94,6 +103,7 @@ class ProfileService:
         )
         db.add(profile)
         await db.flush()
+        invalidate_profile_caches(user_id)
         return profile
 
     async def update_profile(
@@ -133,10 +143,15 @@ class ProfileService:
 
         db.add(profile)
         await db.flush()
+        invalidate_profile_caches(user_id)
         return profile
 
     async def build_profile_context(self, db: AsyncSession, user_id: Union[uuid.UUID, str]) -> str:
         """Build the formatted profile context block to inject into the system prompt."""
+        uid_str = str(user_id)
+        if uid_str in _profile_context_cache:
+            return _profile_context_cache[uid_str]
+
         profile = await self.get_profile(db, user_id)
         if not profile:
             return ""
@@ -177,7 +192,9 @@ class ProfileService:
         if profile.sleep_habits:
             lines.append(f"Sleep Habits: {profile.sleep_habits}")
 
-        return "\n".join(lines)
+        result = "\n".join(lines)
+        _profile_context_cache[uid_str] = result
+        return result
 
     async def get_personalization_data(self, db: AsyncSession, user_id: Union[uuid.UUID, str]) -> Dict[str, Any]:
         """
@@ -375,6 +392,10 @@ class ProfileService:
         Builds a structured prompt context block representing known (existing) personalization fields
         and empty (missing) fields, with instructions on how to use/ask them.
         """
+        uid_str = str(user_id)
+        if uid_str in _personalization_block_cache:
+            return _personalization_block_cache[uid_str]
+
         if isinstance(user_id, str):
             user_id = uuid.UUID(user_id)
 
@@ -447,6 +468,7 @@ class ProfileService:
             "     * 'I remember you're a college student. What field are you studying?' (referencing known info to ask missing field)\n"
             "=================================================\n"
         )
+        _personalization_block_cache[uid_str] = block
         return block
 
     async def extract_and_update_profile_facts(

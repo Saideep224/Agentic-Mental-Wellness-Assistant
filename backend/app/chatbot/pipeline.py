@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from langgraph.graph import StateGraph, END
 import asyncio
+import time
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -76,6 +77,9 @@ async def _get_conversation_summary(db: AsyncSession, user_id: str, conversation
 # ── 1. Cognitive Analyzer Agent (Coordinating Node) ───────────
 async def cognitive_analyzer_agent(state: AgentState) -> dict:
     """Run structured analyzer Gemini call and parse with logical agents."""
+    import time
+    perf = state.setdefault("perf_timings", {})
+    
     user_message = state.get("user_message", "")
     history = state.get("conversation_history", [])
     profile = state.get("emotional_profile", {})
@@ -87,6 +91,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     graph_relationships = []
 
     if db and user_id:
+        mem_start = time.perf_counter()
         try:
             from app.agents import memory_agent
             result = await asyncio.wait_for(
@@ -95,11 +100,12 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             )
             memories = result.get("memories", [])
             patterns = result.get("emotional_patterns", {})
-            # Populate in-memory cache for memory_agent_node later
             _memory_cache[str(user_id)] = (memories, patterns)
         except Exception as e:
             logger.warning(f"[MEMORY] Memory retrieval early fetch failed: {e}")
+        perf["memory_early_fetch"] = time.perf_counter() - mem_start
 
+        kg_start = time.perf_counter()
         try:
             from app.services.knowledge_graph_service import knowledge_graph_service
             import uuid
@@ -107,29 +113,19 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             graph_relationships = await knowledge_graph_service.retrieve_full_graph_context(db, user_uuid)
         except Exception as e:
             logger.warning(f"KG retrieval early fetch failed: {e}")
-            graph_relationships = "None"
+            graph_relationships = []
+        perf["kg_context_fetch"] = time.perf_counter() - kg_start
 
-    # 1. Run MentalBERT Emotion Classification and save to db (happens inside the service)
+    # 1. Run Fast Emotion Classification (local, no DB writes or LLM calls)
+    emo_start = time.perf_counter()
     detected_emotion = "Neutral"
     confidence_score = 1.0
     blended_scores = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
     if user_id:
-        from app.database import async_session_maker
-        close_temp_db = False
-        temp_db = db
-        if temp_db is None:
-            temp_db = async_session_maker()
-            close_temp_db = True
         try:
             from app.services.emotion_service import emotion_service
-            emotion_res = await emotion_service.classify_emotion_mentalbert(
-                temp_db,
-                user_id,
-                user_message,
-                conversation_id=state.get("conversation_id"),
-                history=history,
-                memories=memories,
-                graph_relationships=graph_relationships
+            emotion_res = await emotion_service.classify_emotion_fast(
+                user_message
             )
             detected_emotion = emotion_res.get("detected_emotion", "Neutral")
             confidence_score = emotion_res.get("confidence_score", 1.0)
@@ -147,51 +143,9 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
                     blended_scores[target_idx] = confidence_score
                 except ValueError:
                     blended_scores[8] = confidence_score
-            
-            # Run Profile Fact Extraction and update db
-            try:
-                from app.services.profile_service import profile_service
-                await profile_service.extract_and_update_profile_facts(temp_db, user_id, user_message)
-            except Exception as fact_err:
-                logger.error(f"Failed to extract and update profile facts: {fact_err}", exc_info=True)
-            
-            # Run Knowledge Graph Extraction
-            try:
-                from app.services.knowledge_graph_service import knowledge_graph_service
-                import uuid
-                user_name = profile.get("user_name", "User") or "User"
-                extracted_graph = await knowledge_graph_service.extract_relationships(user_message, user_name=user_name)
-                
-                # Support legacy list format (e.g. from unit test mocks) and normalize to dictionary
-                if isinstance(extracted_graph, list):
-                    extracted_graph = {
-                        "entities": [],
-                        "relationships": [],
-                        "events": [],
-                        "relations": extracted_graph
-                    }
-                
-                # Explicitly store non-neutral detected emotion in the Knowledge Graph events list
-                if detected_emotion and detected_emotion != "Neutral":
-                    if "events" not in extracted_graph:
-                        extracted_graph["events"] = []
-                    extracted_graph["events"].append({
-                        "event": "current_feeling",
-                        "emotion": detected_emotion
-                    })
-                
-                user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
-                await knowledge_graph_service.store_graph_data(temp_db, user_uuid, extracted_graph)
-            except Exception as kg_err:
-                logger.error(f"Failed to extract/store knowledge graph relations: {kg_err}", exc_info=True)
-
-            if close_temp_db:
-                await temp_db.commit()
         except Exception as emo_err:
             logger.error(f"Failed to run MentalBERT classification in pipeline: {emo_err}", exc_info=True)
-        finally:
-            if close_temp_db:
-                await temp_db.close()
+    perf["emotion_classification"] = time.perf_counter() - emo_start
 
     recent_context = ""
     if history:
@@ -204,6 +158,7 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
     if profile:
         profile_snippet = f"\nUser Profile:\n{json.dumps(profile, indent=2)}"
 
+    cog_llm_start = time.perf_counter()
     try:
         user_content = (
             f"User Profile details:\n{profile_snippet}\n\n"
@@ -221,11 +176,13 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
             # Note: response_format omitted — free models (Gemma, Llama) don't support JSON mode
             # The system prompt instructs JSON output which is sufficient
         )
+        perf["cognitive_llm"] = time.perf_counter() - cog_llm_start
         from app.utils.helpers import safe_json_parse
         analysis = safe_json_parse(raw)
         if not analysis:
             raise ValueError("Parsed JSON is empty or invalid")
     except Exception as e:
+        perf["cognitive_llm"] = time.perf_counter() - cog_llm_start
         logger.exception(e)
         print("FALLBACK TRIGGERED")
         print("USER:", user_message)
@@ -365,58 +322,73 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
         "detected_emotion": detected_emotion,
         "detected_emotion_confidence": confidence_score,
         "mood_score": mood_score,
+        "memories": memories,
+        "graph_relationships": graph_relationships,
+        "emotional_patterns": patterns,
+        "perf_timings": perf,
     }
 
 
 # ── 2. Memory Agent ───────────────────────────────────────────
 async def memory_agent_node(state: AgentState) -> dict:
     """Use Memory Agent to recall context and emotional patterns from DB with an 3.0s timeout."""
+    import time
+    perf = state.setdefault("perf_timings", {})
+    mem_node_start = time.perf_counter()
+
     user_message = state.get("user_message", "")
     user_id = state.get("user_id", "")
 
+    # Reuse memories, patterns, and graph context from state if present (deduplication!)
+    retrieved_memories = state.get("memories")
+    patterns = state.get("emotional_patterns")
+    graph_relationships = state.get("graph_relationships")
+
     db = state.get("db")
     close_db = False
-    if db is None:
-        db = async_session_maker()
-        close_db = True
 
-    try:
-        # Retrieve memories and patterns using the memory agent (limit top 5 to optimize tokens) with a 3.0s timeout
-        result = await asyncio.wait_for(
-            memory_agent.retrieve_context(db, user_id, user_message, limit=5),
-            timeout=3.0
-        )
-        retrieved_memories = result.get("memories", [])
-        patterns = result.get("emotional_patterns", {})
-        
-        # Prune expired memories
+    # Check if we need to retrieve memories from DB
+    if retrieved_memories is None or patterns is None:
+        if db is None:
+            db = async_session_maker()
+            close_db = True
         try:
-            from app.services.memory_service import memory_service
-            await memory_service.prune_expired_memories(db, user_id)
-        except Exception as prune_err:
-            logger.warning(f"[MEMORY] Memory pruning failed: {prune_err}")
+            result = await asyncio.wait_for(
+                memory_agent.retrieve_context(db, user_id, user_message, limit=5),
+                timeout=3.0
+            )
+            retrieved_memories = result.get("memories", [])
+            patterns = result.get("emotional_patterns", {})
+            _memory_cache[str(user_id)] = (retrieved_memories, patterns)
+        except Exception as e:
+            logger.warning(f"[MEMORY] Memory agent node error or timeout: {e}. Using cached memories if available.")
+            cached = _memory_cache.get(str(user_id))
+            if cached:
+                retrieved_memories, patterns = cached
+            else:
+                retrieved_memories, patterns = [], {}
+    else:
+        logger.info("[MEMORY] Reusing pre-fetched memories in memory_agent_node")
 
-        # Populate in-memory cache
-        _memory_cache[str(user_id)] = (retrieved_memories, patterns)
-    except Exception as e:
-        logger.warning(f"[MEMORY] Memory agent node error or timeout: {e}. Using cached memories if available.")
-        # Try to retrieve from cache
-        cached = _memory_cache.get(str(user_id))
-        if cached:
-            retrieved_memories, patterns = cached
-        else:
-            retrieved_memories, patterns = [], {}
-            
-    # Retrieve relevant Knowledge Graph relationships
-    graph_relationships = []
-    try:
-        from app.services.knowledge_graph_service import knowledge_graph_service
-        import uuid
-        user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
-        rels = await knowledge_graph_service.retrieve_relevant_relationships(db, user_uuid, user_message)
-        graph_relationships = [f"- {r.subject} -> {r.predicate} -> {r.object}" for r in rels]
-    except Exception as kg_retrieve_err:
-        logger.error(f"Failed to retrieve knowledge graph relations: {kg_retrieve_err}", exc_info=True)
+    # Check if we need to retrieve KG relationships from DB
+    if graph_relationships is None:
+        if db is None and not close_db:
+            db = async_session_maker()
+            close_db = True
+        graph_relationships = []
+        if db:
+            try:
+                from app.services.knowledge_graph_service import knowledge_graph_service
+                import uuid
+                user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                rels = await knowledge_graph_service.retrieve_relevant_relationships(db, user_uuid, user_message)
+                graph_relationships = [f"- {r.subject} -> {r.predicate} -> {r.object}" for r in rels]
+            except Exception as kg_retrieve_err:
+                logger.error(f"Failed to retrieve knowledge graph relations: {kg_retrieve_err}", exc_info=True)
+    else:
+        logger.info("[MEMORY] Reusing pre-fetched graph_relationships in memory_agent_node")
+        if isinstance(graph_relationships, str):
+            graph_relationships = [graph_relationships]
 
     # Build Personal Comfort Kit when a negative emotion is detected
     comfort_kit_dict = {}
@@ -424,35 +396,42 @@ async def memory_agent_node(state: AgentState) -> dict:
     try:
         from app.services.recommendation_service import recommendation_service
         if detected_emotion.lower() in recommendation_service.NEGATIVE_EMOTIONS:
-            personality_profile = state.get("emotional_profile", {}).get("personality_profile", {})
-            kit = await recommendation_service.build_comfort_kit(
-                db=db,
-                user_id=user_id,
-                detected_emotion=detected_emotion,
-                graph_relationships=graph_relationships,
-                personality_profile=personality_profile,
-            )
-            comfort_kit_dict = {
-                "emotional_trigger": kit.emotional_trigger,
-                "interests": kit.interests,
-                "hobbies": kit.hobbies,
-                "coping_activities": kit.coping_activities,
-                "comfort_environment": kit.comfort_environment,
-                "activity_suggestions": kit.activity_suggestions,
-                "is_empty": kit.is_empty,
-            }
+            if db is None and not close_db:
+                db = async_session_maker()
+                close_db = True
+            if db:
+                personality_profile = state.get("emotional_profile", {}).get("personality_profile", {})
+                kit = await recommendation_service.build_comfort_kit(
+                    db=db,
+                    user_id=user_id,
+                    detected_emotion=detected_emotion,
+                    graph_relationships=graph_relationships,
+                    personality_profile=personality_profile,
+                )
+                comfort_kit_dict = {
+                    "emotional_trigger": kit.emotional_trigger,
+                    "interests": kit.interests,
+                    "hobbies": kit.hobbies,
+                    "coping_activities": kit.coping_activities,
+                    "comfort_environment": kit.comfort_environment,
+                    "activity_suggestions": kit.activity_suggestions,
+                    "is_empty": kit.is_empty,
+                }
     except Exception as rec_err:
         logger.warning(f"[RecommendationService] Failed to build comfort kit: {rec_err}")
 
     finally:
-        if close_db:
+        if close_db and db:
             await db.close()
+
+    perf["memory_node"] = time.perf_counter() - mem_node_start
 
     return {
         "memories": retrieved_memories,
         "graph_relationships": graph_relationships,
         "emotional_patterns": patterns,
         "comfort_kit": comfort_kit_dict,
+        "perf_timings": perf,
     }
 
 
@@ -469,13 +448,18 @@ async def response_agent_node(state: AgentState) -> dict:
     personality_profile = profile.get("personality_profile", {})
     user_name = profile.get("user_name", "friend")
 
+    import time
+    perf = state.setdefault("perf_timings", {})
+
     db = state.get("db")
     profile_context = ""
+    profile_start = time.perf_counter()
     if db and user_id:
         from app.services.profile_service import profile_service
         legacy_context = await profile_service.build_profile_context(db, user_id)
         personalization_block = await profile_service.build_personalization_prompt_block(db, user_id)
         profile_context = f"{legacy_context}\n{personalization_block}"
+    perf["profile_context"] = time.perf_counter() - profile_start
 
     # If crisis is detected by the Safety Agent, override response strategy
     safety_data = state.get("safety_agent", {})
@@ -506,6 +490,7 @@ async def response_agent_node(state: AgentState) -> dict:
 
     # Fetch emotion timeline for the last 7 days
     emotion_timeline = []
+    timeline_start = time.perf_counter()
     if db and user_id:
         try:
             from app.services.mood_tracker import MoodTracker
@@ -515,6 +500,7 @@ async def response_agent_node(state: AgentState) -> dict:
             emotion_timeline = await mt.retrieve_emotion_timeline(user_uuid, days=7)
         except Exception as timeline_err:
             logger.warning(f"Failed to retrieve emotion timeline: {timeline_err}")
+    perf["emotion_timeline"] = time.perf_counter() - timeline_start
 
     # Fetch a single growth insight every 15 user messages for natural chat injection
     growth_insight: str | None = None
@@ -581,6 +567,7 @@ async def response_agent_node(state: AgentState) -> dict:
     error_log = "None"
     text = ""
     reasoning = ""
+    final_llm_start = time.perf_counter()
     try:
         gen_res = await response_agent.generate(
             messages=messages,
@@ -590,7 +577,9 @@ async def response_agent_node(state: AgentState) -> dict:
         )
         text = gen_res.get("text", "")
         reasoning = gen_res.get("reasoning", "")
+        perf["final_response_llm"] = time.perf_counter() - final_llm_start
     except Exception as e:
+        perf["final_response_llm"] = time.perf_counter() - final_llm_start
         error_log = str(e)
         logger.exception(e)
         # NEVER show raw error messages to the user — use a friendly fallback instead
@@ -699,6 +688,50 @@ def build_graph() -> StateGraph:
 _compiled_graph = build_graph().compile()
 
 
+def cheap_intent_is_casual(message: str) -> bool:
+    """Fast, local check to determine if a message is casual banter/greeting."""
+    msg = (message or "").lower().strip()
+    if len(msg) < 15:
+        # short greetings, casual feedback, simple answers
+        casual_words = {
+            "hi", "hello", "hey", "hola", "yo", "sup", "buddy", "esona",
+            "yes", "no", "ok", "okay", "cool", "nice", "fine", "lol", "lmao",
+            "haha", "bro", "dude", "thanks", "thank you", "bye", "goodbye",
+            "how are you", "how's it going", "what's up", "whats up"
+        }
+        import re
+        words = set(re.findall(r'\b\w+\b', msg))
+        if words.intersection(casual_words) or not words:
+            return True
+    return False
+
+
+def log_pipeline_timings(perf_timings: dict):
+    if not perf_timings:
+        return
+    total_time = time.perf_counter() - perf_timings.get("pipeline_start", time.perf_counter())
+    
+    keys = [
+        "memory_early_fetch",
+        "kg_context_fetch",
+        "emotion_classification",
+        "cognitive_llm",
+        "memory_node",
+        "profile_context",
+        "emotion_timeline",
+        "final_response_llm"
+    ]
+    for key in keys:
+        if key in perf_timings:
+            print(f"[PERF] {key}: {perf_timings[key]:.2f}s")
+            logger.info(f"[PERF] {key}: {perf_timings[key]:.2f}s")
+    
+    print(f"[PERF] TIME_TO_FIRST_RESPONSE: {total_time:.2f}s")
+    print(f"[PERF] TOTAL_PIPELINE_TIME: {total_time:.2f}s")
+    logger.info(f"[PERF] TIME_TO_FIRST_RESPONSE: {total_time:.2f}s")
+    logger.info(f"[PERF] TOTAL_PIPELINE_TIME: {total_time:.2f}s")
+
+
 async def run_agent_graph(
     user_message: str,
     user_id: str,
@@ -707,7 +740,10 @@ async def run_agent_graph(
     conversation_id: str | None = None,
     db: AsyncSession | None = None,
 ) -> dict:
-    """Execute the full agent pipeline and return the final state."""
+    """Execute the full agent pipeline (or fast-path) and return the final state."""
+    import time
+    start_time = time.perf_counter()
+    
     initial_state: AgentState = {
         "user_message": user_message,
         "user_id": user_id,
@@ -724,7 +760,8 @@ async def run_agent_graph(
         "comfort_kit": {},
         "response": "",
         "mood_score": 0.5,
-        "detected_emotion": "neutral",
+        "detected_emotion": "Neutral",
+        "detected_emotion_confidence": 1.0,
         "personality_agent": {},
         "emotion_agent": {},
         "behavior_agent": {},
@@ -735,11 +772,34 @@ async def run_agent_graph(
         "response_strategy": {},
         "orchestrated_prompt_summary": "",
         "agent_analysis": {},
+        "perf_timings": {"pipeline_start": start_time},
     }
 
     try:
-        result = await _compiled_graph.ainvoke(initial_state)
-        return result
+        if cheap_intent_is_casual(user_message):
+            logger.info(f"[FAST PATH] Executing casual chat fast-path for message: '{user_message}'")
+            # Populate default agent data for casual intents
+            initial_state["detected_emotion"] = "Neutral"
+            initial_state["detected_emotion_confidence"] = 1.0
+            initial_state["intent_agent"] = {"message_type": "casual", "intent": "casual_banter"}
+            initial_state["safety_agent"] = {"is_safe": True, "crisis_detected": False}
+            initial_state["personality_agent"] = {"communication_style": "casual"}
+            initial_state["emotion_agent"] = {
+                "primary_emotion": "neutral", "stress": 0.1, "anxiety": 0.1, 
+                "sadness": 0.1, "burnout": 0.1, "emotional_intensity": 1
+            }
+            initial_state["memories"] = []
+            initial_state["graph_relationships"] = []
+            
+            result = await response_agent_node(initial_state)
+            # Merge keys back into initial_state
+            final_res = {**initial_state, **result}
+            log_pipeline_timings(final_res.get("perf_timings"))
+            return final_res
+        else:
+            result = await _compiled_graph.ainvoke(initial_state)
+            log_pipeline_timings(result.get("perf_timings"))
+            return result
     except Exception as e:
         logger.exception(e)
         print("FALLBACK TRIGGERED")
@@ -747,7 +807,6 @@ async def run_agent_graph(
         print("EMOTION:", initial_state.get("detected_emotion", "Neutral"))
         print("ERROR:", e)
         print("MODEL_RESPONSE: [graph-level exception fallback]")
-        # NEVER show raw error to user
         fallback_resp = "sorry my bad, something went off on my end ||| give it another shot?"
         return {
             **initial_state,

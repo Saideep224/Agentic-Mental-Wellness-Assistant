@@ -84,9 +84,9 @@ export default function IntroScene({ progress, isActive }: Props) {
             if (typeof window !== 'undefined') {
               const globalLenis = (window as any).lenis;
               if (globalLenis) {
-                globalLenis.scrollTo(window.innerHeight, { duration: 1.5 });
+                globalLenis.scrollTo(window.innerHeight * 1.5, { duration: 1.5 });
               } else {
-                window.scrollTo({ top: window.innerHeight, behavior: 'smooth' });
+                window.scrollTo({ top: window.innerHeight * 1.5, behavior: 'smooth' });
               }
             }
           }}

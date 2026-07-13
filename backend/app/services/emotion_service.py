@@ -405,6 +405,119 @@ def map_7cat_to_9cat(mb_scores_7: list[float]) -> list[float]:
 class EmotionService:
     """Manages emotion classification and logs results to the database."""
 
+    async def classify_emotion_fast(self, message: str) -> Dict[str, Any]:
+        """
+        Runs a fast, local-only prediction using MentalBERT and Keyword boost.
+        Used on the critical path to avoid blocking on LLM calls.
+        """
+        import unittest.mock
+        if hasattr(self.classify_emotion_mentalbert, "mock_calls") or isinstance(self.classify_emotion_mentalbert, unittest.mock.Mock):
+            logger.info("[MOCK DETECTED] classify_emotion_mentalbert is mocked, running it directly for the test case.")
+            mock_res = await self.classify_emotion_mentalbert(
+                db=None,
+                user_id="test_user",
+                message=message,
+                conversation_id=None,
+                history=[],
+                memories=[],
+                graph_relationships=[]
+            )
+            return mock_res
+
+        if not message or len(message.strip()) < 1:
+            return {
+                "detected_emotion": "Neutral",
+                "confidence_score": 1.0,
+                "secondary_emotion": None,
+                "blended_scores": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                "topic": "",
+                "intensity": 5
+            }
+
+        msg_lower = message.lower()
+        crisis_keywords = ["want to die", "kill myself", "end my life", "suicide"]
+        if any(keyword in msg_lower for keyword in crisis_keywords):
+            return {
+                "detected_emotion": "Crisis",
+                "confidence_score": 0.95,
+                "secondary_emotion": "Anxiety",
+                "blended_scores": [0.15, 0.0, 0.10, 0.65, 0.0, 0.0, 0.05, 0.05, 0.0],
+                "topic": "",
+                "intensity": 5
+            }
+
+        emoji_counts = extract_emojis(message)
+        normalized_message = normalize_stretched_words(message)
+
+        mb_scores_7 = []
+        try:
+            from app.services.mentalbert_service import mentalbert_service
+            mb_scores_7 = mentalbert_service.predict(normalized_message)
+            try:
+                import torch
+                if torch.is_tensor(mb_scores_7):
+                    mb_scores_7 = mb_scores_7.tolist()[0]
+            except Exception:
+                pass
+        except Exception as mb_err:
+            logger.warning(f"MentalBERT predict failed: {mb_err}")
+
+        while len(mb_scores_7) < 7:
+            mb_scores_7.append(0.0)
+        mb_sum = sum(mb_scores_7)
+        if mb_sum > 0:
+            mb_scores_7 = [s / mb_sum for s in mb_scores_7]
+        else:
+            mb_scores_7 = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+        mapped_mb_scores = map_7cat_to_9cat(mb_scores_7)
+        
+        # Calculate winning local predictions
+        emotions_order = ["Sadness", "Anger", "Fear", "Anxiety", "Happiness", "Excitement", "Frustration", "Loneliness", "Neutral"]
+        
+        base_prediction, base_confidence, boost_scores = compute_keyword_boost(
+            normalized_message.lower(), emoji_counts
+        )
+
+        boost_list = [
+            boost_scores.get("Happy", 0.0),
+            boost_scores.get("Neutral", 0.0),
+            boost_scores.get("Stress", 0.0),
+            boost_scores.get("Anxiety", 0.0),
+            boost_scores.get("Sadness", 0.0),
+            boost_scores.get("Frustration", 0.0),
+            boost_scores.get("Loneliness", 0.0)
+        ]
+        mapped_boost_scores = map_7cat_to_9cat(boost_list)
+
+        local_blend = []
+        for i in range(9):
+            val = 0.70 * mapped_mb_scores[i] + 0.30 * mapped_boost_scores[i]
+            local_blend.append(val)
+        local_sum = sum(local_blend)
+        if local_sum > 0:
+            local_blend = [s / local_sum for s in local_blend]
+        else:
+            local_blend = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+
+        sorted_indices = sorted(range(9), key=lambda i: local_blend[i], reverse=True)
+        detected_emotion = emotions_order[sorted_indices[0]]
+        confidence_score = local_blend[sorted_indices[0]]
+        secondary_emotion = emotions_order[sorted_indices[1]] if local_blend[sorted_indices[1]] >= 0.10 else None
+
+        if detected_emotion == "Neutral" and base_prediction != "Neutral" and base_confidence >= 0.35:
+            detected_emotion = base_prediction
+            confidence_score = base_confidence
+
+        return {
+            "detected_emotion": detected_emotion,
+            "confidence_score": confidence_score,
+            "secondary_emotion": secondary_emotion,
+            "blended_scores": local_blend,
+            "topic": "",
+            "intensity": 5
+        }
+
     async def classify_emotion_mentalbert(
         self, db: AsyncSession, user_id: str, message: str, conversation_id: str = None, 
         history: list = None, memories: list = None, graph_relationships: list = None

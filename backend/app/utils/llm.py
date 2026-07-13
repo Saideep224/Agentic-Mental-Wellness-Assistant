@@ -42,6 +42,13 @@ def get_ollama_base(url: str | None) -> str | None:
     return url
 
 
+import time
+
+# Cooldown list to avoid repeatedly calling failed/rate-limited models
+# key: model_name -> cooldown_expiration_timestamp (float)
+_unhealthy_models: dict[str, float] = {}
+_MODEL_COOLDOWN_SECONDS = 60.0
+
 async def generate_chat_completion_with_fallback(
     messages: list,
     temperature: float = 0.7,
@@ -151,7 +158,13 @@ async def generate_chat_completion_with_fallback(
     import asyncio
 
     last_error = None
+    current_time = time.time()
     for name, base_url, api_key, model in providers:
+        cooldown_until = _unhealthy_models.get(model, 0.0)
+        if current_time < cooldown_until:
+            logger.info(f"Skipping unhealthy model {model} (on cooldown for another {cooldown_until - current_time:.1f}s)")
+            continue
+
         # Retry up to 2 attempts per provider for fast real-time chat fallback
         max_attempts = 2
         for attempt in range(max_attempts):
@@ -220,6 +233,21 @@ async def generate_chat_completion_with_fallback(
                 
                 return content.strip()
             except Exception as e:
+                # Add to unhealthy models cooldown if rate limit or quota or timeout
+                error_str = str(e).lower()
+                is_unhealthy = (
+                    "rate limit" in error_str or 
+                    "429" in error_str or 
+                    "quota" in error_str or 
+                    "exhausted" in error_str or 
+                    "credit" in error_str or 
+                    "unavailable" in error_str or 
+                    "timeout" in error_str
+                )
+                if is_unhealthy:
+                    _unhealthy_models[model] = time.time() + _MODEL_COOLDOWN_SECONDS
+                    logger.warning(f"Marking model {model} as unhealthy/cooldown for {_MODEL_COOLDOWN_SECONDS}s due to error: {e}")
+
                 # Model error logging
                 error_msg = f"[MODEL ERROR]\nException Type: {type(e).__name__}\nException Message: {str(e)}"
                 logger.error(error_msg)

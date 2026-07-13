@@ -43,9 +43,14 @@ export default function FinalScene({ progress, isActive }: Props) {
   const handleLearnMore = () => {
     if (typeof window === 'undefined') return;
     const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    
     // Map to Scene 4 (Listening deeper / Emotion understanding)
-    // Index 3 of the 8 scenes (indices 0..7), so 3/7 of scroll range
-    const targetScroll = docHeight * (3 / 7);
+    // Index 3 of the 8 scenes (indices 0..7), so warped progress is 3/7
+    const warpedVal = 3 / 7;
+    // Map to physical progress using Segment 2 of the warp:
+    const physicalProgress = 0.075 + (warpedVal - 0.125) * 0.925 / 0.875;
+    
+    const targetScroll = docHeight * physicalProgress;
     window.scrollTo({
       top: targetScroll,
       behavior: 'smooth'

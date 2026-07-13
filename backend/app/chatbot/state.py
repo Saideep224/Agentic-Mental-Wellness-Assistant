@@ -46,3 +46,4 @@ class AgentState(TypedDict, total=False):
     response_strategy: dict
     orchestrated_prompt_summary: str
     agent_analysis: dict
+    perf_timings: dict

@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1081,44 +1081,6 @@ async def generate_and_persist_sse_response(
                 dims=dims
             )
 
-        # 6. Save memory in background if meaningful
-        try:
-            from app.services.memory_service import memory_service
-            mem_extraction = result.get("memory_extraction", {})
-            if mem_extraction.get("is_meaningful"):
-                logger.info(f"[SSE MEMORY] Storing memory: '{mem_extraction.get('memory_summary', '')[:80]}'...")
-                await memory_service.saveMemory(
-                    db=db,
-                    user_id=str(current_user_id),
-                    memory_summary=mem_extraction.get("memory_summary"),
-                    behavior_patterns=mem_extraction.get("behavior_patterns") or {},
-                    memory_type=mem_extraction.get("memory_type"),
-                    importance_score=mem_extraction.get("importance_score"),
-                )
-                await db.commit()
-                logger.info(f"[SSE MEMORY SUCCESS] Memory stored successfully.")
-        except Exception as mem_err:
-            logger.error(f"[SSE MEMORY ERROR] Failed to save memory: {mem_err}", exc_info=True)
-
-        # 7. Thread summary trigger if needed
-        if len(history) >= 12 and len(history) % 6 == 0:
-            try:
-                await summarize_and_store_conversation(db, current_user_id, conversation_id, history)
-                await db.commit()
-            except Exception as sum_err:
-                logger.error(f"[SSE SUMMARIZATION ERROR] Summarization trigger failed: {sum_err}", exc_info=True)
-
-        # 8. Memory reflection trigger
-        try:
-            num_user = sum(1 for m in history if m.get("role") == "user")
-            if num_user > 0 and num_user % 10 == 0:
-                logger.info(f"[SSE REFLECTION] Triggering memory reflection for user {current_user_id} (user messages: {num_user})...")
-                from app.services.memory_service import memory_service
-                await memory_service.reflect_and_consolidate_memories(db, current_user_id)
-                await db.commit()
-        except Exception as ref_err:
-            logger.error(f"[SSE REFLECTION ERROR] Reflection failed: {ref_err}", exc_info=True)
-
         return {
             "specialist_response": specialist_response,
             "specialist_id": specialist_id,
@@ -1133,7 +1095,120 @@ async def generate_and_persist_sse_response(
             "message_id": str(assistant_msg.id) if (assistant_msg is not None and hasattr(assistant_msg, "id")) else str(uuid.uuid4()),
             "suggested_specialist": suggested_specialist,
             "specialist_action_event": sse_specialist_action_event,
+            "agent_result": result,
         }
+
+
+async def run_background_learning_tasks(
+    user_id: uuid.UUID,
+    user_message: str,
+    assistant_response: str,
+    conversation_id: uuid.UUID,
+    history: list[dict],
+    detected_emotion: str,
+    agent_result: dict,
+):
+    """Runs all non-critical learning and DB writes in the background using a fresh database session."""
+    logger.info(f"[BACKGROUND LEARNING] Starting background learning tasks for user_id={user_id}")
+    async with get_db_session() as db:
+        try:
+            # 1. Profile Fact Extraction and update db
+            try:
+                from app.services.profile_service import profile_service
+                await profile_service.extract_and_update_profile_facts(db, user_id, user_message)
+                await db.commit()
+            except Exception as fact_err:
+                logger.error(f"[BACKGROUND] Profile fact extraction failed: {fact_err}")
+
+            # 2. Knowledge Graph Extraction and storage
+            try:
+                from app.services.knowledge_graph_service import knowledge_graph_service
+                profile_context = agent_result.get("emotional_profile", {})
+                user_name = profile_context.get("user_name", "User") or "User"
+                extracted_graph = await knowledge_graph_service.extract_relationships(user_message, user_name=user_name)
+                
+                if isinstance(extracted_graph, list):
+                    extracted_graph = {
+                        "entities": [],
+                        "relationships": [],
+                        "events": [],
+                        "relations": extracted_graph
+                    }
+                if detected_emotion and detected_emotion != "Neutral":
+                    if "events" not in extracted_graph:
+                        extracted_graph["events"] = []
+                    extracted_graph["events"].append({
+                        "event": "current_feeling",
+                        "emotion": detected_emotion
+                    })
+                await knowledge_graph_service.store_graph_data(db, user_id, extracted_graph)
+                await db.commit()
+            except Exception as kg_err:
+                logger.error(f"[BACKGROUND] KG extraction/storage failed: {kg_err}")
+
+            # 3. Memory extraction and storage
+            try:
+                from app.services.memory_service import memory_service
+                mem_extraction = agent_result.get("memory_extraction", {})
+                if mem_extraction.get("is_meaningful"):
+                    logger.info(f"[BACKGROUND] Storing memory: '{mem_extraction.get('memory_summary', '')[:80]}'...")
+                    await memory_service.saveMemory(
+                        db=db,
+                        user_id=str(user_id),
+                        memory_summary=mem_extraction.get("memory_summary"),
+                        behavior_patterns=mem_extraction.get("behavior_patterns") or {},
+                        memory_type=mem_extraction.get("memory_type"),
+                        importance_score=mem_extraction.get("importance_score"),
+                    )
+                    await db.commit()
+            except Exception as mem_err:
+                logger.error(f"[BACKGROUND] Memory storage failed: {mem_err}")
+
+            # 4. Memory pruning
+            try:
+                from app.services.memory_service import memory_service
+                await memory_service.prune_expired_memories(db, user_id)
+                await db.commit()
+            except Exception as prune_err:
+                logger.error(f"[BACKGROUND] Memory pruning failed: {prune_err}")
+
+            # 5. Hybrid Gemini Emotion Log generation and db save (updates/overwrites mood logs if needed)
+            try:
+                from app.services.emotion_service import emotion_service
+                await emotion_service.classify_emotion_mentalbert(
+                    db=db,
+                    user_id=str(user_id),
+                    message=user_message,
+                    conversation_id=str(conversation_id),
+                    history=history,
+                    memories=agent_result.get("memories", []),
+                    graph_relationships=agent_result.get("graph_relationships", [])
+                )
+                await db.commit()
+            except Exception as gemini_emo_err:
+                logger.error(f"[BACKGROUND] Hybrid Gemini Emotion Classifier failed: {gemini_emo_err}")
+
+            # 6. Thread summary check and store
+            if len(history) >= 12 and len(history) % 6 == 0:
+                try:
+                    await summarize_and_store_conversation(db, user_id, conversation_id, history)
+                    await db.commit()
+                except Exception as sum_err:
+                    logger.error(f"[BACKGROUND] Thread summarization failed: {sum_err}")
+
+            # 7. Memory reflection check and reflect
+            try:
+                num_user = sum(1 for m in history if m.get("role") == "user")
+                if num_user > 0 and num_user % 10 == 0:
+                    from app.services.memory_service import memory_service
+                    await memory_service.reflect_and_consolidate_memories(db, user_id)
+                    await db.commit()
+            except Exception as ref_err:
+                logger.error(f"[BACKGROUND] Memory reflection failed: {ref_err}")
+
+            logger.info(f"[BACKGROUND LEARNING SUCCESS] Finished background learning tasks successfully.")
+        except Exception as bg_outer_err:
+            logger.error(f"[BACKGROUND OUTER ERROR] Background tasks failed: {bg_outer_err}", exc_info=True)
 
 
 @router.get("/{conversation_id}/stream")
@@ -1141,6 +1216,7 @@ async def stream_message_sse(
     conversation_id: uuid.UUID,
     message: str,
     token: str,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -1347,6 +1423,19 @@ async def stream_message_sse(
                 specialist_msg_id = persisted.get("specialist_message_id")
                 suggested_specialist = persisted.get("suggested_specialist")
                 sse_specialist_action = persisted.get("specialist_action_event")
+                agent_result = persisted.get("agent_result") or {}
+
+                # Queue learning DB updates and heavy operations to run in parallel background tasks
+                background_tasks.add_task(
+                    run_background_learning_tasks,
+                    user_id=current_user.id,
+                    user_message=message,
+                    assistant_response=full_response,
+                    conversation_id=conversation_id_resolved,
+                    history=history,
+                    detected_emotion=detected_emotion,
+                    agent_result=agent_result,
+                )
 
                 # Emit specialist_action event so the frontend can update the UI
                 if sse_specialist_action:

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion, useReducedMotion, MotionValue, useTransform, useMotionTemplate, useMotionValue } from 'framer-motion';
 
 interface Particle {
   id: number;
@@ -14,6 +14,7 @@ interface Particle {
 
 interface AmbientBackgroundProps {
   activeScene: number;
+  progress?: MotionValue<number>;
 }
 
 const SCENE_CONFIGS: Record<number, {
@@ -117,8 +118,38 @@ const SCENE_CONFIGS: Record<number, {
   },
 };
 
-export default function AmbientBackground({ activeScene }: AmbientBackgroundProps) {
+export default function AmbientBackground({ activeScene, progress }: AmbientBackgroundProps) {
   const shouldReduceMotion = useReducedMotion();
+  const fallbackProgress = useMotionValue(0);
+  const actualProgress = progress || fallbackProgress;
+
+  // Sunrise Ray Color Interpolation
+  const rayColor1 = useTransform(
+    actualProgress,
+    [0, 0.25, 0.5, 0.75, 1],
+    [
+      'rgba(94, 215, 232, 0.03)',  // Cool Cyan
+      'rgba(142, 197, 232, 0.03)', // Soft Blue
+      'rgba(243, 217, 164, 0.04)', // Pale Warm Light
+      'rgba(232, 182, 107, 0.05)', // Soft Amber
+      'rgba(232, 182, 107, 0.05)'
+    ]
+  );
+
+  const rayColor2 = useTransform(
+    actualProgress,
+    [0, 0.25, 0.5, 0.75, 1],
+    [
+      'rgba(94, 215, 232, 0.06)',  // Cool Cyan
+      'rgba(142, 197, 232, 0.06)', // Soft Blue
+      'rgba(243, 217, 164, 0.07)', // Pale Warm Light
+      'rgba(232, 182, 107, 0.10)', // Soft Amber
+      'rgba(232, 182, 107, 0.10)'
+    ]
+  );
+
+  const raysBackgroundImage = useMotionTemplate`repeating-linear-gradient(75deg, transparent, transparent 50px, ${rayColor1} 70px, ${rayColor2} 90px, transparent 110px, transparent 160px)`;
+
   const [particles, setParticles] = useState<Particle[]>([]);
 
   useEffect(() => {
@@ -172,7 +203,7 @@ export default function AmbientBackground({ activeScene }: AmbientBackgroundProp
         <motion.div
           className="absolute inset-0 origin-top mix-blend-screen pointer-events-none opacity-20"
           style={{
-            backgroundImage: 'repeating-linear-gradient(75deg, transparent, transparent 50px, rgba(34, 211, 238, 0.03) 70px, rgba(34, 211, 238, 0.06) 90px, transparent 110px, transparent 160px)',
+            backgroundImage: raysBackgroundImage,
             filter: 'blur(10px)',
           }}
           animate={{

@@ -52,7 +52,7 @@ export default function CinematicHome() {
       <div className="sticky top-0 h-screen w-full overflow-hidden flex items-center justify-center">
         
         {/* Layer 0: Continuous Background Caustics / Fog / Stars */}
-        <AmbientBackground activeScene={activeScene} />
+        <AmbientBackground activeScene={activeScene} progress={warpedProgress} />
 
         {/* Global Minimalist Header / Navigation Bar (Fixed at top on all slides) */}
         <div className="absolute top-8 left-8 right-8 flex items-center justify-between z-[60] pointer-events-auto">

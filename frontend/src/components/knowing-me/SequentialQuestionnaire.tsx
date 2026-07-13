@@ -399,7 +399,14 @@ export default function SequentialQuestionnaire({
   const q = currentQuestion;
   if (!q) return null;
 
-  const isAgeQuestion = q.inputType === 'age' || q.id === 27;
+  const isAgeQuestion = q.inputType === 'age';
+
+  const getHelperText = () => {
+    if (isAgeQuestion) return 'Enter your age.';
+    if (q.options.length === 0 && !q.allowOther) return 'Share as much or as little as you\'d like.';
+    if (q.allowOther) return 'Select one or more choices, or add your own answer.';
+    return 'Select one or more choices.';
+  };
 
   // Next is disabled if saving, or if it is age question and the age input is invalid
   const isNextDisabled = () => {
@@ -427,11 +434,38 @@ export default function SequentialQuestionnaire({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] h-dvh overflow-hidden flex flex-col bg-[#040614]"
+      className="fixed inset-0 z-[100] h-dvh overflow-hidden flex flex-col"
       style={{ background: '#040614' }}
     >
+      {/* Cinematic Background */}
+      <div className="absolute inset-0 z-0">
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ opacity: 0.4 }}
+        >
+          <source src="/BG2.mp4" type="video/mp4" />
+        </video>
+        {/* Dark overlay for readability */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: 'linear-gradient(180deg, rgba(4, 6, 20, 0.85) 0%, rgba(4, 6, 20, 0.70) 40%, rgba(4, 6, 20, 0.75) 70%, rgba(4, 6, 20, 0.90) 100%)',
+          }}
+        />
+        {/* Center-focused radial gradient for question readability */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: 'radial-gradient(ellipse at center, rgba(3, 7, 20, 0.55) 0%, rgba(3, 7, 20, 0.30) 45%, rgba(3, 7, 20, 0.05) 80%)',
+          }}
+        />
+      </div>
       {/* ── Header ─────────────────────────────────────── */}
-      <div className="flex-shrink-0 flex items-center justify-between px-4 sm:px-6 pt-4 pb-3 border-b border-white/5 bg-[#040614]">
+      <div className="flex-shrink-0 flex items-center justify-between px-4 sm:px-6 pt-4 pb-3 border-b border-white/5 relative z-10" style={{ backdropFilter: 'blur(12px)', background: 'rgba(4, 6, 20, 0.40)' }}>
         <div>
           <h2
             className="text-lg font-bold"
@@ -462,7 +496,7 @@ export default function SequentialQuestionnaire({
       </div>
 
       {/* ── Position Progress Bar ──────────────────────── */}
-      <div className="flex-shrink-0 px-4 sm:px-6 pt-3 pb-3 bg-[#040614]">
+      <div className="flex-shrink-0 px-4 sm:px-6 pt-3 pb-3 relative z-10">
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-xs text-slate-500">
             Question {currentIndex + 1} of {totalQuestions}
@@ -486,7 +520,15 @@ export default function SequentialQuestionnaire({
       </div>
 
       {/* ── Question Content ───────────────────────────── */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-6 sm:py-10 overscroll-contain bg-[#040614]">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-6 sm:py-10 overscroll-contain relative z-10">
+        {/* Subtle atmospheric category glow */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: `radial-gradient(ellipse at center 40%, ${colors.glow} 0%, transparent 60%)`,
+            opacity: 0.4,
+          }}
+        />
         <div className={`max-w-lg mx-auto ${isShortQuestion ? 'min-h-full flex flex-col justify-center pb-20 sm:pb-28' : ''}`}>
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
@@ -515,6 +557,9 @@ export default function SequentialQuestionnaire({
                 >
                   {q.text}
                 </h3>
+                <p className="text-xs mt-2 font-medium" style={{ color: 'rgba(148, 163, 184, 0.8)' }}>
+                  {getHelperText()}
+                </p>
               </div>
 
               {/* Answer input */}
@@ -529,11 +574,14 @@ export default function SequentialQuestionnaire({
                     onChange={e => handleCustomTextChange(e.target.value)}
                     placeholder="Enter your age (e.g. 21)"
                     autoFocus
-                    className="w-full px-4 py-3 text-sm rounded-xl text-white placeholder-slate-500 focus:outline-none transition-all duration-200"
+                    className="w-full px-4 py-3.5 text-base rounded-xl text-white placeholder-slate-400 focus:outline-none transition-all duration-200"
                     style={{
-                      background: 'rgba(255, 255, 255, 0.04)',
-                      border: `1px solid ${customText ? colors.accent + '60' : 'rgba(255, 255, 255, 0.08)'}`,
-                      boxShadow: customText ? `0 0 12px ${colors.glow}` : 'none',
+                      background: 'rgba(8, 15, 35, 0.70)',
+                      border: `1px solid ${customText ? colors.accent + '60' : 'rgba(148, 163, 184, 0.15)'}`,
+                      boxShadow: customText ? `0 0 16px ${colors.glow}` : '0 1px 3px rgba(0, 0, 0, 0.2)',
+                      backdropFilter: 'blur(8px)',
+                      color: '#e2e8f0',
+                      caretColor: colors.accent,
                     }}
                   />
                   <p className="text-[11px] text-slate-500">Whole number between 1 and 120</p>
@@ -551,9 +599,10 @@ export default function SequentialQuestionnaire({
                         onClick={() => toggleOption(opt.value)}
                         className="w-full flex items-center gap-3 p-3.5 rounded-xl text-left cursor-pointer transition-all duration-200"
                         style={{
-                          background: isSelected ? colors.bg : 'rgba(255, 255, 255, 0.02)',
-                          border: `1px solid ${isSelected ? colors.accent + '50' : 'rgba(255, 255, 255, 0.05)'}`,
-                          boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
+                          background: isSelected ? colors.bg : 'rgba(8, 15, 35, 0.50)',
+                          border: `1px solid ${isSelected ? colors.accent + '50' : 'rgba(148, 163, 184, 0.10)'}`,
+                          boxShadow: isSelected ? `0 0 12px ${colors.glow}` : '0 1px 3px rgba(0, 0, 0, 0.15)',
+                          backdropFilter: 'blur(4px)',
                         }}
                       >
                         <div
@@ -619,10 +668,11 @@ export default function SequentialQuestionnaire({
                             onChange={e => handleCustomTextChange(e.target.value)}
                             placeholder="Type your own answer..."
                             autoFocus
-                            className="w-full px-3 py-2.5 text-sm rounded-lg text-white placeholder-slate-500 focus:outline-none"
+                            className="w-full px-3 py-2.5 text-sm rounded-lg text-white placeholder-slate-400 focus:outline-none"
                             style={{
-                              background: 'rgba(255, 255, 255, 0.04)',
-                              border: '1px solid rgba(255, 255, 255, 0.08)',
+                              background: 'rgba(8, 15, 35, 0.70)',
+                              border: '1px solid rgba(148, 163, 184, 0.12)',
+                              backdropFilter: 'blur(8px)',
                             }}
                           />
                         </motion.div>
@@ -661,8 +711,16 @@ export default function SequentialQuestionnaire({
         </div>
       </div>
 
+      {/* ── Bottom gradient for navigation readability ── */}
+      <div
+        className="absolute bottom-0 left-0 right-0 h-32 pointer-events-none z-[5]"
+        style={{
+          background: 'linear-gradient(to top, rgba(4, 6, 20, 0.90) 0%, rgba(4, 6, 20, 0.50) 60%, transparent 100%)',
+        }}
+      />
+
       {/* ── Bottom Navigation ──────────────────────────── */}
-      <div className="flex-shrink-0 px-4 sm:px-6 py-4 border-t border-white/5 bg-[#040614]" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+      <div className="flex-shrink-0 px-4 sm:px-6 py-4 border-t border-white/5 relative z-10" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))', backdropFilter: 'blur(12px)', background: 'rgba(4, 6, 20, 0.50)' }}>
         <div className="max-w-lg mx-auto flex items-center justify-between">
           <button
             onClick={goBack}
@@ -670,11 +728,40 @@ export default function SequentialQuestionnaire({
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
               color: 'var(--text-secondary)',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
             }}
           >
             <ArrowLeft size={16} />
             Back
           </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onClose(false)}
+              disabled={isSaving}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 cursor-pointer disabled:opacity-30"
+              style={{
+                color: 'rgba(148, 163, 184, 0.8)',
+                background: 'rgba(8, 15, 35, 0.50)',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+              }}
+            >
+              Skip Questions
+            </button>
+            <button
+              onClick={handleSaveAndExit}
+              disabled={isSaving}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200 cursor-pointer disabled:opacity-30"
+              style={{
+                color: colors.accent,
+                background: 'rgba(8, 15, 35, 0.50)',
+                border: `1px solid ${colors.accent}30`,
+              }}
+            >
+              Save & Continue Later
+            </button>
+          </div>
 
           <motion.button
             whileHover={{ scale: nextButtonDisabled ? 1 : 1.02 }}
@@ -683,11 +770,14 @@ export default function SequentialQuestionnaire({
             disabled={nextButtonDisabled}
             className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 cursor-pointer"
             style={{
-              background: `linear-gradient(135deg, ${colors.accent}, ${colors.accent}cc)`,
-              color: 'var(--bg-primary)',
-              boxShadow: nextButtonDisabled ? 'none' : `0 0 16px ${colors.glow}`,
-              opacity: nextButtonDisabled ? 0.4 : 1,
+              background: nextButtonDisabled 
+                ? 'rgba(30, 40, 60, 0.6)' 
+                : `linear-gradient(135deg, ${colors.accent}, ${colors.accent}cc)`,
+              color: nextButtonDisabled ? 'rgba(148, 163, 184, 0.5)' : 'var(--bg-primary)',
+              boxShadow: nextButtonDisabled ? 'none' : `0 0 20px ${colors.glow}`,
+              opacity: nextButtonDisabled ? 0.6 : 1,
               cursor: nextButtonDisabled ? 'not-allowed' : 'pointer',
+              border: nextButtonDisabled ? '1px solid rgba(255, 255, 255, 0.08)' : 'none',
             }}
           >
             {isSaving ? (

@@ -39,3 +39,6 @@ npm-debug.log*
 coverage/
 .pytest_cache/
 htmlcov/
+test_eval_output*.txt
+test_check.db
+test_benchmark_*.db

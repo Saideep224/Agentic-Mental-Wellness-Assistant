@@ -154,123 +154,126 @@ async def create_tables() -> None:
 
     from sqlalchemy import text
     try:
-        async with engine.begin() as conn:
-            if settings.is_postgres:
+        if settings.is_postgres:
+            # Run each ALTER TABLE in its own independent transaction to prevent lock accumulation deadlocks!
+            _postgres_alter_statements = [
                 # ── V1 columns ──────────────────────────────────────────────
-                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS emotion_score double precision;"))
-                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS stress_score double precision;"))
-                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS anxiety_score double precision;"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS university text;"))
+                "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS emotion_score double precision;",
+                "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS stress_score double precision;",
+                "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS anxiety_score double precision;",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS university text;",
                 # ── V2 columns ──────────────────────────────────────────────
-                await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS agent_id text DEFAULT 'buddy';"))
-                await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS active_specialists jsonb DEFAULT '[]';"))
-                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS sender_type text DEFAULT 'user';"))
+                "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS agent_id text DEFAULT 'buddy';",
+                "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS active_specialists jsonb DEFAULT '[]';",
+                "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS sender_type text DEFAULT 'user';",
                 # ── V2.1 mood / emotion columns ─────────────────────────────
-                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS mood_score double precision;"))
-                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS detected_emotion text;"))
+                "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS mood_score double precision;",
+                "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS detected_emotion text;",
                 # ── emotion_logs table columns ─────────────────────────────
-                await conn.execute(text("ALTER TABLE emotion_logs ADD COLUMN IF NOT EXISTS confidence_score double precision;"))
-                await conn.execute(text("ALTER TABLE emotion_logs ADD COLUMN IF NOT EXISTS secondary_emotion text;"))
+                "ALTER TABLE emotion_logs ADD COLUMN IF NOT EXISTS confidence_score double precision;",
+                "ALTER TABLE emotion_logs ADD COLUMN IF NOT EXISTS secondary_emotion text;",
                 # ── memories table columns ─────────────────────────────────
-                await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS metadata_json jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS importance_score double precision DEFAULT 0.5;"))
-                await conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS expires_at timestamp with time zone;"))
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS metadata_json jsonb DEFAULT '{}';",
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS importance_score double precision DEFAULT 0.5;",
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS expires_at timestamp with time zone;",
                 # ── knowledge_graph columns ─────────────────────
-                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS subject varchar(255) DEFAULT 'User';"))
-                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS predicate varchar(255);"))
-                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS object varchar(255);"))
-                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS confidence double precision DEFAULT 1.0;"))
-                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
-                await conn.execute(text("ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();"))
-                 # ── user_profile columns ────────────────────────
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS university varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS name varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS age varchar(50);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS profession varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS field_of_work varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS current_challenge varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS advice_preference varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS primary_support_need varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS student_year varchar(100);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS communication_style varchar(100);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS interests jsonb DEFAULT '[]';"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS hobbies jsonb DEFAULT '[]';"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS goals jsonb DEFAULT '[]';"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS stress_triggers jsonb DEFAULT '[]';"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS coping_mechanisms jsonb DEFAULT '[]';"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS support_system text;"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS sleep_habits varchar(100);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS gender varchar(50);"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS personality_json jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS last_analyzed_at timestamp with time zone;"))
-                
+                "ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS subject varchar(255) DEFAULT 'User';",
+                "ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS predicate varchar(255);",
+                "ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS object varchar(255);",
+                "ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS confidence double precision DEFAULT 1.0;",
+                "ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();",
+                "ALTER TABLE knowledge_graph ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();",
+                # ── user_profile columns ────────────────────────
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS university varchar(255);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS name varchar(255);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS age varchar(50);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS profession varchar(255);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS field_of_work varchar(255);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS current_challenge varchar(255);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS advice_preference varchar(255);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS primary_support_need varchar(255);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS student_year varchar(100);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS communication_style varchar(100);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS interests jsonb DEFAULT '[]';",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS hobbies jsonb DEFAULT '[]';",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS goals jsonb DEFAULT '[]';",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS stress_triggers jsonb DEFAULT '[]';",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS coping_mechanisms jsonb DEFAULT '[]';",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS support_system text;",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS sleep_habits varchar(100);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS gender varchar(50);",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS personality_json jsonb DEFAULT '{}';",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS last_analyzed_at timestamp with time zone;",
                 # ── profiles table columns (onboarding & personalization) ──
-                await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS onboarding_step integer DEFAULT 1;"))
-                await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS personality_profile jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS interests jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS communication_style text;"))
-                await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS personality_type text;"))
-                
+                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS onboarding_step integer DEFAULT 1;",
+                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS personality_profile jsonb DEFAULT '{}';",
+                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS interests jsonb DEFAULT '{}';",
+                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS communication_style text;",
+                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS personality_type text;",
                 # ── user_personality (UserProfile) table columns ──────────
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS personality_profile jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS personality_type jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS communication_style jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS interests jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS stress_indicators jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS personality_type_dict jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_style jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS stress_triggers jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS strengths jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS weaknesses jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS onboarding_answers jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS onboarding_completed boolean DEFAULT false;"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_baseline jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS comfort_preferences jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_summary jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS stress_patterns jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_triggers jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS preferred_response_style jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
-                await conn.execute(text("ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();"))
-
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS personality_profile jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS personality_type jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS communication_style jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS interests jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS stress_indicators jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS personality_type_dict jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_style jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS stress_triggers jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS strengths jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS weaknesses jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS onboarding_answers jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS onboarding_completed boolean DEFAULT false;",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_baseline jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS comfort_preferences jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_summary jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS stress_patterns jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS emotional_triggers jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS preferred_response_style jsonb DEFAULT '{}';",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();",
+                "ALTER TABLE user_personality ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();",
                 # ── user_profile (UserPersonalProfile) extra timestamp columns ─
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
-                await conn.execute(text("ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();"))
-
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();",
+                "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();",
                 # ── chat_messages and conversations extra columns ─────────
-                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS agent_analysis jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS emotional_context jsonb DEFAULT '{}';"))
-                await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS emotional_tag varchar(255);"))
-
+                "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS agent_analysis jsonb DEFAULT '{}';",
+                "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS emotional_context jsonb DEFAULT '{}';",
+                "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS emotional_tag varchar(255);",
                 # ── user_entities table columns ────────────────────────────
-                await conn.execute(text("ALTER TABLE user_entities ADD COLUMN IF NOT EXISTS entity varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_entities ADD COLUMN IF NOT EXISTS type varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_entities ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
-
+                "ALTER TABLE user_entities ADD COLUMN IF NOT EXISTS entity varchar(255);",
+                "ALTER TABLE user_entities ADD COLUMN IF NOT EXISTS type varchar(255);",
+                "ALTER TABLE user_entities ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();",
                 # ── user_relationships table columns ───────────────────────
-                await conn.execute(text("ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS source varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS relationship varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS target varchar(255);"))
-                await conn.execute(text("ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
-
+                "ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS source varchar(255);",
+                "ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS relationship varchar(255);",
+                "ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS target varchar(255);",
+                "ALTER TABLE user_relationships ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();",
                 # ── user_question_answers table columns ────────────────────
-                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS question_id integer;"))
-                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS question_text text;"))
-                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS category varchar(100);"))
-                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS selected_answer jsonb DEFAULT '[]';"))
-                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS custom_answer text;"))
-                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();"))
-                await conn.execute(text("ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();"))
+                "ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS question_id integer;",
+                "ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS question_text text;",
+                "ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS category varchar(100);",
+                "ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS selected_answer jsonb DEFAULT '[]';",
+                "ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS custom_answer text;",
+                "ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS created_at timestamp with time zone DEFAULT now();",
+                "ALTER TABLE user_question_answers ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT now();",
+            ]
+            for stmt in _postgres_alter_statements:
+                try:
+                    async with engine.begin() as conn:
+                        await conn.execute(text(stmt))
+                except Exception as stmt_err:
+                    logger.warning(f"[Migration Warning] Failed to run statement: {stmt}. Error: {stmt_err}")
 
-                # ── user_question_answers check constraint update ──────────
-                try:
+            # ── user_question_answers check constraint update ──────────
+            try:
+                async with engine.begin() as conn:
                     await conn.execute(text("ALTER TABLE user_question_answers DROP CONSTRAINT IF EXISTS user_question_answers_question_id_check;"))
-                except Exception as drop_err:
-                    logger.warning(f"Could not drop question_id constraint: {drop_err}")
-                try:
+            except Exception as drop_err:
+                logger.warning(f"Could not drop question_id constraint: {drop_err}")
+            try:
+                async with engine.begin() as conn:
                     await conn.execute(text("ALTER TABLE user_question_answers ADD CONSTRAINT user_question_answers_question_id_check CHECK (question_id BETWEEN 1 AND 27);"))
-                except Exception as add_err:
-                    logger.warning(f"Could not add question_id constraint (1..27): {add_err}")
+            except Exception as add_err:
+                logger.warning(f"Could not add question_id constraint (1..27): {add_err}")
             else:
                 # SQLite: try/except each individually since SQLite doesn't support IF NOT EXISTS for columns
                 _sqlite_add_cols = [

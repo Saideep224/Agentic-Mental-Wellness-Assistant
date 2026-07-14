@@ -30,7 +30,9 @@ export default function ChatContainer({ children }: ChatContainerProps) {
           scrollBehavior: 'smooth',
         }}
       >
-        {children}
+        <div className="max-w-3xl mx-auto w-full space-y-4">
+          {children}
+        </div>
       </div>
     </motion.div>
   );

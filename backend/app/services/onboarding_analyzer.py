@@ -146,6 +146,12 @@ class OnboardingAnalyzer:
                 if item.strip():
                     db.add(KnowledgeGraphRelation(user_id=user_id, subject="User", predicate=f"knowing_me_{predicate}", object=item[:255], confidence=1.0))
 
+        # Re-build personalization snapshot on onboarding completion
+        try:
+            await profile_service.generate_personalization_snapshot(db, user_id)
+        except Exception as snap_err:
+            logger.warning(f"Failed to generate snapshot on onboarding completion: {snap_err}")
+
         invalidate_profile_caches(user_id)
         await db.commit()
         return {"personality_profile": personality_profile, "emotional_baseline": emotional_baseline, "comfort_preferences": comfort_preferences,

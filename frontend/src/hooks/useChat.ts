@@ -239,7 +239,7 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
       }
 
       // Connection state variables
-      const maxRetries = 2;
+      const maxRetries = 1;
       let connectionTimeout: NodeJS.Timeout | null = null;
       let isMessageCreated = false;
       let activeBubbleId = '';
@@ -339,7 +339,8 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
         try {
           const clientMsgId = lastClientMessageIdRef.current || generateId();
           lastClientMessageIdRef.current = clientMsgId;
-          const url = `${api.API_BASE}/api/chat/${targetId}/stream?message=${encodeURIComponent(content.trim())}&token=${encodeURIComponent(token)}&client_message_id=${encodeURIComponent(clientMsgId)}`;
+          const baseUrl = api.API_BASE.replace(/\/+$/, '');
+          const url = `${baseUrl}/api/chat/${targetId}/stream?message=${encodeURIComponent(content.trim())}&token=${encodeURIComponent(token)}&client_message_id=${encodeURIComponent(clientMsgId)}`;
           const eventSource = new EventSource(url);
           eventSourceRef.current = eventSource;
 

@@ -14,7 +14,8 @@ export function sendMessageSSE(
   message: string,
   token: string
 ): EventSource {
-  const url = `${API_BASE}/api/chat/${conversationId}/stream?message=${encodeURIComponent(message)}&token=${encodeURIComponent(token)}`;
+  const baseUrl = API_BASE.replace(/\/+$/, '');
+  const url = `${baseUrl}/api/chat/${conversationId}/stream?message=${encodeURIComponent(message)}&token=${encodeURIComponent(token)}`;
   return new EventSource(url);
 }
 

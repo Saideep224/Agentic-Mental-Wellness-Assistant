@@ -6,6 +6,7 @@ import json
 import uuid
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
@@ -24,6 +25,8 @@ from app.models.user_profile import UserProfile
 from app.models.mood_log import MoodLog
 from app.routes.auth import get_current_user
 from app.database import _history_cache, _profile_cache, write_queue
+_recent_responses_cache: dict[str, list[str]] = {}
+_RESPONSE_CACHE_SIZE = 20
 from app.utils.helpers import get_random_human_fallback, get_speculative_transition, normalize_uuid, detect_specialist_action
 
 
@@ -366,6 +369,28 @@ async def _get_emotional_profile_dict(
     except Exception as e:
         logger.warning(f"[DB FAIL] _get_emotional_profile_dict failed: {e}. Falling back to in-memory cache.")
         return _profile_cache.get(str(user_id), profile_dict)
+
+
+async def _get_conversation_summary(db: AsyncSession, user_id: str, conversation_id: str) -> str | None:
+    """Query the memories table for a conversation summary memory with a 3.0s timeout."""
+    try:
+        from app.models.memory import Memory
+        
+        async def _query():
+            result = await db.execute(
+                select(Memory).where(Memory.user_id == user_id)
+            )
+            memories = result.scalars().all()
+            for m in memories:
+                meta = m.metadata_json or {}
+                if meta.get("source") == "conversation_summary" and meta.get("conversation_id") == str(conversation_id):
+                    return m.memory_summary
+            return None
+
+        return await asyncio.wait_for(_query(), timeout=3.0)
+    except Exception as e:
+        logger.warning(f"Failed to fetch conversation summary (timeout or error): {e}")
+    return None
 
 
 async def summarize_and_store_conversation(db: AsyncSession, user_id: uuid.UUID, conversation_id: uuid.UUID, history: list[dict]):
@@ -887,6 +912,7 @@ def classify_message_complexity(message: str) -> str:
     msg = (message or "").lower().strip()
     import re
     msg_clean = re.sub(r"[^\w\s]", "", msg).strip()
+    words = msg_clean.split()
     
     # 1. SAFETY_CRITICAL
     crisis_keywords = {
@@ -899,31 +925,41 @@ def classify_message_complexity(message: str) -> str:
     if any(keyword in msg_clean or keyword in msg for keyword in crisis_keywords):
         return "SAFETY_CRITICAL"
         
-    # 2. SIMPLE_SOCIAL
+    # 2. FAST_SOCIAL
     social_words = {
         "hi", "hello", "hey", "hola", "yo", "sup", "buddy", "esona",
         "yes", "no", "ok", "okay", "cool", "nice", "fine", "lol", "lmao",
         "haha", "bro", "dude", "thanks", "thank you", "bye", "goodbye",
         "how are you", "hows it going", "whats up", "what up", "yeah", "yep",
         "agree", "indeed", "good morning", "good night", "sweet dreams", "take care",
-        "awesome", "great", "perfect", "undrstood", "understood", "sure", "of course"
+        "awesome", "great", "perfect", "understood", "sure", "of course"
     }
-    words = msg_clean.split()
-    if len(words) <= 3 and (not words or all(w in social_words for w in words) or any(w in social_words for w in words)):
-        return "SIMPLE_SOCIAL"
+    if len(words) <= 3 and (not words or all(w in social_words for w in words)):
+        return "FAST_SOCIAL"
         
-    # 3. LIGHT_EMOTIONAL
-    light_emotional_keywords = {
+    # 3. EMOTIONAL_SUPPORT
+    emotional_keywords = {
         "tired", "long day", "feeling low", "feel low", "lonely", "feel lonely",
-        "stressed", "feel stressed", "cant focus", "cant concentrate",
-        "not feeling great", "not feeling good", "anxious", "feel anxious",
-        "sad", "feeling sad", "down", "feeling down", "bored", "exhausted",
-        "overwhelmed", "worry", "worried", "unhappy"
+        "stressed", "feel stressed", "cant focus", "cant concentrate", "sad", "feeling sad",
+        "not feeling great", "not feeling good", "anxious", "feel anxious", "down", "feeling down",
+        "exhausted", "overwhelmed", "worry", "worried", "unhappy", "depressed", "scared", "afraid",
+        "angry", "mad", "pissed", "hurt", "crying", "cry", "hate", "stress", "anxiety", "panic"
     }
-    if len(words) <= 7 and any(w in light_emotional_keywords for w in words):
-        return "LIGHT_EMOTIONAL"
+    if any(w in emotional_keywords for w in words) or (len(words) <= 8 and any(w in emotional_keywords for w in words)):
+        return "EMOTIONAL_SUPPORT"
         
-    return "DEEP_CONTEXTUAL"
+    # 4. DEEP_PERSONAL
+    deep_keywords = {
+        "relationship", "parents", "mom", "dad", "family", "friend", "girlfriend", "boyfriend",
+        "future", "career", "life", "meaning", "existential", "pattern", "always do this",
+        "childhood", "past", "memory", "reminds me", "scared of", "fear", "dream", "goal",
+        "failure", "fail", "regret", "love", "marry", "divorce", "loneliness", "death"
+    }
+    if any(w in deep_keywords for w in words):
+        return "DEEP_PERSONAL"
+        
+    # Default is NORMAL_CHAT
+    return "NORMAL_CHAT"
 
 
 async def save_chat_response_to_db(
@@ -1341,12 +1377,9 @@ async def run_background_learning_tasks(
                     await db.commit()
             except Exception as ref_err:
                 logger.error(f"[BACKGROUND] Memory reflection failed: {ref_err}")
-
             logger.info(f"[BACKGROUND LEARNING SUCCESS] Finished background learning tasks successfully.")
         except Exception as bg_outer_err:
             logger.error(f"[BACKGROUND OUTER ERROR] Background tasks failed: {bg_outer_err}", exc_info=True)
-
-
 @router.get("/{conversation_id}/stream")
 async def stream_message_sse(
     conversation_id: uuid.UUID,
@@ -1361,12 +1394,10 @@ async def stream_message_sse(
     Allows browsers to connect natively using the standard EventSource API.
     """
     print("CHAT REQUEST RECEIVED")
-    print("CONVERSATION ID:", conversation_id)
-    print("USER MESSAGE:", message)
-    logger.info(f"[API SSE] stream_message_sse request received: conversation_id={conversation_id}, message_len={len(message) if message else 0}")
+    logger.info(f"[API SSE] stream_message_sse request received: conversation_id={conversation_id}, client_message_id={client_message_id}")
     
     try:
-        # 1. Authenticate token using the new shared validation logic
+        # 1. Authenticate token using jwt payload
         credentials_exception = HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -1380,7 +1411,6 @@ async def stream_message_sse(
                 logger.error("[AUTH SSE] Sub claim is missing from JWT payload.")
                 raise credentials_exception
             user_id = uuid.UUID(user_id_str)
-            logger.info(f"[AUTH SSE] Decoded user_id: {user_id}")
         except Exception as auth_err:
             logger.error(f"[AUTH SSE ERROR] JWT validation failed: {auth_err}")
             raise credentials_exception
@@ -1403,7 +1433,6 @@ async def stream_message_sse(
                 name = user_meta.get("full_name") or user_meta.get("name") or None
                 email = payload.get("email", "")
                 
-                # Check for email conflict
                 if email:
                     result_email = await db.execute(select(User).where(User.email == email))
                     existing_user_by_email = result_email.scalar_one_or_none()
@@ -1427,7 +1456,6 @@ async def stream_message_sse(
                 )
                 db.add(current_user)
                 await db.commit()
-                # Re-fetch or refresh to bind to session
                 result = await db.execute(select(User).where(User.id == user_id))
                 current_user = result.scalar_one()
                 logger.info(f"[AUTH SSE SUCCESS] Auto-created user details: id={current_user.id}, email={current_user.email}")
@@ -1444,25 +1472,35 @@ async def stream_message_sse(
  
         # 3. Save the user's message
         logger.info(f"[DB INSERT SSE] Saving User message: conversation_id={conversation_id_resolved}, user_id={current_user.id}")
-        logger.info(f"[TYPE LOG] stream_message_sse user: conversation_id type: {type(conversation_id_resolved)}, value: {conversation_id_resolved}")
-        logger.info(f"[TYPE LOG] stream_message_sse user: user_id type: {type(current_user.id)}, value: {current_user.id}")
+        existing_user_msg = None
+        existing_assistant_msg = None
         try:
             # Deduplicate by client_message_id if provided
-            existing_user_msg = None
             if client_message_id:
                 dedup_result = await db.execute(
                     select(Message).where(
                         and_(
                             Message.conversation_id == conversation_id_resolved,
                             Message.role == MessageRole.user,
-                            Message.content == message,
                         )
                     ).order_by(Message.created_at.desc()).limit(1)
                 )
                 candidate = dedup_result.scalar_one_or_none()
                 if candidate and candidate.emotional_context and candidate.emotional_context.get("client_message_id") == client_message_id:
                     existing_user_msg = candidate
-                    logger.info(f"[SSE DEDUP] Duplicate message detected (client_message_id={client_message_id}). Skipping save.")
+                    logger.info(f"[SSE DEDUP] Duplicate message detected (client_message_id={client_message_id}). Checking for processed response.")
+                    
+                    # Find assistant response that followed this duplicate user message
+                    assist_result = await db.execute(
+                        select(Message).where(
+                            and_(
+                                Message.conversation_id == conversation_id_resolved,
+                                Message.role == MessageRole.assistant,
+                                Message.created_at >= existing_user_msg.created_at
+                            )
+                        ).order_by(Message.created_at.asc()).limit(1)
+                    )
+                    existing_assistant_msg = assist_result.scalar_one_or_none()
 
             if existing_user_msg:
                 user_msg = existing_user_msg
@@ -1477,11 +1515,10 @@ async def stream_message_sse(
                 db.add(user_msg)
                 conversation.updated_at = datetime.now(timezone.utc)
                 db.add(conversation)
-                
                 await db.commit()
                 await db.refresh(conversation)
                 await db.refresh(user_msg)
-                logger.info(f"[DB COMMIT SSE SUCCESS] User message (id={user_msg.id}) and Conversation resolved.")
+                logger.info(f"[DB COMMIT SSE SUCCESS] Saved user message: {user_msg.id}")
         except Exception as db_msg_err:
             logger.error(f"[DB COMMIT SSE ERROR] Failed to save user message: {db_msg_err}", exc_info=True)
             await db.rollback()
@@ -1489,9 +1526,6 @@ async def stream_message_sse(
 
         # ---------------------------------------------------------------
         # NON-BLOCKING ONBOARDING ROUTING (SSE)
-        # Priority 1: Crisis → bypass, run full pipeline
-        # Priority 2: Free-form → auto-complete, run full pipeline
-        # Priority 3: Structured answer → save silently, run pipeline
         # ---------------------------------------------------------------
         if not current_user.onboarding_completed:
             from app.services.onboarding_service import onboarding_service
@@ -1510,7 +1544,6 @@ async def stream_message_sse(
                 await onboarding_service.auto_complete_onboarding(db, current_user, profile)
                 await db.commit()
             else:
-                # Short structured answer — save silently, continue to pipeline
                 if profile:
                     stage = (profile.personality_profile or {}).get("onboarding_stage", 1)
                     try:
@@ -1520,20 +1553,17 @@ async def stream_message_sse(
                     except Exception as ob_err:
                         logger.warning(f"[ONBOARDING SSE SILENT SAVE] Failed: {ob_err}")
                         await db.rollback()
-            # Re-read so the pipe        # 4. Event generator for Starlette SSE EventSourceResponse
+
+        # 4. Event generator for Starlette SSE EventSourceResponse
         async def event_generator() -> AsyncGenerator[dict, None]:
-            # Default values to prevent unbound errors
-            detected_emotion = "neutral"
-            confidence_score = 1.0
-            stress_score = 0.1
-            anxiety_score = 0.1
-            mood_score = 0.9
+            import asyncio
+            import time
+            perf_logger = logging.getLogger("ESONA_CHAT_PERF")
             
             trace_id = uuid.uuid4().hex[:8]
             start_time = time.perf_counter()
             logger.info(f"[CHAT PERF][trace={trace_id}] request_received +0ms")
 
-            # 4a. Yield connected event immediately
             yield {
                 "event": "message",
                 "data": json.dumps({
@@ -1544,30 +1574,92 @@ async def stream_message_sse(
             }
             logger.info(f"[CHAT PERF][trace={trace_id}] sse_connected +{int((time.perf_counter() - start_time) * 1000)}ms")
 
-            # 4b. Yield understanding status
+            # Handle replay deduplication directly
+            if existing_assistant_msg:
+                logger.info(f"[SSE REPLAY] Streaming existing response for trace={trace_id}")
+                yield {
+                    "event": "message",
+                    "data": json.dumps({"type": "status", "stage": "responding"}),
+                }
+                
+                content = existing_assistant_msg.content or ""
+                chunk_size = 4
+                for i in range(0, len(content), chunk_size):
+                    chunk = content[i:i+chunk_size]
+                    yield {
+                        "event": "message",
+                        "data": json.dumps({
+                            "type": "chunk",
+                            "content": chunk,
+                            "conversation_id": str(conversation_id_resolved),
+                        }),
+                    }
+                    await asyncio.sleep(0.005)
+
+                emo = existing_assistant_msg.emotion_detected or "neutral"
+                mood = existing_assistant_msg.mood_score or 0.9
+                
+                yield {
+                    "event": "message",
+                    "data": json.dumps({
+                        "type": "done",
+                        "message_id": str(existing_assistant_msg.id),
+                        "conversation_id": str(conversation_id_resolved),
+                        "emotion_detected": emo,
+                        "mood_score": mood,
+                        "emotion_score": 1.0,
+                        "stress_score": 0.1,
+                        "anxiety_score": 0.1,
+                        "agent_analysis": {},
+                    }),
+                }
+                
+                duration_ms = int((time.perf_counter() - start_time) * 1000)
+                perf_logger.info(
+                    f"[ESONA_CHAT_PERF] category=REPLAY trace_id={trace_id} total_ms={duration_ms} "
+                    f"client_message_id={client_message_id}"
+                )
+                return
+
+            # Default values to prevent unbound errors
+            detected_emotion = "neutral"
+            confidence_score = 1.0
+            stress_score = 0.1
+            anxiety_score = 0.1
+            mood_score = 0.9
+            
+            # Yield understanding status
             yield {
                 "event": "message",
                 "data": json.dumps({"type": "status", "stage": "understanding"}),
             }
 
-            # Classify message complexity
-            complexity = classify_message_complexity(message)
-            logger.info(f"[CHAT PERF][trace={trace_id}] complexity_classified +{int((time.perf_counter() - start_time) * 1000)}ms complexity={complexity}")
+            # Classify message complexity (FAST_SOCIAL, NORMAL_CHAT, EMOTIONAL_SUPPORT, DEEP_PERSONAL, SAFETY_CRITICAL)
+            category = classify_message_complexity(message)
+            logger.info(f"[CHAT PERF][trace={trace_id}] complexity_classified +{int((time.perf_counter() - start_time) * 1000)}ms category={category}")
 
             try:
                 # We need a db session to load profile & history
                 async with get_db_session() as s_db:
-                    # Load cached/fresh personalization snapshot
                     p_start = time.perf_counter()
                     from app.services.profile_service import profile_service
+                    
+                    emotional_profile = await _get_emotional_profile_dict(s_db, current_user.id, current_user.name)
                     personalization_block = await profile_service.build_personalization_prompt_block(s_db, current_user.id)
-                    legacy_context = await profile_service.build_profile_context(s_db, current_user.id)
-                    profile_context = f"{legacy_context}\n{personalization_block}"
+                    profile_context = personalization_block
                     logger.info(f"[CHAT PERF][trace={trace_id}] personalization_complete +{int((time.perf_counter() - start_time) * 1000)}ms duration={int((time.perf_counter() - p_start) * 1000)}ms")
 
-                    # Handle routing based on complexity class
-                    if complexity == "SAFETY_CRITICAL":
-                        # Safety Protocol
+                    # Length Matching Calculations
+                    user_words = message.strip().split()
+                    length_constraint = ""
+                    if len(user_words) <= 3:
+                        length_constraint = "Keep response extremely brief (1 short sentence, max 12 words) and conversational."
+                    elif len(user_words) <= 7:
+                        length_constraint = "Keep response brief (1-2 sentences, max 20 words)."
+                    else:
+                        length_constraint = "Keep response natural and concise (2-3 sentences, max 35 words)."
+
+                    if category == "SAFETY_CRITICAL":
                         detected_emotion = "Crisis"
                         confidence_score = 0.95
                         mood_score = 0.05
@@ -1582,55 +1674,12 @@ async def stream_message_sse(
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": message}
                         ]
-                        # Responding status
-                        yield {
-                            "event": "message",
-                            "data": json.dumps({"type": "status", "stage": "responding"}),
-                        }
-                        
-                        full_response = ""
-                        first_chunk = False
-                        logger.info(f"[CHAT PERF][trace={trace_id}] llm_started +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        
-                        from app.utils.llm import generate_chat_completion_stream_with_fallback
-                        async for chunk in generate_chat_completion_stream_with_fallback(messages, temperature=0.5):
-                            if not first_chunk:
-                                first_chunk = True
-                                logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
-                            full_response += chunk
-                            yield {
-                                "event": "message",
-                                "data": json.dumps({
-                                    "type": "chunk",
-                                    "content": chunk,
-                                    "conversation_id": str(conversation_id_resolved),
-                                }),
-                            }
-                            
-                        # Queue background save
-                        background_tasks.add_task(
-                            save_chat_response_to_db,
-                            conversation_id=conversation_id_resolved,
-                            user_id=current_user.id,
-                            user_message=message,
-                            full_response=full_response,
-                            detected_emotion=detected_emotion,
-                            confidence_score=confidence_score,
-                            stress_score=stress_score,
-                            anxiety_score=anxiety_score,
-                            mood_score=mood_score,
-                            agent_analysis={},
-                            emotion_dimensions={"stress": 0.95, "sadness": 0.95, "anxiety": 0.95, "happiness": 0.05, "motivation": 0.1, "confidence": 0.1},
-                            is_first_message=False,
-                        )
 
-                    elif complexity == "SIMPLE_SOCIAL":
-                        # Fetch recent 3 messages
-                        history = await _build_conversation_history(s_db, conversation_id_resolved, limit=3)
-                        
+                    elif category == "FAST_SOCIAL":
+                        # Bypasses history, memories, graph, and agents logic. Max speed!
                         system_prompt = (
                             "You are Esona (also known as Buddy), a supportive, relatable college friend. "
-                            "Strictly adopt the following user personalization and mirror guidelines:\n"
+                            "Strictly adopt the following user personalization guidelines:\n"
                             f"{personalization_block}\n\n"
                             "CRITICAL RESPONSE STYLE CONSTRAINTS:\n"
                             "- Write like a real close friend texting on WhatsApp.\n"
@@ -1638,197 +1687,81 @@ async def stream_message_sse(
                             "- Keep response extremely short (1 to 2 sentences max, under 20 words).\n"
                             "- Omit terminal punctuation.\n"
                             "- Use casual abbreviations naturally (like ngl, idk, fr, tbh, bro, 😭, 💀) but do not force them.\n"
-                            "- Do NOT use any <reasoning> or <thinking> tags. Do not explain your logic.\n"
+                            "- Do NOT use any <reasoning> or <thinking> tags.\n"
+                            f"- {length_constraint}\n"
                         )
+                        messages = [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": message}
+                        ]
+
+                    elif category == "NORMAL_CHAT":
+                        # Bypasses heavy agents. Safe GETs for context.
+                        history = await _build_conversation_history(s_db, conversation_id_resolved, limit=6)
+                        from app.agents import memory_agent
+                        
+                        mem_res = await memory_agent.retrieve_context(s_db, str(current_user.id), message, limit=3)
+                        memories = mem_res.get("memories", [])
+                        memories_str = "\n".join([f"- User once said: '{m.get('content')}'" for m in memories]) if memories else "None."
+
+                        system_prompt = (
+                            "You are Esona (also known as Buddy), a supportive, relatable college friend. "
+                            "Strictly adopt the following user personalization guidelines:\n"
+                            f"{personalization_block}\n\n"
+                            f"Relevant Past Memories:\n{memories_str}\n\n"
+                            "CRITICAL RESPONSE STYLE CONSTRAINTS:\n"
+                            "- Speak like a supportive friend. Validate their feeling naturally, keeping it warm and conversational.\n"
+                            "- Write mostly in lowercase, warm, natural, and empathetic.\n"
+                            "- Omit terminal punctuation.\n"
+                            "- Do NOT use any <reasoning> or <thinking> tags.\n"
+                            f"- {length_constraint}\n"
+                        )
+                        recent_responses = _recent_responses_cache.get(str(current_user.id), [])
+                        if recent_responses:
+                            system_prompt += f"\n- Avoid repeating these recent phrases: {recent_responses[-3:]}"
+
                         messages = [{"role": "system", "content": system_prompt}]
                         for h in history:
                             messages.append({"role": h["role"], "content": h["content"]})
                         messages.append({"role": "user", "content": message})
-                        
-                        # Responding status
-                        yield {
-                            "event": "message",
-                            "data": json.dumps({"type": "status", "stage": "responding"}),
-                        }
-                        
-                        full_response = ""
-                        first_chunk = False
-                        logger.info(f"[CHAT PERF][trace={trace_id}] llm_started +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        
-                        from app.utils.llm import generate_chat_completion_stream_with_fallback
-                        async for chunk in generate_chat_completion_stream_with_fallback(messages, temperature=0.7):
-                            if not first_chunk:
-                                first_chunk = True
-                                logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
-                            full_response += chunk
-                            yield {
-                                "event": "message",
-                                "data": json.dumps({
-                                    "type": "chunk",
-                                    "content": chunk,
-                                    "conversation_id": str(conversation_id_resolved),
-                                }),
-                            }
-                            
-                        # Queue background save
-                        background_tasks.add_task(
-                            save_chat_response_to_db,
-                            conversation_id=conversation_id_resolved,
-                            user_id=current_user.id,
-                            user_message=message,
-                            full_response=full_response,
-                            detected_emotion="neutral",
-                            confidence_score=1.0,
-                            stress_score=0.1,
-                            anxiety_score=0.1,
-                            mood_score=0.9,
-                            agent_analysis={"personality_agent": {"communication_style": "casual"}, "intent_agent": {"message_type": "casual"}},
-                            emotion_dimensions={"stress": 0.1, "sadness": 0.1, "anxiety": 0.1, "happiness": 0.9, "motivation": 0.8, "confidence": 0.8},
-                            is_first_message=(len(history) == 0),
-                        )
 
-                    elif complexity == "LIGHT_EMOTIONAL":
+                    else:
+                        # EMOTIONAL_SUPPORT / DEEP_PERSONAL Route
                         # Stage: remembering -> retrieve light context
                         yield {
                             "event": "message",
                             "data": json.dumps({"type": "status", "stage": "remembering"}),
                         }
-                        
-                        # Fetch recent 5 messages, MentalBERT and Memory in parallel
-                        logger.info(f"[CHAT PERF][trace={trace_id}] recent_history_started +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        history = await _build_conversation_history(s_db, conversation_id_resolved, limit=5)
-                        logger.info(f"[CHAT PERF][trace={trace_id}] recent_history_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        
-                        logger.info(f"[CHAT PERF][trace={trace_id}] memory_started +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        from app.agents import memory_agent
-                        from app.services.emotion_service import emotion_service
-                        mem_task = asyncio.create_task(memory_agent.retrieve_context(s_db, str(current_user.id), message, limit=3))
-                        emotion_task = asyncio.create_task(emotion_service.classify_emotion_fast(message))
-                        
-                        memories_res, emotion_res = await asyncio.gather(mem_task, emotion_task)
-                        memories = memories_res.get("memories", [])
-                        logger.info(f"[CHAT PERF][trace={trace_id}] memory_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        
-                        detected_emotion = emotion_res.get("detected_emotion", "Neutral")
-                        confidence_score = emotion_res.get("confidence_score", 1.0)
-                        blended_scores = emotion_res.get("blended_scores", [0.0]*9)
-                        
-                        # Format memories
-                        memories_list = []
-                        for m in memories:
-                            m_type = m.get("memory_type") or "emotion"
-                            memories_list.append(f"- [{m_type.upper()}] User once said: '{m.get('content', '')}'")
-                        memories_str = "\n".join(memories_list) if memories_list else "No relevant past memories."
-                        
-                        system_prompt = (
-                            "You are Esona (also known as Buddy), a supportive, relatable college friend. "
-                            "Strictly adopt the following user personalization and mirror guidelines:\n"
-                            f"{personalization_block}\n\n"
-                            f"Detected User Emotion: {detected_emotion} (confidence: {confidence_score})\n"
-                            f"Relevant Past Memories:\n{memories_str}\n\n"
-                            "CRITICAL RESPONSE STYLE CONSTRAINTS:\n"
-                            "- Speak like a supportive friend. Validate their feeling naturally, keeping it warm and conversational.\n"
-                            "- Write mostly in lowercase, warm, natural, and empathetic.\n"
-                            "- Keep response short (2 to 3 sentences max, under 30 words).\n"
-                            "- Omit terminal punctuation.\n"
-                            "- Do NOT use any <reasoning> or <thinking> tags.\n"
-                        )
-                        messages = [{"role": "system", "content": system_prompt}]
-                        for h in history:
-                            messages.append({"role": h["role"], "content": h["content"]})
-                        messages.append({"role": "user", "content": message})
-                        
-                        # Responding status
-                        yield {
-                            "event": "message",
-                            "data": json.dumps({"type": "status", "stage": "responding"}),
-                        }
-                        
-                        full_response = ""
-                        first_chunk = False
-                        logger.info(f"[CHAT PERF][trace={trace_id}] llm_started +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        
-                        from app.utils.llm import generate_chat_completion_stream_with_fallback
-                        async for chunk in generate_chat_completion_stream_with_fallback(messages, temperature=0.7):
-                            if not first_chunk:
-                                first_chunk = True
-                                logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
-                            full_response += chunk
-                            yield {
-                                "event": "message",
-                                "data": json.dumps({
-                                    "type": "chunk",
-                                    "content": chunk,
-                                    "conversation_id": str(conversation_id_resolved),
-                                }),
-                            }
-                            
-                        # Calculate scores
-                        stress_score = blended_scores[3] if len(blended_scores) > 3 else 0.3
-                        anxiety_score = blended_scores[3] if len(blended_scores) > 3 else 0.3
-                        sadness_score = blended_scores[0] if len(blended_scores) > 0 else 0.3
-                        mood_score = round(1.0 - (stress_score * 0.2 + anxiety_score * 0.3 + sadness_score * 0.3), 2)
-                        mood_score = max(0.05, min(0.95, mood_score))
 
-                        # Queue background save
-                        background_tasks.add_task(
-                            save_chat_response_to_db,
-                            conversation_id=conversation_id_resolved,
-                            user_id=current_user.id,
-                            user_message=message,
-                            full_response=full_response,
-                            detected_emotion=detected_emotion,
-                            confidence_score=confidence_score,
-                            stress_score=stress_score,
-                            anxiety_score=anxiety_score,
-                            mood_score=mood_score,
-                            agent_analysis={"emotion_agent": {"primary_emotion": detected_emotion, "stress": stress_score}},
-                            emotion_dimensions={"stress": stress_score, "sadness": sadness_score, "anxiety": anxiety_score, "happiness": round(1.0 - sadness_score, 2), "motivation": 0.5, "confidence": 0.5},
-                            is_first_message=(len(history) == 0),
-                        )
+                        history_limit = 8 if category == "EMOTIONAL_SUPPORT" else 12
+                        memory_limit = 5
+                        kg_limit = 5 if category == "EMOTIONAL_SUPPORT" else 10
 
-                    else:
-                        # DEEP_CONTEXTUAL Path
-                        # Stage: remembering
-                        yield {
-                            "event": "message",
-                            "data": json.dumps({"type": "status", "stage": "remembering"}),
-                        }
-                        
-                        logger.info(f"[CHAT PERF][trace={trace_id}] recent_history_started +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        history = await _build_conversation_history(s_db, conversation_id_resolved, limit=8)
-                        logger.info(f"[CHAT PERF][trace={trace_id}] recent_history_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        
-                        # Retrieve memories and KG context in parallel
-                        logger.info(f"[CHAT PERF][trace={trace_id}] memory_started +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        history = await _build_conversation_history(s_db, conversation_id_resolved, limit=history_limit)
+
                         from app.agents import memory_agent, personality_agent, emotion_agent, behavior_agent, growth_agent, intent_agent, safety_agent
                         from app.services.emotion_service import emotion_service
                         from app.services.knowledge_graph_service import knowledge_graph_service
-                        
-                        mem_task = asyncio.create_task(memory_agent.retrieve_context(s_db, str(current_user.id), message, limit=5))
+
+                        mem_task = asyncio.create_task(memory_agent.retrieve_context(s_db, str(current_user.id), message, limit=memory_limit))
                         kg_task = asyncio.create_task(knowledge_graph_service.retrieve_relevant_relationships(s_db, current_user.id, message))
                         emotion_task = asyncio.create_task(emotion_service.classify_emotion_fast(message))
                         
                         memories_res, kg_res, emotion_res = await asyncio.gather(mem_task, kg_task, emotion_task)
                         memories = memories_res.get("memories", [])
-                        patterns = memories_res.get("emotional_patterns", {})
-                        
-                        # Bounded KG relations
-                        graph_relationships = [f"- {r.subject} -> {r.predicate} -> {r.object}" for r in kg_res[:15]]
-                        logger.info(f"[CHAT PERF][trace={trace_id}] memory_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        
+                        graph_relationships = [f"- {r.subject} -> {r.predicate} -> {r.object}" for r in kg_res[:kg_limit]]
+
                         detected_emotion = emotion_res.get("detected_emotion", "Neutral")
                         confidence_score = emotion_res.get("confidence_score", 1.0)
                         blended_scores = emotion_res.get("blended_scores", [0.0]*9)
-                        
+
                         # Stage: thinking
                         yield {
                             "event": "message",
                             "data": json.dumps({"type": "status", "stage": "thinking"}),
                         }
-                        logger.info(f"[CHAT PERF][trace={trace_id}] agent_graph_started +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        
-                        # Run agent orchestration locally to avoid double LLM waterfall calls
+
+                        # Local agent execution (avoid sequential LLM calls)
                         from app.utils.llm import _local_cognitive_analysis
                         mock_analysis_messages = [
                             {"role": "system", "content": "personality_agent emotion_agent memory_extraction"},
@@ -1856,7 +1789,7 @@ async def stream_message_sse(
                         tone = orchestrated["tone"]
                         strategy = orchestrated["strategy"]
                         
-                        # Comfort kit
+                        # Comfort kit if negative emotions
                         comfort_kit_dict = {}
                         from app.services.recommendation_service import recommendation_service
                         if detected_emotion.lower() in recommendation_service.NEGATIVE_EMOTIONS:
@@ -1877,23 +1810,20 @@ async def stream_message_sse(
                                 "is_empty": kit.is_empty,
                             }
                             
-                        # Emotion timeline
+                        # Retrieve emotion timeline
                         from app.services.mood_tracker import MoodTracker
                         from zoneinfo import ZoneInfo
                         mt = MoodTracker(s_db)
                         emotion_timeline = await mt.retrieve_emotion_timeline(current_user.id, days=7)
                         
-                        # Growth insight check
+                        # Growth insights check
                         growth_insight = None
                         total_msgs = len([m for m in history if m.get("role") == "user"])
                         if total_msgs > 0 and total_msgs % 15 == 0:
                             from app.services.growth_insights_service import growth_insights_service
                             growth_insight = await growth_insights_service.get_top_insight_for_chat(s_db, str(current_user.id))
                         
-                        logger.info(f"[CHAT PERF][trace={trace_id}] agent_graph_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        
                         # Build system prompt
-                        logger.info(f"[CHAT PERF][trace={trace_id}] prompt_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
                         system_prompt = response_orchestrator.build_final_prompt(
                             user_name=current_user.name,
                             personality_profile=emotional_profile.get("personality_profile", {}),
@@ -1916,7 +1846,11 @@ async def stream_message_sse(
                             recent_buddy_responses=_recent_responses_cache.get(str(current_user.id), []),
                         )
                         
-                        # Inject summary note if exists
+                        system_prompt += f"\n\n[LENGTH MATCHING CONSTRAINT]: {length_constraint}"
+                        recent_responses = _recent_responses_cache.get(str(current_user.id), [])
+                        if recent_responses:
+                            system_prompt += f"\n\n[ANTI-REPETITION CONSTRAINT]: Avoid repeating the phrasing, style or starting structures of your recent responses: {recent_responses[-3:]}. Choose a different conversational move (e.g. if you asked a question last time, reflect or validate this time instead of asking another question)."
+
                         messages = [{"role": "system", "content": system_prompt}]
                         summary = await _get_conversation_summary(s_db, str(current_user.id), str(conversation_id_resolved))
                         if summary:
@@ -1925,62 +1859,63 @@ async def stream_message_sse(
                                 "content": f"System Note: Here is a summary of the earlier part of this conversation:\n\"{summary}\"\nUse it for context, but do not repeat it verbatim."
                             })
                             
-                        # Append history
                         for h in history:
                             messages.append({"role": h["role"], "content": h["content"]})
                         messages.append({"role": "user", "content": message})
-                        
-                        # Stage: responding
+
+                    # Stage: responding
+                    yield {
+                        "event": "message",
+                        "data": json.dumps({"type": "status", "stage": "responding"}),
+                    }
+                    
+                    full_response = ""
+                    first_chunk = False
+                    logger.info(f"[CHAT PERF][trace={trace_id}] llm_started +{int((time.perf_counter() - start_time) * 1000)}ms")
+                    
+                    from app.utils.llm import generate_chat_completion_stream_with_fallback
+                    async for chunk in generate_chat_completion_stream_with_fallback(
+                        messages, 
+                        temperature=0.7, 
+                        route_category=category
+                    ):
+                        if not first_chunk:
+                            first_chunk = True
+                            logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        full_response += chunk
                         yield {
                             "event": "message",
-                            "data": json.dumps({"type": "status", "stage": "responding"}),
+                            "data": json.dumps({
+                                "type": "chunk",
+                                "content": chunk,
+                                "conversation_id": str(conversation_id_resolved),
+                            }),
                         }
-                        
-                        full_response = ""
-                        first_chunk = False
-                        logger.info(f"[CHAT PERF][trace={trace_id}] llm_started +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        
-                        from app.utils.llm import generate_chat_completion_stream_with_fallback
-                        async for chunk in generate_chat_completion_stream_with_fallback(messages, temperature=0.7):
-                            if not first_chunk:
-                                first_chunk = True
-                                logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
-                            full_response += chunk
-                            yield {
-                                "event": "message",
-                                "data": json.dumps({
-                                    "type": "chunk",
-                                    "content": chunk,
-                                    "conversation_id": str(conversation_id_resolved),
-                                }),
-                            }
-                            
-                        # Calculate scores
-                        stress_val = e_data.get("stress", 0.3)
-                        anxiety_val = e_data.get("anxiety", 0.3)
+
+                    # Determine scoring
+                    if category in ("SAFETY_CRITICAL", "FAST_SOCIAL", "NORMAL_CHAT"):
+                        stress_score = 0.1
+                        anxiety_score = 0.1
+                        mood_score = 0.9
+                        agent_analysis = {"personality_agent": {"communication_style": "casual"}, "intent_agent": {"message_type": "casual"}}
+                        emotion_dimensions = {"stress": 0.1, "sadness": 0.1, "anxiety": 0.1, "happiness": 0.9, "motivation": 0.8, "confidence": 0.8}
+                    else:
+                        stress_score = e_data.get("stress", 0.3)
+                        anxiety_score = e_data.get("anxiety", 0.3)
                         sadness_val = e_data.get("sadness", 0.3)
                         burnout_val = e_data.get("burnout", 0.3)
-                        mood_score = round(1.0 - (stress_val * 0.2 + anxiety_val * 0.3 + sadness_val * 0.3 + burnout_val * 0.2), 2)
+                        mood_score = round(1.0 - (stress_score * 0.2 + anxiety_score * 0.3 + sadness_val * 0.3 + burnout_val * 0.2), 2)
                         mood_score = max(0.05, min(0.95, mood_score))
                         
-                        # Populate dimensions
                         emotion_dimensions = {
-                            "stress": stress_val,
-                            "anxiety": anxiety_val,
+                            "stress": stress_score,
+                            "anxiety": anxiety_score,
                             "sadness": sadness_val,
                             "burnout": burnout_val,
-                            "happiness": round(max(0.0, 1.0 - (sadness_val + stress_val) / 2.0), 2),
+                            "happiness": round(max(0.0, 1.0 - (sadness_val + stress_score) / 2.0), 2),
                             "motivation": 0.5,
                             "confidence": 0.5
                         }
-                        
-                        # Log to cache
-                        if full_response:
-                            c = _recent_responses_cache.setdefault(str(current_user.id), [])
-                            c.append(full_response)
-                            if len(c) > _RESPONSE_CACHE_SIZE:
-                                _recent_responses_cache[str(current_user.id)] = c[-_RESPONSE_CACHE_SIZE:]
-                                
                         agent_analysis = {
                             "personality_agent": p_data,
                             "emotion_agent": e_data,
@@ -1990,28 +1925,26 @@ async def stream_message_sse(
                             "safety_agent": s_data,
                             "retrieved_memories": memories,
                             "response_strategy": {"tone": tone, "strategy": strategy},
-                            "orchestrated_prompt_summary": f"[Tone: {tone.upper()} | Strategy: {strategy}]\nSystem prompt length: {len(system_prompt)} chars."
                         }
-                        
-                        # Queue background save
-                        background_tasks.add_task(
-                            save_chat_response_to_db,
-                            conversation_id=conversation_id_resolved,
-                            user_id=current_user.id,
-                            user_message=message,
-                            full_response=full_response,
-                            detected_emotion=detected_emotion,
-                            confidence_score=confidence_score,
-                            stress_score=stress_val,
-                            anxiety_score=anxiety_val,
-                            mood_score=mood_score,
-                            agent_analysis=agent_analysis,
-                            emotion_dimensions=emotion_dimensions,
-                            is_first_message=(len(history) == 0),
-                        )
-                        
-                        # Run background learning tasks
-                        from app.routes.chat import run_background_learning_tasks
+
+                    # Save response and run background learning tasks async
+                    background_tasks.add_task(
+                        save_chat_response_to_db,
+                        conversation_id=conversation_id_resolved,
+                        user_id=current_user.id,
+                        user_message=message,
+                        full_response=full_response,
+                        detected_emotion=detected_emotion,
+                        confidence_score=confidence_score,
+                        stress_score=stress_score,
+                        anxiety_score=anxiety_score,
+                        mood_score=mood_score,
+                        agent_analysis=agent_analysis,
+                        emotion_dimensions=emotion_dimensions,
+                        is_first_message=(len(history) == 0 if 'history' in locals() else True),
+                    )
+
+                    if category not in ("SAFETY_CRITICAL", "FAST_SOCIAL"):
                         background_tasks.add_task(
                             run_background_learning_tasks,
                             user_id=current_user.id,
@@ -2023,7 +1956,14 @@ async def stream_message_sse(
                             agent_result=agent_analysis,
                         )
 
-                # 4c. Yield final done event
+                    # Update recent responses cache
+                    if full_response:
+                        c = _recent_responses_cache.setdefault(str(current_user.id), [])
+                        c.append(full_response)
+                        if len(c) > _RESPONSE_CACHE_SIZE:
+                            _recent_responses_cache[str(current_user.id)] = c[-_RESPONSE_CACHE_SIZE:]
+
+                # Yield final done event
                 msg_id = str(uuid.uuid4())
                 yield {
                     "event": "message",
@@ -2039,7 +1979,13 @@ async def stream_message_sse(
                         "agent_analysis": {},
                     }),
                 }
-                logger.info(f"[CHAT PERF][trace={trace_id}] request_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
+                
+                duration_ms = int((time.perf_counter() - start_time) * 1000)
+                perf_logger.info(
+                    f"[ESONA_CHAT_PERF] category={category} trace_id={trace_id} total_ms={duration_ms} "
+                    f"client_message_id={client_message_id}"
+                )
+                logger.info(f"[CHAT PERF][trace={trace_id}] request_complete +{duration_ms}ms")
 
             except Exception as inner_err:
                 logger.error(f"[SSE STREAM ERROR] Error inside event_generator: {inner_err}", exc_info=True)

@@ -926,7 +926,7 @@ export default function ChatPage() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -5 }}
-                className="mx-4 mb-2 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm"
+                className="mx-auto w-[calc(100%-2rem)] max-w-3xl mb-2 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm"
                 style={{
                   background: 'rgba(239, 68, 68, 0.08)',
                   border: '1px solid rgba(239, 68, 68, 0.2)',
@@ -954,7 +954,7 @@ export default function ChatPage() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -5 }}
-                className="mx-4 mb-2 flex items-center gap-2 px-4 py-2 rounded-xl text-xs"
+                className="mx-auto w-[calc(100%-2rem)] max-w-3xl mb-2 flex items-center gap-2 px-4 py-2 rounded-xl text-xs"
                 style={{
                   background: 'rgba(251, 191, 36, 0.06)',
                   border: '1px solid rgba(251, 191, 36, 0.15)',

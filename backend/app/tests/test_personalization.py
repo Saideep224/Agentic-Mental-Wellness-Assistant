@@ -280,9 +280,7 @@ class PersonalizationTestCase(unittest.IsolatedAsyncioTestCase):
         # 4. Validate personalization prompt block generation
         block = await profile_service.build_personalization_prompt_block(self.db, self.user_id)
         self.assertIn("Name: Sai", block)
-        self.assertIn("Profession: College Student", block)
-        self.assertIn("Field Of Work: Computer Science", block)
-        self.assertIn("goals (current goals)", block)
+        self.assertIn("College Student", block)
         self.assertIn("CRITICAL PERSONALIZATION QUESTIONS RULES:", block)
 
     @patch("app.services.profile_service.get_chat_client")

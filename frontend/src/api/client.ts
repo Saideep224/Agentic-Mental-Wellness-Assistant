@@ -168,6 +168,37 @@ export async function fetchWithRetry(
   throw lastError;
 }
 
+function getEndpointTimeout(endpoint: string, method: string): { timeoutMs: number; retries: number } {
+  const url = endpoint.toLowerCase();
+  
+  // LONG endpoints (heavy LLM generations, start-fresh reset, analytical operations)
+  if (
+    url.includes('/chat/message') || 
+    url.includes('/start-fresh') || 
+    url.includes('/insights') ||
+    url.includes('/first-message')
+  ) {
+    return { timeoutMs: 45000, retries: 0 };
+  }
+  
+  // FAST endpoints (basic health checks and auth status checks)
+  if (
+    url.includes('/health') || 
+    url.includes('/auth/me') || 
+    url.includes('/me')
+  ) {
+    // 35s timeout gives Render free tier sufficient time to wake up, max 1 retry avoids storms
+    return { timeoutMs: 35000, retries: 1 };
+  }
+  
+  // NORMAL endpoints (conversations lists, questionnaire answers, profile reading/updating)
+  const isRead = method === 'GET';
+  return { 
+    timeoutMs: 25000, 
+    retries: isRead ? 2 : 0 // Allow retries for idempotent reads, block retries on writes
+  };
+}
+
 export async function apiGet<T>(endpoint: string, token?: string | null): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -178,9 +209,7 @@ export async function apiGet<T>(endpoint: string, token?: string | null): Promis
 
   let response: Response;
   try {
-    const isGetMe = endpoint.includes('/auth/me') || endpoint.includes('/me');
-    const timeoutMs = isGetMe ? 15000 : 15000;
-    const retries = isGetMe ? 1 : 2; // maximum 1 retry for me endpoint, 2 for other safe GETs
+    const { timeoutMs, retries } = getEndpointTimeout(endpoint, 'GET');
     response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
       method: 'GET',
       headers,
@@ -213,12 +242,12 @@ export async function apiPost<T>(endpoint: string, body?: unknown, token?: strin
 
   let response: Response;
   try {
-    // POST requests are not idempotent by default, so we disable automatic retry
+    const { timeoutMs, retries } = getEndpointTimeout(endpoint, 'POST');
     response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers,
       body: body ? JSON.stringify(body) : undefined,
-    }, 0, 15000);
+    }, retries, timeoutMs);
   } catch (error) {
     throw new Error(friendlyErrorMessage(error));
   }
@@ -245,12 +274,12 @@ export async function apiPatch<T>(endpoint: string, body?: unknown, token?: stri
 
   let response: Response;
   try {
-    // PATCH requests are not retried automatically
+    const { timeoutMs, retries } = getEndpointTimeout(endpoint, 'PATCH');
     response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
       method: 'PATCH',
       headers,
       body: body ? JSON.stringify(body) : undefined,
-    }, 0, 15000);
+    }, retries, timeoutMs);
   } catch (error) {
     throw new Error(friendlyErrorMessage(error));
   }
@@ -275,11 +304,11 @@ export async function apiDelete<T = void>(endpoint: string, token?: string | nul
 
   let response: Response;
   try {
-    // DELETE requests are not retried automatically
+    const { timeoutMs, retries } = getEndpointTimeout(endpoint, 'DELETE');
     response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
       method: 'DELETE',
       headers,
-    }, 0, 15000);
+    }, retries, timeoutMs);
   } catch (error) {
     throw new Error(friendlyErrorMessage(error));
   }

@@ -24,9 +24,7 @@ class FlexibleJSONText(TypeDecorator):
 
 class UserProfile(Base):
     __tablename__ = "user_personality"
-    id: Mapped[uuid.UUID] = mapped_column(SafeUUID, primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(SafeUUID, ForeignKey("profiles.user_id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
-    user_email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(SafeUUID, ForeignKey("profiles.user_id", ondelete="CASCADE"), primary_key=True, nullable=False, index=True)
     personality_profile: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     personality_type: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     communication_style: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

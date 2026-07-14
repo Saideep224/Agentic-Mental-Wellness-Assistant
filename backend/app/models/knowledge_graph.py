@@ -14,9 +14,9 @@ class KnowledgeGraphRelation(Base):
     __tablename__ = "knowledge_graph"
     id: Mapped[uuid.UUID] = mapped_column(SafeUUID, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(SafeUUID, ForeignKey("profiles.user_id", ondelete="CASCADE"), nullable=False, index=True)
-    subject: Mapped[str] = mapped_column("source", String(255), default="User", nullable=False)
-    predicate: Mapped[str] = mapped_column("relation", String(255), nullable=False)
-    object: Mapped[str] = mapped_column("target", String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), default="User", nullable=False)
+    predicate: Mapped[str] = mapped_column(String(255), nullable=False)
+    object: Mapped[str] = mapped_column(String(255), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)

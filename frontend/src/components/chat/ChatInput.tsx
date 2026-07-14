@@ -56,7 +56,7 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.2 }}
-        className="px-4 sm:px-6 py-4"
+        className="px-4 sm:px-6 py-4 max-w-3xl mx-auto w-full"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
         <div

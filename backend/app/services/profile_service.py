@@ -117,12 +117,22 @@ class ProfileService:
         answer_map: dict[int, Any] = {a.question_id: _answer_value(a) for a in answers}
 
         data: Dict[str, Any] = {field: ([] if field in LIST_FIELDS else None) for field in QUESTION_FIELDS.values()}
-        for qid, value in answer_map.items():
-            field = QUESTION_FIELDS.get(qid)
+        for a in answers:
+            field = a.category or QUESTION_FIELDS.get(a.question_id)
+            value = _answer_value(a)
             if not field or _empty(value):
                 continue
+            if field not in data:
+                data[field] = [] if field in LIST_FIELDS else None
+            
             if field in LIST_FIELDS:
-                data[field] = value if isinstance(value, list) else [str(value)]
+                new_vals = value if isinstance(value, list) else [value]
+                current_list = list(data[field] or [])
+                for val in new_vals:
+                    val_str = str(val).strip()
+                    if val_str and val_str not in current_list:
+                        current_list.append(val_str)
+                data[field] = current_list
             else:
                 data[field] = ", ".join(map(str, value)) if isinstance(value, list) else str(value)
 
@@ -188,10 +198,52 @@ class ProfileService:
         pdata = await self.get_personalization_data(db, user_id)
         raw = pdata["raw"]
         personality = pdata["personality"]
+        existing = pdata["existing"]
         answer_lines = []
         for qid in sorted(pdata["answers"]):
             value = pdata["answers"][qid]
             answer_lines.append(f"Q{qid} ({QUESTION_FIELDS.get(qid, 'unknown')}): {value}")
+
+        existing_lines = []
+        for field, val in existing.items():
+            if isinstance(val, list):
+                val_str = ", ".join(val)
+            else:
+                val_str = str(val)
+            field_name = field.replace("_", " ").title()
+            existing_lines.append(f"- {field_name}: {val_str}")
+        existing_str = "\n".join(existing_lines) if existing_lines else "None recorded."
+
+        missing = pdata["missing"]
+        
+        missing_descriptions = {
+            "name": "name or nickname",
+            "age": "age",
+            "profession": "profession/occupation (e.g. college student, developer)",
+            "field_of_work": "field of work or study (e.g. Computer Science, medicine)",
+            "current_challenge": "biggest challenge they are currently facing",
+            "advice_preference": "advice style preference (e.g. direct and honest, casual, mostly listening)",
+            "primary_support_need": "what they need support with the most",
+            "student_year": "student year (if they are a student)",
+            "interests": "interests and hobbies",
+            "goals": "current goals",
+            "stress_triggers": "what usually stresses them out",
+            "coping_mechanisms": "what helps them feel better when stressed",
+            "support_system": "who they usually talk to for support",
+            "communication_style": "preferred communication style",
+            "sleep_habits": "sleep quality/habits",
+        }
+
+        missing_lines = []
+        profession_val = existing.get("profession", "")
+        is_student = "student" in str(profession_val).lower()
+        
+        for m in missing:
+            if m == "student_year" and not is_student and profession_val:
+                continue
+            desc = missing_descriptions.get(m, m)
+            missing_lines.append(f"- {m} ({desc})")
+        missing_str = "\n".join(missing_lines) if missing_lines else "None (all fields are populated!)."
 
         age = raw.get("age") or "unknown"
         gender = raw.get("gender") or "unknown"
@@ -204,13 +256,19 @@ Age: {age}
 Gender/identity answer: {gender}
 Preferred communication: {style}
 
+EXISTING INFORMATION (DO NOT ASK AGAIN under any circumstances):
+{existing_str}
+
+MISSING INFORMATION (Only fields you are allowed to ask about naturally, if relevant):
+{missing_str}
+
 ALL KNOWING ME ANSWERS:
 {chr(10).join(answer_lines) if answer_lines else 'No answers recorded.'}
 
 DERIVED PERSONALITY/EMOTIONAL PROFILE:
 {json.dumps(personality, ensure_ascii=False, default=str)}
 
-MANDATORY RESPONSE ADAPTATION:
+CRITICAL PERSONALIZATION QUESTIONS RULES:
 1. Treat the 27 answers above as known facts. Never ask again for information already answered.
 2. Match vocabulary, explanation depth, humor, warmth, directness and message length to THIS user's age and communication answers.
 3. Age calibration is mandatory: a 17-year-old gets clear age-appropriate language and examples; an adult may receive adult-level framing. Do not infantilize either.
@@ -243,6 +301,21 @@ MANDATORY RESPONSE ADAPTATION:
             clean = {k: v for k, v in extracted.items() if not _empty(v)}
             if not clean:
                 return None
+            # Merge list fields with existing profile values before update
+            profile = await self.get_profile(db, uid)
+            if profile:
+                for field in LIST_FIELDS:
+                    if field in clean and not _empty(clean[field]):
+                        new_vals = clean[field]
+                        if not isinstance(new_vals, list):
+                            new_vals = [new_vals]
+                        current_list = list(getattr(profile, field) or [])
+                        for val in new_vals:
+                            val_str = str(val).strip()
+                            if val_str and val_str not in current_list:
+                                current_list.append(val_str)
+                        clean[field] = current_list
+
             profile = await self.update_profile(db, uid, clean)
             invalidate_profile_caches(uid)
             return profile

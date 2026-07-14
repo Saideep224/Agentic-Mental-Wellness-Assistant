@@ -11,6 +11,9 @@ class MessageRole(str, enum.Enum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
+    user = "user"
+    assistant = "assistant"
+    system = "system"
 
 
 class Conversation(Base):
@@ -40,6 +43,27 @@ class ChatMessage(Base):
     mood_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     agent_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     emotional_context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    emotion_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stress_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    anxiety_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sender_type: Mapped[str | None] = mapped_column(String(50), default="user", server_default="user", nullable=True)
+    
+    @property
+    def content(self) -> str:
+        return self.message
+
+    @content.setter
+    def content(self, value: str) -> None:
+        self.message = value
+
+    @property
+    def emotion_detected(self) -> str | None:
+        return self.emotion
+
+    @emotion_detected.setter
+    def emotion_detected(self, value: str | None) -> None:
+        self.emotion = value
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")
     user: Mapped["User"] = relationship("User", back_populates="chat_messages")  # noqa: F821

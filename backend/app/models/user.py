@@ -74,6 +74,9 @@ class User(Base):
     conversations: Mapped[list["Conversation"]] = relationship(  # noqa: F821
         "Conversation", back_populates="user", cascade="all, delete-orphan"
     )
+    chat_messages: Mapped[list["ChatMessage"]] = relationship(  # noqa: F821
+        "ChatMessage", back_populates="user", cascade="all, delete-orphan"
+    )
     user_profile: Mapped["UserProfile | None"] = relationship(  # noqa: F821
         "UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )

@@ -528,6 +528,10 @@ Warm, youth-appropriate if teenager, supportive, non-clinical.
 
     async def build_personalization_prompt_block(self, db: AsyncSession, user_id) -> str:
         snapshot = await self.get_or_generate_snapshot(db, user_id)
+        if snapshot and not snapshot.strip().startswith("Name:"):
+            pdata = await self.get_personalization_data(db, user_id)
+            name = pdata["existing"].get("name") or "User"
+            snapshot = f"Name: {name}\n{snapshot}"
         block = f"""
 =================================================
 KNOWING ME PERSONALIZATION CONTRACT — SOURCE OF TRUTH

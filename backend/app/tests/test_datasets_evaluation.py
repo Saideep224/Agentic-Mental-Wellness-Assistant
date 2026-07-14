@@ -169,12 +169,13 @@ async def mock_llm_completion(messages, **kwargs):
             )
             
     print("[DEBUG MOCK] Unmatched sys_content.")
-    return "Fallback generic response."
+    return await original_generate_chat_completion_with_fallback(messages, **kwargs)
 
 
 
 # PRE-IMPORT PATCHING: Directly override the function in app.utils.llm module object
 import app.utils.llm
+original_generate_chat_completion_with_fallback = app.utils.llm.generate_chat_completion_with_fallback
 app.utils.llm.generate_chat_completion_with_fallback = mock_llm_completion
 
 # Now import pipeline and models safely (they will load our mocked function)

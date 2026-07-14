@@ -116,18 +116,15 @@ Conversation:
 Title:"""
     
     try:
-        from app.utils.llm import get_chat_client
-        client = get_chat_client()
-        from app.config import settings
-        response = await client.chat.completions.create(
-            model=settings.llm_model,
+        from app.utils.llm import generate_chat_completion_with_fallback
+        title = await generate_chat_completion_with_fallback(
             messages=[
                 {"role": "system", "content": prompt.format(history_text=history_text)},
             ],
             temperature=0.7,
             max_tokens=25,
+            route_category="SNAPSHOT_GENERATION"
         )
-        title = response.choices[0].message.content.strip()
         # Clean title
         title = title.replace('"', '').replace("'", '').replace("`", "").strip()
         if len(title) > 50:
@@ -414,15 +411,13 @@ Conversation history:
 Summary:"""
 
     try:
-        from app.utils.llm import get_chat_client
-        client = get_chat_client()
-        response = await client.chat.completions.create(
-            model=settings.llm_model,
+        from app.utils.llm import generate_chat_completion_with_fallback
+        summary = await generate_chat_completion_with_fallback(
             messages=[{"role": "system", "content": prompt}],
             temperature=0.3,
             max_tokens=200,
+            route_category="SNAPSHOT_GENERATION"
         )
-        summary = response.choices[0].message.content.strip()
         
         # Check if a summary already exists in Memory table
         from app.models.memory import Memory

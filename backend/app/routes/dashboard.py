@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 import uuid
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -99,15 +99,113 @@ async def get_user_profile(current_user=Depends(get_current_user), db: AsyncSess
         for ans in db_answers
     ]
     
+    from app.models.user_personal_profile import UserPersonalProfile
+    from app.services.profile_service import profile_service
+    
+    personal_res = await db.execute(select(UserPersonalProfile).where(UserPersonalProfile.user_id == user_id))
+    personal_profile = personal_res.scalar_one_or_none()
+    
+    about_you_summary = profile_service.generate_about_you_summary(personal_profile)
+    traits = profile_service.select_profile_traits(personal_profile)
+    completion_status = "READY" if completed else "PARTIAL"
+    
     if not profile:
         return {"onboarding_completed": completed, "knowing_me_answer_count": answer_count, "personality_profile": {}, "emotional_baseline": {},
                 "comfort_preferences": {}, "emotional_style": {}, "stress_triggers": {}, "preferred_response_style": {}, "emotional_summary": {},
-                "onboarding_answers": {"answers": onboarding_answers_list}}
+                "onboarding_answers": {"answers": onboarding_answers_list},
+                "about_you_summary": about_you_summary, "traits": traits, "completion_status": completion_status}
     return {"onboarding_completed": completed, "knowing_me_answer_count": answer_count, "personality_profile": profile.personality_profile or {},
             "emotional_baseline": profile.emotional_baseline or {}, "comfort_preferences": profile.comfort_preferences or {},
             "emotional_style": profile.emotional_style or {}, "stress_triggers": profile.stress_triggers or {},
             "preferred_response_style": profile.preferred_response_style or {}, "emotional_summary": profile.emotional_summary or {},
-            "onboarding_answers": {"answers": onboarding_answers_list}}
+            "onboarding_answers": {"answers": onboarding_answers_list},
+            "about_you_summary": about_you_summary, "traits": traits, "completion_status": completion_status}
+
+
+@router.post("/profile/start-fresh")
+async def start_fresh(current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    user_id = uuid.UUID(current_user["id"]) if isinstance(current_user, dict) else current_user.id
+    user_id_str = str(user_id)
+    
+    logger.info(f"[START_FRESH] Initiated for user_id={user_id_str}")
+    
+    try:
+        from app.models.emotion_log import EmotionLog
+        from app.models.mood_log import MoodLog
+        from app.models.knowledge_graph import KnowledgeGraphRelation
+        from app.models.memory import Memory
+        from app.models.conversation import Conversation, Message
+        from app.models.onboarding import UserAnswer
+        from app.models.user_personal_profile import UserPersonalProfile
+        from app.models.user_profile import UserProfile
+        from app.models.user_graph import UserEntity, UserRelationship
+        from app.models.user import User
+        from app.services.profile_service import invalidate_profile_caches
+        
+        # 1. Onboarding answers
+        await db.execute(delete(UserAnswer).where(UserAnswer.user_id == user_id))
+        
+        # 2. Chat messages & conversations
+        conv_result = await db.execute(select(Conversation.id).where(Conversation.user_id == user_id))
+        conv_ids = [row[0] for row in conv_result.fetchall()]
+        if conv_ids:
+            await db.execute(delete(Message).where(Message.conversation_id.in_(conv_ids)))
+        await db.execute(delete(Conversation).where(Conversation.user_id == user_id))
+        
+        # 3. Memories
+        await db.execute(delete(Memory).where(Memory.user_id == user_id))
+        
+        # 4. Emotion & Mood Logs
+        await db.execute(delete(EmotionLog).where(EmotionLog.user_id == user_id))
+        await db.execute(delete(MoodLog).where(MoodLog.user_id == user_id))
+        
+        # 5. Knowledge Graph
+        await db.execute(delete(KnowledgeGraphRelation).where(KnowledgeGraphRelation.user_id == user_id))
+        
+        # 6. User entities & relationships
+        await db.execute(delete(UserEntity).where(UserEntity.user_id == user_id))
+        await db.execute(delete(UserRelationship).where(UserRelationship.user_id == user_id))
+        
+        # 7. User profiles (UserProfile & UserPersonalProfile)
+        await db.execute(delete(UserPersonalProfile).where(UserPersonalProfile.user_id == user_id))
+        await db.execute(delete(UserProfile).where(UserProfile.user_id == user_id))
+        
+        # 8. Reset User row fields
+        user = await db.get(User, user_id)
+        if user:
+            user.onboarding_completed = False
+            user.onboarding_step = 1
+            user.personality_profile = {}
+            user.interests = {}
+            user.communication_style = None
+            user.personality_type = None
+            db.add(user)
+            
+        # Commit transaction atomically
+        await db.commit()
+        logger.info(f"[START_FRESH] Relational reset committed successfully for {user_id_str}")
+        
+        # 9. Invalidate caches
+        invalidate_profile_caches(user_id)
+        
+        return {
+            "success": True,
+            "requires_onboarding": True,
+            "reset": {
+                "knowing_me": True,
+                "conversations": True,
+                "memories": True,
+                "emotional_history": True,
+                "personalization": True,
+                "knowledge_graph": True,
+                "growth": True
+            }
+        }
+        
+    except Exception as exc:
+        await db.rollback()
+        logger.error(f"[START_FRESH] DB transaction FAILED and ROLLED BACK for {user_id_str}: {exc}", exc_info=True)
+        raise exc
 
 
 @router.get("/mood-trends", response_model=MoodTrendsResponse)

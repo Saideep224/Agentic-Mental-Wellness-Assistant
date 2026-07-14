@@ -163,6 +163,111 @@ class ProfileService:
             "analysis_status": analysis_status
         }
 
+    def generate_about_you_summary(self, personal_profile: UserPersonalProfile) -> str:
+        if not personal_profile:
+            return "Esona is still getting to know you. Complete the questionnaire to see your personalized summary here."
+        
+        prof = personal_profile.profession or ""
+        field = personal_profile.field_of_work or ""
+        challenge = personal_profile.current_challenge or ""
+        advice = personal_profile.advice_preference or ""
+        support = personal_profile.primary_support_need or ""
+        comm = personal_profile.communication_style or ""
+        sleep = personal_profile.sleep_habits or ""
+        
+        prof_lower = prof.lower().strip()
+        field_lower = field.lower().strip()
+        challenge_lower = challenge.lower().strip()
+        advice_lower = advice.lower().strip()
+        support_lower = support.lower().strip()
+        comm_lower = comm.lower().strip()
+        sleep_lower = sleep.lower().strip()
+
+        # Introduction part
+        intro = ""
+        if prof_lower:
+            if any(x in prof_lower for x in ["student", "study", "college", "school", "university"]):
+                intro = "You are a student"
+                if field_lower:
+                    intro += f" focusing on {field}"
+            else:
+                intro = f"You are a professional working in {field}" if field_lower else f"You are currently working as a {prof}"
+        else:
+            intro = "You are currently reflecting on your day-to-day journey"
+
+        # Communication & Support Preferences
+        comm_pref = ""
+        if comm_lower:
+            if any(x in comm_lower for x in ["short", "concise", "brief"]):
+                comm_pref = "prefer brief, straight-to-the-point responses"
+            else:
+                comm_pref = "value detailed, thoughtful conversations"
+        else:
+            comm_pref = "prefer balanced, open dialogue"
+
+        advice_pref = ""
+        if advice_lower:
+            if any(x in advice_lower for x in ["advice", "solution", "action", "direct"]):
+                advice_pref = "look for actionable guidance and advice"
+            else:
+                advice_pref = "prefer being heard and validated before receiving suggestions"
+        else:
+            advice_pref = "value safe emotional validation first"
+
+        preference_block = f"In conversations, you {comm_pref} and typically {advice_pref}."
+
+        # Stress & Sleep context
+        stress_block = ""
+        if challenge_lower and challenge_lower not in ["none", "n/a"]:
+            stress_block = f"Currently, you are navigating challenges related to {challenge}."
+        else:
+            stress_block = "You are focusing on maintaining balance in your daily life."
+
+        if sleep_lower:
+            if any(x in sleep_lower for x in ["poor", "bad", "tire", "busy", "exhaust"]):
+                stress_block += " When things feel heavy, finding quiet pockets of rest is a key focus."
+            elif any(x in sleep_lower for x in ["good", "great", "high", "stable"]):
+                stress_block += " You generally maintain a stable sleep rhythm, which helps support your daily resilience."
+
+        summary = f"{intro}. {preference_block} {stress_block}"
+        summary = " ".join(summary.split())
+        return summary
+
+    def select_profile_traits(self, personal_profile: UserPersonalProfile) -> list[str]:
+        if not personal_profile:
+            return ["Getting started"]
+            
+        traits = []
+        
+        # 1. Advice / Practical next steps
+        advice = str(personal_profile.advice_preference or "").lower()
+        if "listen" in advice or "hear" in advice or "gentle" in advice:
+            traits.append("Listen before advising")
+        elif "action" in advice or "practical" in advice or "step" in advice or "direct" in advice:
+            traits.append("Values practical next steps")
+            
+        # 2. Response Length / Deep reflection
+        comm = str(personal_profile.communication_style or "").lower()
+        if "short" in comm or "concise" in comm or "brief" in comm:
+            traits.append("Likes shorter replies")
+        elif "detail" in comm or "deep" in comm or "thorough" in comm:
+            traits.append("Often reflects deeply")
+            
+        # 3. Support needs / Reassurance
+        support = str(personal_profile.primary_support_need or "").lower()
+        if "validation" in support or "emotion" in support or "empathy" in support:
+            traits.append("Emotional validation first")
+        elif "reassure" in support or "comfort" in support or "calm" in support:
+            traits.append("Comforted by reassurance")
+            
+        # Fallbacks to ensure at least 3 traits
+        if len(traits) < 3:
+            traits.append("Opens up gradually")
+        if len(traits) < 3:
+            traits.append("Likes casual conversation")
+            
+        return traits[:5]
+
     async def create_profile(self, db: AsyncSession, user_id, profile_data: Dict[str, Any]) -> UserPersonalProfile:
         uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
         profile = UserPersonalProfile(user_id=uid)

@@ -3,7 +3,7 @@
  */
 
 import { MoodDataPoint, EmotionalProfile, StressPattern, PersonalityInsight } from '@/types';
-import { apiGet } from './client';
+import { apiGet, apiPost } from './client';
 
 export async function getMoodTrends(token: string): Promise<MoodDataPoint[]> {
   const data = await apiGet<any>('/api/dashboard/mood-trends', token);
@@ -79,4 +79,8 @@ export async function getGrowthInsights(token: string): Promise<GrowthInsightsDa
 
 export async function getGrowthSummary(token: string): Promise<any> {
   return apiGet<any>('/api/dashboard/growth/summary', token);
+}
+
+export async function startFresh(token: string): Promise<any> {
+  return apiPost<any>('/api/dashboard/profile/start-fresh', {}, token);
 }

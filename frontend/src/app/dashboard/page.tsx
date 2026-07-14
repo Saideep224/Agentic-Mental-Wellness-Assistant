@@ -5,12 +5,11 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   RefreshCw, Sparkles, ChevronDown, ChevronUp, Loader2,
-  Heart, Trash2, Wind, Compass, Info, X, Cloud, Zap, Flame, MoveUp, MoveDown, HelpCircle
+  Heart, Wind, Compass, Info, X, Cloud, Zap, Flame, MoveUp, MoveDown, HelpCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import Navbar from '@/components/layout/Navbar';
 import FullPageTransition from '@/components/layout/FullPageTransition';
-import DeleteAccountModal from '@/components/dashboard/DeleteAccountModal';
 import { useMoodData } from '@/hooks/useMoodData';
 import { getToken, getStoredUser, recalculateProfile } from '@/api';
 import { questions } from '@/data/questions';
@@ -708,7 +707,6 @@ export default function DashboardPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [isLoadingPage, setIsLoadingPage] = useState(true);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
 
   const {
@@ -765,13 +763,7 @@ export default function DashboardPage() {
     <div className="min-h-screen">
       <Navbar />
 
-      {/* Account Deletion Modal */}
-      {showDeleteModal && (
-        <DeleteAccountModal
-          userEmail={user?.email}
-          onClose={() => setShowDeleteModal(false)}
-        />
-      )}
+      {/* Account Deletion Modal (Removed) */}
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-24 pb-16">
         {/* Header */}
@@ -924,39 +916,6 @@ export default function DashboardPage() {
           </motion.div>
         )}
 
-        {/* Account & Privacy Settings */}
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-          className="mt-12 rounded-2xl overflow-hidden border border-rose-500/10 bg-rose-500/1"
-        >
-          <div className="p-6">
-            <div className="flex items-start justify-between flex-wrap gap-4">
-              <div>
-                <h3
-                  className="text-sm font-semibold text-white mb-1"
-                  style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
-                >
-                  🔐 Account &amp; Privacy
-                </h3>
-                <p className="text-xs text-slate-500 max-w-sm leading-relaxed">
-                  Manage your data. Deletion is permanent and cannot be undone. All memories, check-in history, and preferences will be permanently erased.
-                </p>
-              </div>
-              <motion.button
-                id="open-delete-account-btn"
-                onClick={() => setShowDeleteModal(true)}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/15 text-rose-400 cursor-pointer transition-all"
-              >
-                <Trash2 size={12} />
-                Delete Account
-              </motion.button>
-            </div>
-          </div>
-        </motion.div>
       </main>
     </div>
   );

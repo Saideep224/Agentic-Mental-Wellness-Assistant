@@ -85,14 +85,27 @@ export interface MoodDataPoint {
 }
 
 export interface EmotionalProfile {
-  personalityType: Record<string, unknown>;
-  emotionalBaseline: Record<string, unknown>;
-  comfortPreferences: Record<string, unknown>;
-  communicationStyle: Record<string, unknown>;
-  dominantEmotions: EmotionBreakdown[];
-  overallMood: number;
-  communicationStyleLabel: string;
-  personalityLabel: string;
+  personalityType?: Record<string, unknown>;
+  emotionalBaseline?: Record<string, unknown>;
+  comfortPreferences?: Record<string, unknown>;
+  communicationStyle?: Record<string, unknown>;
+  dominantEmotions?: EmotionBreakdown[];
+  overallMood?: number;
+  communicationStyleLabel?: string;
+  personalityLabel?: string;
+  onboarding_completed?: boolean;
+  knowing_me_answer_count?: number;
+  personality_profile?: any;
+  emotional_baseline?: any;
+  comfort_preferences?: any;
+  emotional_style?: any;
+  stress_triggers?: any;
+  preferred_response_style?: any;
+  emotional_summary?: any;
+  onboarding_answers?: { answers: any[] };
+  about_you_summary?: string;
+  traits?: string[];
+  completion_status?: string;
 }
 
 export interface EmotionBreakdown {

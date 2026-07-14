@@ -22,8 +22,15 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.database import engine
-from app.routes import auth_router, chat_router, conversations_router, onboarding_router, dashboard_router, insights_router
-from app.routes.dashboard import mood_router
+from app.routes import (
+    auth_router,
+    chat_router,
+    conversations_router,
+    onboarding_router,
+    dashboard_router,
+    insights_router,
+    mood_router,
+)
 
 # ── Logging ───────────────────────────────────────────────────
 logging.basicConfig(

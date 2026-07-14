@@ -403,6 +403,27 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
               const data = JSON.parse(e.data);
               // Ignore heartbeat events (just reset the inactivity timer above)
               if (data.type === 'heartbeat') return;
+
+              if (data.type === 'connected') {
+                console.log('[useChat] SSE stream connected successfully. Trace ID:', data.trace_id);
+                setIsLoading(false);
+                setStreamPlaceholder(null);
+                return;
+              }
+
+              if (data.type === 'status') {
+                const statusLabels: Record<string, string> = {
+                  'understanding': 'understanding context...',
+                  'remembering': 'accessing memories...',
+                  'thinking': 'processing thoughts...',
+                  'responding': 'generating response...',
+                };
+                const label = statusLabels[data.stage] || 'Esona is thinking...';
+                setIsLoading(false);
+                setStreamPlaceholder(label);
+                return;
+              }
+
               if (data.type === 'placeholder') {
                 // Show temporary placeholder bubble via separate state
                 setIsLoading(false);
@@ -446,6 +467,9 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
                 );
                 buddyBubbleSpawned = false;
               } else if (data.type === 'chunk') {
+                // Remove placeholder once first text chunk arrives
+                setStreamPlaceholder(null);
+                
                 if (!buddyBubbleSpawned) {
                   buddyBubbleSpawned = true;
                   isMessageCreated = true;

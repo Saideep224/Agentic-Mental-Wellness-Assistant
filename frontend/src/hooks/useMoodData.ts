@@ -11,6 +11,7 @@ export function useMoodData() {
   const [stressPatterns, setStressPatterns] = useState<StressPattern[]>([]);
   const [insights, setInsights] = useState<PersonalityInsight[]>([]);
   const [growthInsights, setGrowthInsights] = useState<GrowthInsightsData | null>(null);
+  const [growthSummary, setGrowthSummary] = useState<any | null>(null);
   const [communicationPrefs, setCommunicationPrefs] = useState<CommunicationPreference | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,12 +27,13 @@ export function useMoodData() {
     setError(null);
 
     try {
-      const [moods, profile, stress, personalityInsights, growth] = await Promise.allSettled([
+      const [moods, profile, stress, personalityInsights, growth, summary] = await Promise.allSettled([
         api.getMoodTrends(token),
         api.getEmotionalProfile(token),
         api.getStressPatterns(token),
         api.getInsights(token),
         api.getGrowthInsights(token),
+        api.getGrowthSummary(token),
       ]);
 
       if (moods.status === 'fulfilled') {
@@ -123,6 +125,10 @@ export function useMoodData() {
       if (growth.status === 'fulfilled') {
         setGrowthInsights(growth.value);
       }
+
+      if (summary.status === 'fulfilled') {
+        setGrowthSummary(summary.value);
+      }
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
       setError('Unable to load your dashboard data. Please try again.');
@@ -141,6 +147,7 @@ export function useMoodData() {
     stressPatterns,
     insights,
     growthInsights,
+    growthSummary,
     communicationPrefs,
     isLoading,
     error,

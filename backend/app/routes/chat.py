@@ -883,6 +883,142 @@ async def send_message(
         )
 
 
+def classify_message_complexity(message: str) -> str:
+    msg = (message or "").lower().strip()
+    import re
+    msg_clean = re.sub(r"[^\w\s]", "", msg).strip()
+    
+    # 1. SAFETY_CRITICAL
+    crisis_keywords = {
+        "want to die", "kill myself", "end my life", "suicide", "self-harm",
+        "self harm", "end it all", "hurting myself", "hurt myself", "painful to exist", 
+        "sleep forever", "no point in living", "planning to end it", 
+        "want to sleep and never wake up", "dont want to exist", "live anymore",
+        "end life", "suicidal", "kill me"
+    }
+    if any(keyword in msg_clean or keyword in msg for keyword in crisis_keywords):
+        return "SAFETY_CRITICAL"
+        
+    # 2. SIMPLE_SOCIAL
+    social_words = {
+        "hi", "hello", "hey", "hola", "yo", "sup", "buddy", "esona",
+        "yes", "no", "ok", "okay", "cool", "nice", "fine", "lol", "lmao",
+        "haha", "bro", "dude", "thanks", "thank you", "bye", "goodbye",
+        "how are you", "hows it going", "whats up", "what up", "yeah", "yep",
+        "agree", "indeed", "good morning", "good night", "sweet dreams", "take care",
+        "awesome", "great", "perfect", "undrstood", "understood", "sure", "of course"
+    }
+    words = msg_clean.split()
+    if len(words) <= 3 and (not words or all(w in social_words for w in words) or any(w in social_words for w in words)):
+        return "SIMPLE_SOCIAL"
+        
+    # 3. LIGHT_EMOTIONAL
+    light_emotional_keywords = {
+        "tired", "long day", "feeling low", "feel low", "lonely", "feel lonely",
+        "stressed", "feel stressed", "cant focus", "cant concentrate",
+        "not feeling great", "not feeling good", "anxious", "feel anxious",
+        "sad", "feeling sad", "down", "feeling down", "bored", "exhausted",
+        "overwhelmed", "worry", "worried", "unhappy"
+    }
+    if len(words) <= 7 and any(w in light_emotional_keywords for w in words):
+        return "LIGHT_EMOTIONAL"
+        
+    return "DEEP_CONTEXTUAL"
+
+
+async def save_chat_response_to_db(
+    conversation_id: uuid.UUID,
+    user_id: uuid.UUID,
+    user_message: str,
+    full_response: str,
+    detected_emotion: str,
+    confidence_score: float,
+    stress_score: float,
+    anxiety_score: float,
+    mood_score: float,
+    agent_analysis: dict,
+    emotion_dimensions: dict,
+    is_first_message: bool,
+):
+    try:
+        async with get_db_session() as db:
+            # 1. Update user message emotion details
+            user_msg_res = await db.execute(
+                select(Message)
+                .where(
+                    Message.conversation_id == conversation_id,
+                    Message.role == MessageRole.user
+                )
+                .order_by(Message.created_at.desc())
+                .limit(1)
+            )
+            user_msg = user_msg_res.scalar_one_or_none()
+            if user_msg:
+                user_msg.emotion = detected_emotion
+                user_msg.emotion_score = confidence_score
+                user_msg.stress_score = stress_score
+                user_msg.anxiety_score = anxiety_score
+                user_msg.emotional_context = {"emotion": detected_emotion, "confidence": confidence_score}
+                db.add(user_msg)
+
+            # 2. Save assistant message
+            assistant_msg = Message(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                role=MessageRole.assistant,
+                content=full_response,
+                sender_type="buddy",
+                emotion_detected=detected_emotion,
+                mood_score=mood_score,
+                agent_analysis=agent_analysis,
+                emotion=detected_emotion,
+                emotion_score=confidence_score,
+                stress_score=stress_score,
+                anxiety_score=anxiety_score,
+                emotional_context={"emotion": detected_emotion, "confidence": confidence_score},
+            )
+            db.add(assistant_msg)
+
+            # 3. Save mood log
+            mood_log = MoodLog(
+                user_id=user_id,
+                mood_score=mood_score,
+                mood_label=detected_emotion,
+                detected_emotion=detected_emotion,
+                stress=emotion_dimensions.get("stress", 0.3),
+                happiness=emotion_dimensions.get("happiness", 0.5),
+                sadness=emotion_dimensions.get("sadness", 0.3),
+                anxiety=emotion_dimensions.get("anxiety", 0.3),
+                motivation=emotion_dimensions.get("motivation", 0.5),
+                confidence=emotion_dimensions.get("confidence", 0.5),
+            )
+            db.add(mood_log)
+
+            # 4. Update conversation title if needed
+            conversation_res = await db.execute(
+                select(Conversation).where(Conversation.id == conversation_id)
+            )
+            conversation = conversation_res.scalar_one_or_none()
+            if conversation:
+                conversation.emotional_tag = detected_emotion
+                conversation.updated_at = datetime.now(timezone.utc)
+                if is_first_message:
+                    try:
+                        title_msgs = [
+                            {"role": "user", "content": user_message},
+                            {"role": "assistant", "content": full_response}
+                        ]
+                        conversation.title = await generate_chat_title_llm(title_msgs)
+                    except Exception:
+                        conversation.title = generate_emotional_title(user_message, detected_emotion)
+                db.add(conversation)
+
+            await db.commit()
+            logger.info(f"[BG SAVE SUCCESS] Saved assistant message and logs for conversation_id={conversation_id}")
+    except Exception as e:
+        logger.error(f"[BG SAVE ERROR] Failed to save message: {e}", exc_info=True)
+
+
 async def generate_and_persist_sse_response(
     message: str,
     current_user_id: uuid.UUID,
@@ -1384,164 +1520,511 @@ async def stream_message_sse(
                     except Exception as ob_err:
                         logger.warning(f"[ONBOARDING SSE SILENT SAVE] Failed: {ob_err}")
                         await db.rollback()
-            # Re-read so the pipeline sees updated onboarding_completed
-            await db.refresh(current_user)
-
-
-        # 4. Build context
-        logger.info(f"[CONTEXT SSE] Loading history and emotional profile...")
-        history = await _build_conversation_history(db, conversation_id_resolved)
-        emotional_profile = await _get_emotional_profile_dict(db, current_user.id, current_user.name)
- 
-        # 5. Event generator for Starlette SSE EventSourceResponse
+            # Re-read so the pipe        # 4. Event generator for Starlette SSE EventSourceResponse
         async def event_generator() -> AsyncGenerator[dict, None]:
-            logger.info("[EVENT GENERATOR] Stream generator started.")
+            # Default values to prevent unbound errors
+            detected_emotion = "neutral"
+            confidence_score = 1.0
+            stress_score = 0.1
+            anxiety_score = 0.1
+            mood_score = 0.9
             
-            # Yield speculative transition immediately
-            speculative_chunk = get_speculative_transition(message)
-            logger.info(f"[SSE STREAM] Yielding speculative transition: '{speculative_chunk}'")
+            trace_id = uuid.uuid4().hex[:8]
+            start_time = time.perf_counter()
+            logger.info(f"[CHAT PERF][trace={trace_id}] request_received +0ms")
+
+            # 4a. Yield connected event immediately
             yield {
                 "event": "message",
                 "data": json.dumps({
-                    "type": "placeholder",
-                    "content": speculative_chunk,
+                    "type": "connected",
+                    "trace_id": trace_id,
                     "conversation_id": str(conversation_id_resolved),
                 }),
             }
-            # Short yield pause
-            await asyncio.sleep(0.05)
-            
+            logger.info(f"[CHAT PERF][trace={trace_id}] sse_connected +{int((time.perf_counter() - start_time) * 1000)}ms")
+
+            # 4b. Yield understanding status
+            yield {
+                "event": "message",
+                "data": json.dumps({"type": "status", "stage": "understanding"}),
+            }
+
+            # Classify message complexity
+            complexity = classify_message_complexity(message)
+            logger.info(f"[CHAT PERF][trace={trace_id}] complexity_classified +{int((time.perf_counter() - start_time) * 1000)}ms complexity={complexity}")
+
             try:
-                persist_task = asyncio.create_task(
-                    generate_and_persist_sse_response(
-                        message=message,
-                        current_user_id=current_user.id,
-                        conversation_id=conversation_id_resolved,
-                        history=history,
-                        emotional_profile=emotional_profile,
-                    )
-                )
-                
-                # Send heartbeats every 10s while waiting for the AI response
-                while not persist_task.done():
-                    try:
-                        persisted = await asyncio.wait_for(asyncio.shield(persist_task), timeout=10.0)
-                        break  # Task completed
-                    except asyncio.TimeoutError:
-                        # Task still running, send heartbeat
-                        yield {
-                            "event": "message",
-                            "data": json.dumps({"type": "heartbeat"}),
-                        }
-                        continue
-                    except asyncio.CancelledError:
-                        logger.warning(
-                            "[SSE DISCONNECT] Client disconnected while AI/save task was running. "
-                            "Persistence task remains shielded for conversation_id=%s",
-                            conversation_id_resolved,
+                # We need a db session to load profile & history
+                async with get_db_session() as s_db:
+                    # Load cached/fresh personalization snapshot
+                    p_start = time.perf_counter()
+                    from app.services.profile_service import profile_service
+                    personalization_block = await profile_service.build_personalization_prompt_block(s_db, current_user.id)
+                    legacy_context = await profile_service.build_profile_context(s_db, current_user.id)
+                    profile_context = f"{legacy_context}\n{personalization_block}"
+                    logger.info(f"[CHAT PERF][trace={trace_id}] personalization_complete +{int((time.perf_counter() - start_time) * 1000)}ms duration={int((time.perf_counter() - p_start) * 1000)}ms")
+
+                    # Handle routing based on complexity class
+                    if complexity == "SAFETY_CRITICAL":
+                        # Safety Protocol
+                        detected_emotion = "Crisis"
+                        confidence_score = 0.95
+                        mood_score = 0.05
+                        stress_score = 0.95
+                        anxiety_score = 0.95
+                        
+                        system_prompt = (
+                            "Activate Buddy Crisis Support Protocol. Focus on validating pain, sharing safety hotlines (e.g. Vandrevala Foundation or AASRA), staying grounded, and being direct. Strictly no humor.\n"
+                            "Write warm, empathetic, and direct lowercase WhatsApp style texts under 4 sentences."
                         )
-                        raise
-                else:
-                    # Task completed during the while check
-                    persisted = persist_task.result()
- 
-                full_response = persisted["full_response"]
-                detected_emotion = persisted["detected_emotion"]
-                mood_score = persisted["mood_score"]
-                agent_analysis = persisted["agent_analysis"]
-                msg_id = persisted["message_id"]
-                emotion_score = persisted.get("emotion_score", 1.0)
-                stress_score = persisted.get("stress_score", 0.0)
-                anxiety_score = persisted.get("anxiety_score", 0.0)
-                specialist_response = persisted.get("specialist_response")
-                specialist_id = persisted.get("specialist_id")
-                specialist_msg_id = persisted.get("specialist_message_id")
-                suggested_specialist = persisted.get("suggested_specialist")
-                sse_specialist_action = persisted.get("specialist_action_event")
-                agent_result = persisted.get("agent_result") or {}
-
-                # Queue learning DB updates and heavy operations to run in parallel background tasks
-                background_tasks.add_task(
-                    run_background_learning_tasks,
-                    user_id=current_user.id,
-                    user_message=message,
-                    assistant_response=full_response,
-                    conversation_id=conversation_id_resolved,
-                    history=history,
-                    detected_emotion=detected_emotion,
-                    agent_result=agent_result,
-                )
-
-                # Emit specialist_action event so the frontend can update the UI
-                if sse_specialist_action:
-                    logger.info(f"[SSE STREAM] Yielding specialist_action event: {sse_specialist_action}")
-                    yield {
-                        "event": "message",
-                        "data": json.dumps({
-                            "type": "specialist_action",
-                            "action": sse_specialist_action["action"],
-                            "specialist_id": sse_specialist_action["specialist_id"],
-                            "conversation_id": str(conversation_id_resolved),
-                        }),
-                    }
-                    await asyncio.sleep(0.03)
-
-                # If specialist response is active, stream it first
-                if specialist_response and specialist_id:
-                    logger.info(f"[SSE STREAM] Yielding specialist '{specialist_id}' response text chunks...")
-                    yield {
-                        "event": "message",
-                        "data": json.dumps({
-                            "type": "specialist_start",
-                            "specialist_id": specialist_id,
-                            "conversation_id": str(conversation_id_resolved),
-                        }),
-                    }
-                    await asyncio.sleep(0.05)
-
-                    chunk_size = 12
-                    for i in range(0, len(specialist_response), chunk_size):
-                        chunk = specialist_response[i : i + chunk_size]
+                        messages = [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": message}
+                        ]
+                        # Responding status
                         yield {
                             "event": "message",
-                            "data": json.dumps({
-                                "type": "specialist_chunk",
-                                "content": chunk,
-                                "specialist_id": specialist_id,
-                                "conversation_id": str(conversation_id_resolved),
-                            }),
+                            "data": json.dumps({"type": "status", "stage": "responding"}),
                         }
-                        await asyncio.sleep(0.02)
+                        
+                        full_response = ""
+                        first_chunk = False
+                        logger.info(f"[CHAT PERF][trace={trace_id}] llm_started +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        
+                        from app.utils.llm import generate_chat_completion_stream_with_fallback
+                        async for chunk in generate_chat_completion_stream_with_fallback(messages, temperature=0.5):
+                            if not first_chunk:
+                                first_chunk = True
+                                logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
+                            full_response += chunk
+                            yield {
+                                "event": "message",
+                                "data": json.dumps({
+                                    "type": "chunk",
+                                    "content": chunk,
+                                    "conversation_id": str(conversation_id_resolved),
+                                }),
+                            }
+                            
+                        # Queue background save
+                        background_tasks.add_task(
+                            save_chat_response_to_db,
+                            conversation_id=conversation_id_resolved,
+                            user_id=current_user.id,
+                            user_message=message,
+                            full_response=full_response,
+                            detected_emotion=detected_emotion,
+                            confidence_score=confidence_score,
+                            stress_score=stress_score,
+                            anxiety_score=anxiety_score,
+                            mood_score=mood_score,
+                            agent_analysis={},
+                            emotion_dimensions={"stress": 0.95, "sadness": 0.95, "anxiety": 0.95, "happiness": 0.05, "motivation": 0.1, "confidence": 0.1},
+                            is_first_message=False,
+                        )
 
-                    yield {
-                        "event": "message",
-                        "data": json.dumps({
-                            "type": "specialist_done",
-                            "specialist_id": specialist_id,
-                            "message_id": specialist_msg_id,
-                            "conversation_id": str(conversation_id_resolved),
-                        }),
-                    }
-                    await asyncio.sleep(0.1)
-
-                # Yield Buddy chunks
-                if full_response is not None:
-                    logger.info(f"[SSE STREAM] Yielding response text chunks...")
-                    chunk_size = 12
-                    for i in range(0, len(full_response), chunk_size):
-                        chunk = full_response[i : i + chunk_size]
+                    elif complexity == "SIMPLE_SOCIAL":
+                        # Fetch recent 3 messages
+                        history = await _build_conversation_history(s_db, conversation_id_resolved, limit=3)
+                        
+                        system_prompt = (
+                            "You are Esona (also known as Buddy), a supportive, relatable college friend. "
+                            "Strictly adopt the following user personalization and mirror guidelines:\n"
+                            f"{personalization_block}\n\n"
+                            "CRITICAL RESPONSE STYLE CONSTRAINTS:\n"
+                            "- Write like a real close friend texting on WhatsApp.\n"
+                            "- Write mostly in lowercase, warm, natural, and empathetic.\n"
+                            "- Keep response extremely short (1 to 2 sentences max, under 20 words).\n"
+                            "- Omit terminal punctuation.\n"
+                            "- Use casual abbreviations naturally (like ngl, idk, fr, tbh, bro, 😭, 💀) but do not force them.\n"
+                            "- Do NOT use any <reasoning> or <thinking> tags. Do not explain your logic.\n"
+                        )
+                        messages = [{"role": "system", "content": system_prompt}]
+                        for h in history:
+                            messages.append({"role": h["role"], "content": h["content"]})
+                        messages.append({"role": "user", "content": message})
+                        
+                        # Responding status
                         yield {
                             "event": "message",
-                            "data": json.dumps({
-                                "type": "chunk",
-                                "content": chunk,
-                                "conversation_id": str(conversation_id_resolved),
-                            }),
+                            "data": json.dumps({"type": "status", "stage": "responding"}),
                         }
-                        await asyncio.sleep(0.03)
- 
-                # Yield done event
-                logger.info(f"[SSE STREAM] Yielding final 'done' event.")
+                        
+                        full_response = ""
+                        first_chunk = False
+                        logger.info(f"[CHAT PERF][trace={trace_id}] llm_started +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        
+                        from app.utils.llm import generate_chat_completion_stream_with_fallback
+                        async for chunk in generate_chat_completion_stream_with_fallback(messages, temperature=0.7):
+                            if not first_chunk:
+                                first_chunk = True
+                                logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
+                            full_response += chunk
+                            yield {
+                                "event": "message",
+                                "data": json.dumps({
+                                    "type": "chunk",
+                                    "content": chunk,
+                                    "conversation_id": str(conversation_id_resolved),
+                                }),
+                            }
+                            
+                        # Queue background save
+                        background_tasks.add_task(
+                            save_chat_response_to_db,
+                            conversation_id=conversation_id_resolved,
+                            user_id=current_user.id,
+                            user_message=message,
+                            full_response=full_response,
+                            detected_emotion="neutral",
+                            confidence_score=1.0,
+                            stress_score=0.1,
+                            anxiety_score=0.1,
+                            mood_score=0.9,
+                            agent_analysis={"personality_agent": {"communication_style": "casual"}, "intent_agent": {"message_type": "casual"}},
+                            emotion_dimensions={"stress": 0.1, "sadness": 0.1, "anxiety": 0.1, "happiness": 0.9, "motivation": 0.8, "confidence": 0.8},
+                            is_first_message=(len(history) == 0),
+                        )
+
+                    elif complexity == "LIGHT_EMOTIONAL":
+                        # Stage: remembering -> retrieve light context
+                        yield {
+                            "event": "message",
+                            "data": json.dumps({"type": "status", "stage": "remembering"}),
+                        }
+                        
+                        # Fetch recent 5 messages, MentalBERT and Memory in parallel
+                        logger.info(f"[CHAT PERF][trace={trace_id}] recent_history_started +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        history = await _build_conversation_history(s_db, conversation_id_resolved, limit=5)
+                        logger.info(f"[CHAT PERF][trace={trace_id}] recent_history_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        
+                        logger.info(f"[CHAT PERF][trace={trace_id}] memory_started +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        from app.agents import memory_agent
+                        from app.services.emotion_service import emotion_service
+                        mem_task = asyncio.create_task(memory_agent.retrieve_context(s_db, str(current_user.id), message, limit=3))
+                        emotion_task = asyncio.create_task(emotion_service.classify_emotion_fast(message))
+                        
+                        memories_res, emotion_res = await asyncio.gather(mem_task, emotion_task)
+                        memories = memories_res.get("memories", [])
+                        logger.info(f"[CHAT PERF][trace={trace_id}] memory_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        
+                        detected_emotion = emotion_res.get("detected_emotion", "Neutral")
+                        confidence_score = emotion_res.get("confidence_score", 1.0)
+                        blended_scores = emotion_res.get("blended_scores", [0.0]*9)
+                        
+                        # Format memories
+                        memories_list = []
+                        for m in memories:
+                            m_type = m.get("memory_type") or "emotion"
+                            memories_list.append(f"- [{m_type.upper()}] User once said: '{m.get('content', '')}'")
+                        memories_str = "\n".join(memories_list) if memories_list else "No relevant past memories."
+                        
+                        system_prompt = (
+                            "You are Esona (also known as Buddy), a supportive, relatable college friend. "
+                            "Strictly adopt the following user personalization and mirror guidelines:\n"
+                            f"{personalization_block}\n\n"
+                            f"Detected User Emotion: {detected_emotion} (confidence: {confidence_score})\n"
+                            f"Relevant Past Memories:\n{memories_str}\n\n"
+                            "CRITICAL RESPONSE STYLE CONSTRAINTS:\n"
+                            "- Speak like a supportive friend. Validate their feeling naturally, keeping it warm and conversational.\n"
+                            "- Write mostly in lowercase, warm, natural, and empathetic.\n"
+                            "- Keep response short (2 to 3 sentences max, under 30 words).\n"
+                            "- Omit terminal punctuation.\n"
+                            "- Do NOT use any <reasoning> or <thinking> tags.\n"
+                        )
+                        messages = [{"role": "system", "content": system_prompt}]
+                        for h in history:
+                            messages.append({"role": h["role"], "content": h["content"]})
+                        messages.append({"role": "user", "content": message})
+                        
+                        # Responding status
+                        yield {
+                            "event": "message",
+                            "data": json.dumps({"type": "status", "stage": "responding"}),
+                        }
+                        
+                        full_response = ""
+                        first_chunk = False
+                        logger.info(f"[CHAT PERF][trace={trace_id}] llm_started +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        
+                        from app.utils.llm import generate_chat_completion_stream_with_fallback
+                        async for chunk in generate_chat_completion_stream_with_fallback(messages, temperature=0.7):
+                            if not first_chunk:
+                                first_chunk = True
+                                logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
+                            full_response += chunk
+                            yield {
+                                "event": "message",
+                                "data": json.dumps({
+                                    "type": "chunk",
+                                    "content": chunk,
+                                    "conversation_id": str(conversation_id_resolved),
+                                }),
+                            }
+                            
+                        # Calculate scores
+                        stress_score = blended_scores[3] if len(blended_scores) > 3 else 0.3
+                        anxiety_score = blended_scores[3] if len(blended_scores) > 3 else 0.3
+                        sadness_score = blended_scores[0] if len(blended_scores) > 0 else 0.3
+                        mood_score = round(1.0 - (stress_score * 0.2 + anxiety_score * 0.3 + sadness_score * 0.3), 2)
+                        mood_score = max(0.05, min(0.95, mood_score))
+
+                        # Queue background save
+                        background_tasks.add_task(
+                            save_chat_response_to_db,
+                            conversation_id=conversation_id_resolved,
+                            user_id=current_user.id,
+                            user_message=message,
+                            full_response=full_response,
+                            detected_emotion=detected_emotion,
+                            confidence_score=confidence_score,
+                            stress_score=stress_score,
+                            anxiety_score=anxiety_score,
+                            mood_score=mood_score,
+                            agent_analysis={"emotion_agent": {"primary_emotion": detected_emotion, "stress": stress_score}},
+                            emotion_dimensions={"stress": stress_score, "sadness": sadness_score, "anxiety": anxiety_score, "happiness": round(1.0 - sadness_score, 2), "motivation": 0.5, "confidence": 0.5},
+                            is_first_message=(len(history) == 0),
+                        )
+
+                    else:
+                        # DEEP_CONTEXTUAL Path
+                        # Stage: remembering
+                        yield {
+                            "event": "message",
+                            "data": json.dumps({"type": "status", "stage": "remembering"}),
+                        }
+                        
+                        logger.info(f"[CHAT PERF][trace={trace_id}] recent_history_started +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        history = await _build_conversation_history(s_db, conversation_id_resolved, limit=8)
+                        logger.info(f"[CHAT PERF][trace={trace_id}] recent_history_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        
+                        # Retrieve memories and KG context in parallel
+                        logger.info(f"[CHAT PERF][trace={trace_id}] memory_started +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        from app.agents import memory_agent, personality_agent, emotion_agent, behavior_agent, growth_agent, intent_agent, safety_agent
+                        from app.services.emotion_service import emotion_service
+                        from app.services.knowledge_graph_service import knowledge_graph_service
+                        
+                        mem_task = asyncio.create_task(memory_agent.retrieve_context(s_db, str(current_user.id), message, limit=5))
+                        kg_task = asyncio.create_task(knowledge_graph_service.retrieve_relevant_relationships(s_db, current_user.id, message))
+                        emotion_task = asyncio.create_task(emotion_service.classify_emotion_fast(message))
+                        
+                        memories_res, kg_res, emotion_res = await asyncio.gather(mem_task, kg_task, emotion_task)
+                        memories = memories_res.get("memories", [])
+                        patterns = memories_res.get("emotional_patterns", {})
+                        
+                        # Bounded KG relations
+                        graph_relationships = [f"- {r.subject} -> {r.predicate} -> {r.object}" for r in kg_res[:15]]
+                        logger.info(f"[CHAT PERF][trace={trace_id}] memory_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        
+                        detected_emotion = emotion_res.get("detected_emotion", "Neutral")
+                        confidence_score = emotion_res.get("confidence_score", 1.0)
+                        blended_scores = emotion_res.get("blended_scores", [0.0]*9)
+                        
+                        # Stage: thinking
+                        yield {
+                            "event": "message",
+                            "data": json.dumps({"type": "status", "stage": "thinking"}),
+                        }
+                        logger.info(f"[CHAT PERF][trace={trace_id}] agent_graph_started +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        
+                        # Run agent orchestration locally to avoid double LLM waterfall calls
+                        from app.utils.llm import _local_cognitive_analysis
+                        mock_analysis_messages = [
+                            {"role": "system", "content": "personality_agent emotion_agent memory_extraction"},
+                            {"role": "user", "content": f"Classifier result for current message: {detected_emotion}\nCurrent message to analyze: {message}"}
+                        ]
+                        raw_analysis = _local_cognitive_analysis(mock_analysis_messages)
+                        from app.utils.helpers import safe_json_parse
+                        analysis = safe_json_parse(raw_analysis)
+                        
+                        p_data = personality_agent.analyze(analysis)
+                        e_data = emotion_agent.analyze(blended_scores)
+                        b_data = behavior_agent.analyze(analysis)
+                        g_data = growth_agent.analyze(analysis)
+                        i_data = intent_agent.analyze(analysis)
+                        s_data = safety_agent.check_safety(analysis, message)
+                        
+                        from app.orchestrator.response_orchestrator import response_orchestrator
+                        orchestrated = response_orchestrator.determine_tone_and_strategy(
+                            personality=p_data,
+                            emotion=e_data,
+                            behavior=b_data,
+                            growth=g_data,
+                            message_type="emotional",
+                        )
+                        tone = orchestrated["tone"]
+                        strategy = orchestrated["strategy"]
+                        
+                        # Comfort kit
+                        comfort_kit_dict = {}
+                        from app.services.recommendation_service import recommendation_service
+                        if detected_emotion.lower() in recommendation_service.NEGATIVE_EMOTIONS:
+                            kit = await recommendation_service.build_comfort_kit(
+                                db=s_db,
+                                user_id=str(current_user.id),
+                                detected_emotion=detected_emotion,
+                                graph_relationships=graph_relationships,
+                                personality_profile=emotional_profile.get("personality_profile", {}),
+                            )
+                            comfort_kit_dict = {
+                                "emotional_trigger": kit.emotional_trigger,
+                                "interests": kit.interests,
+                                "hobbies": kit.hobbies,
+                                "coping_activities": kit.coping_activities,
+                                "comfort_environment": kit.comfort_environment,
+                                "activity_suggestions": kit.activity_suggestions,
+                                "is_empty": kit.is_empty,
+                            }
+                            
+                        # Emotion timeline
+                        from app.services.mood_tracker import MoodTracker
+                        from zoneinfo import ZoneInfo
+                        mt = MoodTracker(s_db)
+                        emotion_timeline = await mt.retrieve_emotion_timeline(current_user.id, days=7)
+                        
+                        # Growth insight check
+                        growth_insight = None
+                        total_msgs = len([m for m in history if m.get("role") == "user"])
+                        if total_msgs > 0 and total_msgs % 15 == 0:
+                            from app.services.growth_insights_service import growth_insights_service
+                            growth_insight = await growth_insights_service.get_top_insight_for_chat(s_db, str(current_user.id))
+                        
+                        logger.info(f"[CHAT PERF][trace={trace_id}] agent_graph_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        
+                        # Build system prompt
+                        logger.info(f"[CHAT PERF][trace={trace_id}] prompt_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        system_prompt = response_orchestrator.build_final_prompt(
+                            user_name=current_user.name,
+                            personality_profile=emotional_profile.get("personality_profile", {}),
+                            personality=p_data,
+                            emotion=e_data,
+                            behavior=b_data,
+                            growth=g_data,
+                            memories=memories,
+                            tone=tone,
+                            strategy=strategy,
+                            current_time_str=datetime.now(ZoneInfo("Asia/Kolkata")).strftime('%A, %B %d, %Y %I:%M %p (IST)'),
+                            profile_context=profile_context,
+                            detected_emotion=detected_emotion,
+                            detected_emotion_confidence=confidence_score,
+                            graph_relationships=graph_relationships,
+                            comfort_kit=comfort_kit_dict,
+                            emotion_timeline=emotion_timeline,
+                            growth_insight=growth_insight,
+                            message_type="emotional",
+                            recent_buddy_responses=_recent_responses_cache.get(str(current_user.id), []),
+                        )
+                        
+                        # Inject summary note if exists
+                        messages = [{"role": "system", "content": system_prompt}]
+                        summary = await _get_conversation_summary(s_db, str(current_user.id), str(conversation_id_resolved))
+                        if summary:
+                            messages.append({
+                                "role": "system",
+                                "content": f"System Note: Here is a summary of the earlier part of this conversation:\n\"{summary}\"\nUse it for context, but do not repeat it verbatim."
+                            })
+                            
+                        # Append history
+                        for h in history:
+                            messages.append({"role": h["role"], "content": h["content"]})
+                        messages.append({"role": "user", "content": message})
+                        
+                        # Stage: responding
+                        yield {
+                            "event": "message",
+                            "data": json.dumps({"type": "status", "stage": "responding"}),
+                        }
+                        
+                        full_response = ""
+                        first_chunk = False
+                        logger.info(f"[CHAT PERF][trace={trace_id}] llm_started +{int((time.perf_counter() - start_time) * 1000)}ms")
+                        
+                        from app.utils.llm import generate_chat_completion_stream_with_fallback
+                        async for chunk in generate_chat_completion_stream_with_fallback(messages, temperature=0.7):
+                            if not first_chunk:
+                                first_chunk = True
+                                logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
+                            full_response += chunk
+                            yield {
+                                "event": "message",
+                                "data": json.dumps({
+                                    "type": "chunk",
+                                    "content": chunk,
+                                    "conversation_id": str(conversation_id_resolved),
+                                }),
+                            }
+                            
+                        # Calculate scores
+                        stress_val = e_data.get("stress", 0.3)
+                        anxiety_val = e_data.get("anxiety", 0.3)
+                        sadness_val = e_data.get("sadness", 0.3)
+                        burnout_val = e_data.get("burnout", 0.3)
+                        mood_score = round(1.0 - (stress_val * 0.2 + anxiety_val * 0.3 + sadness_val * 0.3 + burnout_val * 0.2), 2)
+                        mood_score = max(0.05, min(0.95, mood_score))
+                        
+                        # Populate dimensions
+                        emotion_dimensions = {
+                            "stress": stress_val,
+                            "anxiety": anxiety_val,
+                            "sadness": sadness_val,
+                            "burnout": burnout_val,
+                            "happiness": round(max(0.0, 1.0 - (sadness_val + stress_val) / 2.0), 2),
+                            "motivation": 0.5,
+                            "confidence": 0.5
+                        }
+                        
+                        # Log to cache
+                        if full_response:
+                            c = _recent_responses_cache.setdefault(str(current_user.id), [])
+                            c.append(full_response)
+                            if len(c) > _RESPONSE_CACHE_SIZE:
+                                _recent_responses_cache[str(current_user.id)] = c[-_RESPONSE_CACHE_SIZE:]
+                                
+                        agent_analysis = {
+                            "personality_agent": p_data,
+                            "emotion_agent": e_data,
+                            "behavior_agent": b_data,
+                            "growth_agent": g_data,
+                            "intent_agent": i_data,
+                            "safety_agent": s_data,
+                            "retrieved_memories": memories,
+                            "response_strategy": {"tone": tone, "strategy": strategy},
+                            "orchestrated_prompt_summary": f"[Tone: {tone.upper()} | Strategy: {strategy}]\nSystem prompt length: {len(system_prompt)} chars."
+                        }
+                        
+                        # Queue background save
+                        background_tasks.add_task(
+                            save_chat_response_to_db,
+                            conversation_id=conversation_id_resolved,
+                            user_id=current_user.id,
+                            user_message=message,
+                            full_response=full_response,
+                            detected_emotion=detected_emotion,
+                            confidence_score=confidence_score,
+                            stress_score=stress_val,
+                            anxiety_score=anxiety_val,
+                            mood_score=mood_score,
+                            agent_analysis=agent_analysis,
+                            emotion_dimensions=emotion_dimensions,
+                            is_first_message=(len(history) == 0),
+                        )
+                        
+                        # Run background learning tasks
+                        from app.routes.chat import run_background_learning_tasks
+                        background_tasks.add_task(
+                            run_background_learning_tasks,
+                            user_id=current_user.id,
+                            user_message=message,
+                            assistant_response=full_response,
+                            conversation_id=conversation_id_resolved,
+                            history=history,
+                            detected_emotion=detected_emotion,
+                            agent_result=agent_analysis,
+                        )
+
+                # 4c. Yield final done event
+                msg_id = str(uuid.uuid4())
                 yield {
                     "event": "message",
                     "data": json.dumps({
@@ -1550,16 +2033,16 @@ async def stream_message_sse(
                         "conversation_id": str(conversation_id_resolved),
                         "emotion_detected": detected_emotion,
                         "mood_score": mood_score,
-                        "emotion_score": emotion_score,
+                        "emotion_score": confidence_score,
                         "stress_score": stress_score,
                         "anxiety_score": anxiety_score,
-                        "agent_analysis": agent_analysis,
-                        "suggested_specialist": suggested_specialist,
+                        "agent_analysis": {},
                     }),
                 }
- 
-            except Exception as gen_err:
-                logger.error(f"[SSE STREAM ERROR] Error inside event_generator: {gen_err}", exc_info=True)
+                logger.info(f"[CHAT PERF][trace={trace_id}] request_complete +{int((time.perf_counter() - start_time) * 1000)}ms")
+
+            except Exception as inner_err:
+                logger.error(f"[SSE STREAM ERROR] Error inside event_generator: {inner_err}", exc_info=True)
                 fallback_excuse = get_random_human_fallback()
                 yield {
                     "event": "message",
@@ -1580,8 +2063,8 @@ async def stream_message_sse(
                         "agent_analysis": {},
                     }),
                 }
- 
-        # Return the EventSourceResponse
+
+        # Return the EventSourceResponse immediately
         return EventSourceResponse(event_generator())
 
     except Exception as route_err:

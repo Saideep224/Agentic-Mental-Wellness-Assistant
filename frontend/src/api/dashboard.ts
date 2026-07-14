@@ -76,3 +76,7 @@ export async function getGrowthInsights(token: string): Promise<GrowthInsightsDa
   const data = await apiGet<GrowthInsightsData>('/api/dashboard/growth-insights', token);
   return data ?? { insights: [], generated_at: '', total_logs: 0, total_memories: 0, has_data: false };
 }
+
+export async function getGrowthSummary(token: string): Promise<any> {
+  return apiGet<any>('/api/dashboard/growth/summary', token);
+}

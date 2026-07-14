@@ -196,6 +196,9 @@ class MentalBERTService:
         self.classifier = None
         self.initialized = False
         
+    def _initialize_model(self):
+        if self.initialized:
+            return
         # Load local model only if torch/transformers are installed and enabled
         if HAS_TORCH_TRANSFORMERS and settings.USE_LOCAL_EMOTION_MODEL:
             try:
@@ -214,6 +217,9 @@ class MentalBERTService:
                 logger.info(f"Labels mapping (id2label): {self.classifier.model.config.id2label}")
             except Exception as e:
                 logger.warning(f"Could not load local MentalBERT pipeline: {e}. Fallback to API simulation will be used.")
+                self.initialized = True
+        else:
+            self.initialized = True
 
     def predict(self, text: str) -> Any:
         """
@@ -221,6 +227,9 @@ class MentalBERTService:
         or simulate it using an LLM / rule-based fallback if the local model is not loaded.
         Returns a PyTorch tensor (or list representing the predictions).
         """
+        if not self.initialized:
+            self._initialize_model()
+
         if not text or len(text.strip()) == 0:
             mock_probs = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
             if HAS_TORCH_TRANSFORMERS:

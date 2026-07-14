@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import time
+from typing import AsyncGenerator
 from openai import AsyncOpenAI
 from app.config import settings
 
@@ -125,3 +126,51 @@ async def generate_chat_completion_with_fallback(messages: list, temperature: fl
     if last_error:
         raise last_error
     raise RuntimeError("No configured LLM provider is available")
+
+
+async def generate_chat_completion_stream_with_fallback(
+    messages: list,
+    temperature: float = 0.7,
+    max_tokens: int = 800,
+    preferred_model: str | None = None
+) -> AsyncGenerator[str, None]:
+    last_error = None
+    now = time.time()
+    for name, base_url, api_key, model in _providers(preferred_model):
+        if now < _unhealthy_models.get(str(model), 0):
+            continue
+        try:
+            key = (str(base_url), str(api_key))
+            client = _provider_clients.get(key)
+            if client is None:
+                client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+                _provider_clients[key] = client
+            kwargs = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": min(max_tokens, 500),
+                "stream": True,
+            }
+            response = await client.chat.completions.create(**kwargs, timeout=12.0)
+            yielded_anything = False
+            async for chunk in response:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    yielded_anything = True
+                    yield chunk.choices[0].delta.content
+            if yielded_anything:
+                return
+        except Exception as exc:
+            if yielded_anything:
+                logger.error("[LLM STREAM] Stream interrupted after yielding some tokens: %s", exc)
+                return
+            last_error = exc
+            error = str(exc).lower()
+            if any(x in error for x in ["429", "rate limit", "quota", "timeout", "unavailable", "credit"]):
+                _unhealthy_models[str(model)] = time.time() + _MODEL_COOLDOWN_SECONDS
+            logger.warning("[LLM STREAM] %s/%s failed to start stream; fallback: %s", name, model, exc)
+            continue
+    if last_error:
+        raise last_error
+    raise RuntimeError("No configured LLM provider is available for streaming")
+

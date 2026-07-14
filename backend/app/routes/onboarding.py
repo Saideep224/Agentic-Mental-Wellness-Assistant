@@ -263,16 +263,11 @@ async def get_onboarding_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Check if the user has completed onboarding and how many questions are answered."""
-    result = await db.execute(
-        select(func.count(UserAnswer.id)).where(
-            UserAnswer.user_id == current_user.id
-        )
-    )
-    count = result.scalar() or 0
-
+    from app.services.profile_service import profile_service
+    status_dict = await profile_service.get_knowing_me_completion(db, current_user.id)
     return OnboardingStatusResponse(
-        onboarding_completed=current_user.onboarding_completed,
-        answers_submitted=count,
+        onboarding_completed=status_dict["is_complete"],
+        answers_submitted=status_dict["answered_count"],
         onboarding_step=current_user.onboarding_step or 1,
     )
 

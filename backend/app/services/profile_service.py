@@ -7,6 +7,7 @@ losing the original onboarding signal.
 import json
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Union
 
 from sqlalchemy import select
@@ -28,14 +29,34 @@ def invalidate_profile_caches(user_id: Union[uuid.UUID, str]):
 
 
 QUESTION_FIELDS = {
-    1: "age", 2: "profession", 3: "field_of_work", 4: "university",
-    5: "student_year", 6: "gender", 7: "name", 8: "current_challenge",
-    9: "advice_preference", 10: "primary_support_need", 11: "interests",
-    12: "hobbies", 13: "goals", 14: "stress_triggers", 15: "coping_mechanisms",
-    16: "support_system", 17: "communication_style", 18: "sleep_habits",
-    19: "social_energy", 20: "confidence_style", 21: "emotional_openness",
-    22: "stress_response", 23: "overwhelm_pattern", 24: "criticism_response",
-    25: "comfort_preference", 26: "life_satisfaction", 27: "desired_change",
+    1: "profession",
+    2: "field_of_work",
+    3: "current_challenge",
+    4: "advice_preference",
+    5: "primary_support_need",
+    6: "tiring_day_response",
+    7: "self_description",
+    8: "energy_drainer",
+    9: "upset_texting_style",
+    10: "mind_default_mode",
+    11: "sleep_habits",
+    12: "stress_triggers",
+    13: "mood_speed_trigger",
+    14: "exhaustion_frequency",
+    15: "weather_emotion",
+    16: "interests",
+    17: "interests",
+    18: "support_system",
+    19: "hobbies",
+    20: "coping_mechanisms",
+    21: "communication_style",
+    22: "annoying_replies",
+    23: "support_system",
+    24: "social_battery",
+    25: "wished_understanding",
+    26: "gender",
+    27: "age",
+    99: "goals",
 }
 LIST_FIELDS = {"interests", "hobbies", "goals", "stress_triggers", "coping_mechanisms"}
 
@@ -76,6 +97,71 @@ class ProfileService:
         except Exception as exc:
             logger.warning("Personal profile lookup failed for %s: %s", uid, exc)
             return None
+
+    async def get_knowing_me_completion(self, db: AsyncSession, user_id: Union[uuid.UUID, str]) -> dict:
+        from app.models.onboarding import UserAnswer
+        from app.models.user_profile import UserProfile
+        from sqlalchemy import func
+        
+        uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+        
+        # Count unique valid answered question IDs
+        result = await db.execute(
+            select(UserAnswer).where(UserAnswer.user_id == uid)
+        )
+        db_answers = result.scalars().all()
+        
+        valid_qids = set()
+        for ans in db_answers:
+            has_selected = ans.selected_answers and any(bool(str(x).strip()) for x in ans.selected_answers)
+            has_custom = ans.custom_answer and bool(ans.custom_answer.strip())
+            if has_selected or has_custom:
+                valid_qids.add(ans.question_id)
+                
+        answered_count = len(valid_qids)
+        total_questions = 27
+        completion_percentage = int(round(answered_count / total_questions * 100)) if total_questions > 0 else 0
+        is_complete = answered_count >= total_questions
+        
+        # Check UserProfile to see if background analysis is ready
+        profile_res = await db.execute(
+            select(UserProfile).where(UserProfile.user_id == uid)
+        )
+        profile = profile_res.scalar_one_or_none()
+        
+        profile_ready = False
+        analysis_status = "not_ready"
+        
+        if is_complete:
+            if profile and profile.onboarding_completed and profile.personality_profile:
+                profile_ready = True
+                analysis_status = "ready"
+            else:
+                # Check how much time has elapsed since the last user answer was updated
+                time_res = await db.execute(
+                    select(func.max(UserAnswer.updated_at)).where(UserAnswer.user_id == uid)
+                )
+                max_updated = time_res.scalar()
+                if max_updated:
+                    now = datetime.now(timezone.utc)
+                    if max_updated.tzinfo is None:
+                        max_updated = max_updated.replace(tzinfo=timezone.utc)
+                    elapsed = (now - max_updated).total_seconds()
+                    if elapsed > 120:  # 2 minutes timeout
+                        analysis_status = "failed"
+                    else:
+                        analysis_status = "pending"
+                else:
+                    analysis_status = "pending"
+                    
+        return {
+            "answered_count": answered_count,
+            "total_questions": total_questions,
+            "completion_percentage": completion_percentage,
+            "is_complete": is_complete,
+            "profile_ready": profile_ready,
+            "analysis_status": analysis_status
+        }
 
     async def create_profile(self, db: AsyncSession, user_id, profile_data: Dict[str, Any]) -> UserPersonalProfile:
         uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
@@ -118,7 +204,7 @@ class ProfileService:
 
         data: Dict[str, Any] = {field: ([] if field in LIST_FIELDS else None) for field in QUESTION_FIELDS.values()}
         for a in answers:
-            field = a.category or QUESTION_FIELDS.get(a.question_id)
+            field = QUESTION_FIELDS.get(a.question_id) or a.category
             value = _answer_value(a)
             if not field or _empty(value):
                 continue

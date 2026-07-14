@@ -178,10 +178,13 @@ export async function apiGet<T>(endpoint: string, token?: string | null): Promis
 
   let response: Response;
   try {
+    const isGetMe = endpoint.includes('/auth/me') || endpoint.includes('/me');
+    const timeoutMs = isGetMe ? 15000 : 15000;
+    const retries = isGetMe ? 1 : 2; // maximum 1 retry for me endpoint, 2 for other safe GETs
     response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
       method: 'GET',
       headers,
-    });
+    }, retries, timeoutMs);
   } catch (error) {
     throw new Error(friendlyErrorMessage(error));
   }
@@ -210,11 +213,12 @@ export async function apiPost<T>(endpoint: string, body?: unknown, token?: strin
 
   let response: Response;
   try {
+    // POST requests are not idempotent by default, so we disable automatic retry
     response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers,
       body: body ? JSON.stringify(body) : undefined,
-    });
+    }, 0, 15000);
   } catch (error) {
     throw new Error(friendlyErrorMessage(error));
   }
@@ -241,11 +245,12 @@ export async function apiPatch<T>(endpoint: string, body?: unknown, token?: stri
 
   let response: Response;
   try {
+    // PATCH requests are not retried automatically
     response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
       method: 'PATCH',
       headers,
       body: body ? JSON.stringify(body) : undefined,
-    });
+    }, 0, 15000);
   } catch (error) {
     throw new Error(friendlyErrorMessage(error));
   }
@@ -270,10 +275,11 @@ export async function apiDelete<T = void>(endpoint: string, token?: string | nul
 
   let response: Response;
   try {
+    // DELETE requests are not retried automatically
     response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
       method: 'DELETE',
       headers,
-    });
+    }, 0, 15000);
   } catch (error) {
     throw new Error(friendlyErrorMessage(error));
   }
@@ -299,19 +305,50 @@ export async function apiDelete<T = void>(endpoint: string, token?: string | nul
 // HEALTH CHECK
 // ============================================
 
+let backendHealthPromise: Promise<boolean> | null = null;
+let backendHealthCheckedAt: number = 0;
+const HEALTH_CACHE_COOLDOWN_MS = 15000;
+
 export async function checkBackendHealth(): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    const response = await fetch(`${API_BASE}/health`, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response.ok;
-  } catch {
-    return false;
+  const now = Date.now();
+  if (now - backendHealthCheckedAt < HEALTH_CACHE_COOLDOWN_MS) {
+    return true;
   }
+  if (backendHealthPromise) {
+    return backendHealthPromise;
+  }
+
+  backendHealthPromise = (async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      try {
+        controller.abort("request_timeout");
+      } catch {
+        controller.abort();
+      }
+    }, 5000); // 5s short timeout for ping
+
+    try {
+      const response = await fetch(`${API_BASE}/health`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const isHealthy = response.ok;
+      if (isHealthy) {
+        backendHealthCheckedAt = Date.now();
+      }
+      return isHealthy;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.warn('[checkBackendHealth] Ping failed:', err);
+      return false;
+    } finally {
+      backendHealthPromise = null;
+    }
+  })();
+
+  return backendHealthPromise;
 }
 
 // ============================================

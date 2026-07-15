@@ -1622,6 +1622,8 @@ async def stream_message_sse(
             stress_score = 0.1
             anxiety_score = 0.1
             mood_score = 0.9
+            user_signal = None
+            response_plan = None
             
             # Yield understanding status
             yield {
@@ -1693,6 +1695,16 @@ async def stream_message_sse(
                     elif category == "NORMAL_CHAT":
                         # Bypasses heavy agents. Safe GETs for context.
                         history = await _build_conversation_history(s_db, conversation_id_resolved, limit=6)
+                        
+                        from app.services.emotional_intelligence import build_user_signal, select_response_strategy
+                        personalization = emotional_profile.get("personality_profile", {})
+                        user_signal = build_user_signal(
+                            user_message=message,
+                            history=history,
+                            personalization=personalization
+                        )
+                        response_plan = select_response_strategy(user_signal, personalization)
+
                         from app.agents import memory_agent
                         
                         mem_res = await memory_agent.retrieve_context(s_db, str(current_user.id), message, limit=3)
@@ -1773,6 +1785,20 @@ async def stream_message_sse(
                         i_data = intent_agent.analyze(analysis)
                         s_data = safety_agent.check_safety(analysis, message)
                         
+                        from app.services.emotional_intelligence import build_user_signal, select_response_strategy
+                        personalization = emotional_profile.get("personality_profile", {})
+                        user_signal = build_user_signal(
+                            user_message=message,
+                            history=history,
+                            personalization=personalization,
+                            blended_scores=blended_scores
+                        )
+                        # Ensure UserSignal primary_emotion is capitalized for backward compatibility check
+                        if user_signal.get("primary_emotion"):
+                            user_signal["primary_emotion"] = user_signal["primary_emotion"].lower()
+                            
+                        response_plan = select_response_strategy(user_signal, personalization)
+
                         from app.orchestrator.response_orchestrator import response_orchestrator
                         orchestrated = response_orchestrator.determine_tone_and_strategy(
                             personality=p_data,
@@ -1780,6 +1806,8 @@ async def stream_message_sse(
                             behavior=b_data,
                             growth=g_data,
                             message_type="emotional",
+                            user_signal=user_signal,
+                            personalization=personalization,
                         )
                         tone = orchestrated["tone"]
                         strategy = orchestrated["strategy"]
@@ -1868,24 +1896,53 @@ async def stream_message_sse(
                     first_chunk = False
                     logger.info(f"[CHAT PERF][trace={trace_id}] llm_started +{int((time.perf_counter() - start_time) * 1000)}ms")
                     
-                    from app.utils.llm import generate_chat_completion_stream_with_fallback
-                    async for chunk in generate_chat_completion_stream_with_fallback(
-                        messages, 
-                        temperature=0.7, 
-                        route_category=category
-                    ):
-                        if not first_chunk:
-                            first_chunk = True
-                            logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
-                        full_response += chunk
-                        yield {
-                            "event": "message",
-                            "data": json.dumps({
-                                "type": "chunk",
-                                "content": chunk,
-                                "conversation_id": str(conversation_id_resolved),
-                            }),
-                        }
+                    if category in ("SAFETY_CRITICAL", "FAST_SOCIAL"):
+                        from app.utils.llm import generate_chat_completion_stream_with_fallback
+                        async for chunk in generate_chat_completion_stream_with_fallback(
+                            messages, 
+                            temperature=0.7, 
+                            route_category=category
+                        ):
+                            if not first_chunk:
+                                first_chunk = True
+                                logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
+                            full_response += chunk
+                            yield {
+                                "event": "message",
+                                "data": json.dumps({
+                                    "type": "chunk",
+                                    "content": chunk,
+                                    "conversation_id": str(conversation_id_resolved),
+                                }),
+                            }
+                    else:
+                        from app.agents.response_agent import response_agent
+                        gen_res = await response_agent.generate(
+                            messages=messages,
+                            temperature=0.7,
+                            max_tokens=300,
+                            recent_responses=recent_responses,
+                            user_signal=user_signal,
+                            response_plan=response_plan
+                        )
+                        full_response = gen_res.get("text", "")
+                        
+                        # Simulate streaming of full_response in small chunks to the frontend UI
+                        chunk_size = 8
+                        for i in range(0, len(full_response), chunk_size):
+                            chunk = full_response[i:i+chunk_size]
+                            if not first_chunk:
+                                first_chunk = True
+                                logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
+                            yield {
+                                "event": "message",
+                                "data": json.dumps({
+                                    "type": "chunk",
+                                    "content": chunk,
+                                    "conversation_id": str(conversation_id_resolved),
+                                }),
+                            }
+                            await asyncio.sleep(0.01)
 
                     # Determine scoring
                     if category in ("SAFETY_CRITICAL", "FAST_SOCIAL", "NORMAL_CHAT"):

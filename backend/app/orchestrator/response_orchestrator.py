@@ -24,16 +24,14 @@ class ResponseOrchestrator:
         behavior: Dict[str, Any],
         growth: Dict[str, Any],
         message_type: str = "emotional",
+        user_signal: Dict[str, Any] = None,
+        personalization: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
         """
         Evaluate all agent states to determine the best response tone and support strategy.
-        message_type is the primary routing signal — casual/check_in messages NEVER
-        fall into emotional-support mode regardless of emotion scores.
+        Uses V2 UserSignal and ResponsePlan selection.
         """
-        # ── Intent-first routing ────────────────────────────────────────────
-        # If the cognitive analyzer classified the message as casual or check_in,
-        # skip all emotion threshold checks and return a banter/chat strategy.
-        # This prevents "I'm here for you" responses to "what the heck" or "bro".
+        # If message_type is casual, return quick casual strategy
         if message_type in ("casual", "check_in"):
             return {
                 "tone": "casual",
@@ -48,41 +46,44 @@ class ResponseOrchestrator:
                 ),
             }
 
-        # ── Emotional routing ────────────────────────────────────────────────
-        stress = emotion.get("stress", 0.3)
-        anxiety = emotion.get("anxiety", 0.3)
-        sadness = emotion.get("sadness", 0.3)
-        burnout = emotion.get("burnout", 0.3)
-        intensity = emotion.get("emotional_intensity", 5)
+        # Build fallback signal if not provided
+        if not user_signal:
+            primary_emo = (emotion.get("primary_emotion") or "neutral").lower()
+            intensity_val = float(emotion.get("emotional_intensity") or 5) / 10.0
+            
+            # Map simple dimensions
+            need_map = "listening"
+            if primary_emo in ("sadness", "loneliness"):
+                need_map = "validation"
+            elif primary_emo in ("anxiety", "stress"):
+                need_map = "grounding" if intensity_val >= 0.7 else "exploration"
+            elif primary_emo in ("happy", "joy"):
+                need_map = "celebration"
+                
+            user_signal = {
+                "primary_emotion": primary_emo,
+                "intensity": intensity_val,
+                "user_need": need_map,
+                "conversation_stage": "disclosure" if primary_emo != "neutral" else "reflection",
+                "risk_level": "crisis" if primary_emo == "crisis" else "low",
+                "explicit_emotions": [primary_emo] if primary_emo != "neutral" else []
+            }
 
-        procrastination = behavior.get("procrastination", "low")
-        sleep_issues = behavior.get("sleep_issues", "none detected")
-
-        motivation = growth.get("motivation", "moderate")
-
-        # Determine Tone
-        if stress >= 0.7 or anxiety >= 0.7 or intensity >= 8:
-            tone = "calming"
-            strategy = "Focus on anxiety reduction, validate immediate overwhelm, and offer grounding exercises or a calm breathing check-in."
-        elif burnout >= 0.7 or "burnout" in str(sleep_issues).lower():
-            tone = "reassuring"
-            strategy = "Validate physical and mental exhaustion, grant permission to rest, and focus on self-compassion. Do not push for productivity."
-        elif sadness >= 0.6:
-            tone = "empathetic"
-            strategy = "Provide deep emotional validation, acknowledge the sadness without rushing to fix it, and sit with them in their feeling."
-        elif motivation == "low" or procrastination in ("high", "medium"):
-            tone = "motivational"
-            strategy = "Acknowledge friction and procrastination gently, break tasks down into micro-steps, and highlight the value of small wins."
-        elif growth.get("emotional_improvement") == "showing progress" or str(motivation).lower() in ("high", "intrinsic"):
-            tone = "energetic"
-            strategy = "Celebrate progress, match their positive momentum, and guide them in building routine consistency."
-        else:
-            tone = "reflective"
-            strategy = "Encourage self-awareness, ask open-ended questions about their triggers, and prompt them to explore their thoughts."
+        from app.services.emotional_intelligence import select_response_strategy
+        plan = select_response_strategy(user_signal, personalization or {})
+        
+        # Format a descriptive strategy string for prompt builders
+        strategy_str = plan.get("primary_strategy", "LISTEN")
+        if plan.get("secondary_strategy"):
+            strategy_str += f" + {plan['secondary_strategy']}"
+        
+        # Add avoiding directives to avoid generic phrasing
+        strategy_str += f". Avoid: {', '.join(plan.get('avoid', []))}."
 
         return {
-            "tone": tone,
-            "strategy": strategy,
+            "tone": plan.get("tone", "reflective"),
+            "strategy": strategy_str,
+            "plan": plan
         }
 
     def build_final_prompt(self,

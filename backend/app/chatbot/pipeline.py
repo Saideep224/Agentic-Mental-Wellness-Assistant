@@ -305,6 +305,20 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
 
     logger.info(f"[ANALYSIS] Coordinated agents analysis: message_type={i_data.get('message_type')}, primary_emotion={detected_emotion}, mood={mood_score}, is_safe={s_data.get('is_safe')}")
 
+    from app.services.emotional_intelligence import build_user_signal, select_response_strategy
+    personalization = profile.get("personality_profile", {})
+    user_signal = build_user_signal(
+        user_message=user_message,
+        history=history,
+        personalization=personalization,
+        blended_scores=blended_scores
+    )
+    # Ensure UserSignal primary_emotion is capitalized for backward compatibility check
+    if user_signal.get("primary_emotion"):
+        user_signal["primary_emotion"] = user_signal["primary_emotion"].lower()
+        
+    response_plan = select_response_strategy(user_signal, personalization)
+
     return {
         "router_decision": {"message_type": analysis.get("message_type", "emotional")},
         "personality_agent": p_data,
@@ -326,6 +340,8 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
         "graph_relationships": graph_relationships,
         "emotional_patterns": patterns,
         "perf_timings": perf,
+        "user_signal": user_signal,
+        "response_plan": response_plan,
     }
 
 
@@ -471,14 +487,14 @@ async def response_agent_node(state: AgentState) -> dict:
         strategy = "Activate Buddy Crisis Support Protocol. Focus on validating pain, sharing safety hotlines (e.g. Vandrevala Foundation or AASRA), staying grounded, and being direct. Strictly no humor."
         message_type = "crisis"  # override so the intent block reflects this
     else:
-        # Call Orchestrator to decide Tone and Strategy — pass message_type so
-        # casual messages bypass all emotional-support routing.
         orchestrated = response_orchestrator.determine_tone_and_strategy(
             personality=state.get("personality_agent", {}),
             emotion=state.get("emotion_agent", {}),
             behavior=state.get("behavior_agent", {}),
             growth=state.get("growth_agent", {}),
             message_type=message_type,
+            user_signal=state.get("user_signal"),
+            personalization=personality_profile,
         )
         tone = orchestrated["tone"]
         strategy = orchestrated["strategy"]
@@ -574,6 +590,8 @@ async def response_agent_node(state: AgentState) -> dict:
             temperature=0.7,
             max_tokens=300,  # Reduced to stay within OpenRouter free-tier limits
             recent_responses=recent_buddy_responses,
+            user_signal=state.get("user_signal"),
+            response_plan=state.get("response_plan"),
         )
         text = gen_res.get("text", "")
         reasoning = gen_res.get("reasoning", "")

@@ -185,6 +185,7 @@ ANGER_WORDS = [
     "ruined", "cheated", "betrayed", "lied", "deceived", "manipulated", "abusive",
     "disgusting", "disgusted", "enraged", "outraged", "livid", "infuriated",
     "fed up", "sick of", "can't stand", "pissed", "rage", "wasted my time",
+    "frustrated", "frustration", "annoyance", "irritation", "irritated", "mad", "angry",
 ]
 SAD_WORDS = [
     "breakup", "broke up", "heartbroken", "heartbreak", "alone", "cry", "crying",
@@ -505,7 +506,24 @@ class EmotionService:
         confidence_score = local_blend[sorted_indices[0]]
         secondary_emotion = emotions_order[sorted_indices[1]] if local_blend[sorted_indices[1]] >= 0.10 else None
 
-        if detected_emotion == "Neutral" and base_prediction != "Neutral" and base_confidence >= 0.35:
+        from app.services.emotional_intelligence import detect_explicit_emotion
+        explicits = detect_explicit_emotion(message)
+        if explicits:
+            mapping = {
+                "frustration": "Frustration",
+                "anger": "Frustration",
+                "sadness": "Sadness",
+                "anxiety": "Anxiety",
+                "fear": "Anxiety",
+                "loneliness": "Loneliness",
+                "joy": "Happy",
+                "stress": "Stress"
+            }
+            mapped = mapping.get(explicits[0])
+            if mapped:
+                detected_emotion = mapped
+                confidence_score = 0.95
+        elif detected_emotion == "Neutral" and base_prediction != "Neutral" and base_confidence >= 0.35:
             detected_emotion = base_prediction
             confidence_score = base_confidence
 
@@ -756,8 +774,39 @@ class EmotionService:
             confidence_score = override_confidence
             secondary_emotion = override_secondary
 
-        # Safety net: if final is Neutral but keyword boost detected a strong emotion with high confidence
-        if matched_emotion == "Neutral" and base_prediction != "Neutral" and base_confidence >= 0.35:
+        from app.services.emotional_intelligence import detect_explicit_emotion
+        explicits = detect_explicit_emotion(message)
+        if explicits:
+            mapping = {
+                "frustration": "Frustration",
+                "anger": "Frustration",
+                "sadness": "Sadness",
+                "anxiety": "Anxiety",
+                "fear": "Anxiety",
+                "loneliness": "Loneliness",
+                "joy": "Happy",
+                "stress": "Stress"
+            }
+            mapped = mapping.get(explicits[0])
+            if mapped:
+                matched_emotion = mapped
+                confidence_score = 0.95
+                
+                # Update blended_scores
+                mapped_for_idx = matched_emotion
+                if mapped_for_idx == "Stress":
+                    mapped_for_idx = "Frustration"
+                elif mapped_for_idx == "Happy":
+                    mapped_for_idx = "Happiness"
+                try:
+                    target_idx = emotions_order.index(mapped_for_idx)
+                    blended_scores = [0.0] * 9
+                    blended_scores[target_idx] = 0.95
+                    blended_scores[8] = 0.05
+                except ValueError:
+                    pass
+
+        elif matched_emotion == "Neutral" and base_prediction != "Neutral" and base_confidence >= 0.35:
             logger.warning(
                 f"[Blended Anti-Neutral Override] Final is Neutral but keyword boost says "
                 f"{base_prediction} ({base_confidence:.2f}). Overriding to {base_prediction}."

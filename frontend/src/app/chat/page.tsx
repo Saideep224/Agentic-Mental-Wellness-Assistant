@@ -680,32 +680,34 @@ export default function ChatPage() {
       <Navbar />
 
       <div className="flex-1 flex pt-20 overflow-hidden relative" style={{ zIndex: 1 }}>
-
+        {/* ── Quiet Focus Corridor Radial Overlay ── */}
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            zIndex: 0,
+            background: 'radial-gradient(ellipse at center, rgba(4, 6, 20, 0.94) 0%, rgba(4, 6, 20, 0.84) 38%, rgba(4, 6, 20, 0.52) 68%, transparent 100%)',
+          }}
+        />
 
         {/* Main chat area */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 relative z-10">
           {/* Chat header */}
           <div
-            className="flex items-center justify-between px-4 py-3 border-b"
+            className="flex items-center justify-between px-4 py-2.5 border-b"
             style={{ borderColor: 'var(--glass-border)' }}
           >
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <EsonaLogo 
-                size={36} 
+                size={34} 
                 showParticles={false} 
                 glowIntensity="low" 
                 aiState={isStreaming ? 'speaking' : isLoading ? 'listening' : 'idle'}
               />
-              <div className="min-w-0 flex flex-col">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                    Esona
-                  </p>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[var(--text-muted)] flex-shrink-0">
-                    AI Wellness Companion
-                  </span>
-                </div>
-                <p className="text-xs flex items-center gap-1" style={{ color: 'var(--accent-emerald)' }}>
+              <div className="min-w-0 flex items-center gap-2.5">
+                <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                  Esona
+                </p>
+                <p className="text-[10px] flex items-center gap-1" style={{ color: 'var(--accent-emerald)' }}>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
                   Online
                 </p>
@@ -812,163 +814,221 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Messages area */}
-          <div className="flex-1 overflow-hidden">
-            <ChatContainer>
-              {!user?.onboardingCompleted && !welcomeDismissed && messages.length === 0 && !isLoading ? (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex flex-col items-center justify-center h-full text-center py-16 px-4"
-                >
-                  {/* Esona logo */}
-                  <div className="mb-6">
-                    <EsonaLogo size={64} showParticles glowIntensity="medium" aiState="idle" />
-                  </div>
-
-                  {/* Greeting */}
-                  <h2
-                    className="text-2xl font-bold mb-2 glow-text"
-                    style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
+          {/* Messages & Input Area relative wrapper */}
+          <div className="flex-1 relative overflow-hidden flex flex-col">
+            {/* Messages area */}
+            <div className="flex-1 overflow-hidden">
+              <ChatContainer>
+                {!user?.onboardingCompleted && !welcomeDismissed && messages.length === 0 && !isLoading ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-col items-center justify-center h-full text-center py-16 px-4"
                   >
-                    Hi{user?.name ? `, ${user.name}` : ''}! I'm Buddy 💙
-                  </h2>
-                  <p
-                    className="text-base mb-1 max-w-sm"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
-                    How are you feeling today?
-                  </p>
-                  <p className="text-sm mb-8 max-w-xs" style={{ color: 'var(--text-secondary)' }}>
-                    You can tell me anything — I'm here for you. No pressure.
-                  </p>
+                    {/* Esona logo */}
+                    <div className="mb-6">
+                      <EsonaLogo size={64} showParticles glowIntensity="medium" aiState="idle" />
+                    </div>
 
-                  {/* Action buttons */}
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <motion.button
-                      whileHover={{ scale: 1.03 }}
-                      whileTap={{ scale: 0.97 }}
-                      onClick={() => router.push('/onboarding')}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer"
-                      style={{
-                        background: 'linear-gradient(135deg, rgba(34,211,238,0.15), rgba(99,102,241,0.1))',
-                        border: '1px solid rgba(34,211,238,0.25)',
-                        color: 'var(--accent-cyan)',
-                      }}
+                    {/* Greeting */}
+                    <h2
+                      className="text-2xl font-bold mb-2 glow-text"
+                      style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
                     >
-                      <UserCheck size={16} />
-                      Tell me about yourself
-                    </motion.button>
-
-                    <motion.button
-                      whileHover={{ scale: 1.03 }}
-                      whileTap={{ scale: 0.97 }}
-                      onClick={handleSkipOnboarding}
-                      disabled={skipLoading}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 cursor-pointer"
-                      style={{
-                        background: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        color: 'var(--text-secondary)',
-                      }}
+                      Hi{user?.name ? `, ${user.name}` : ''}! I'm Buddy 💙
+                    </h2>
+                    <p
+                      className="text-base mb-1 max-w-sm"
+                      style={{ color: 'var(--text-primary)' }}
                     >
-                      {skipLoading ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <ArrowRight size={14} />
-                      )}
-                      {skipLoading ? 'Starting...' : 'Skip — just chat'}
-                    </motion.button>
-                  </div>
+                      How are you feeling today?
+                    </p>
+                    <p className="text-sm mb-8 max-w-xs" style={{ color: 'var(--text-secondary)' }}>
+                      You can tell me anything — I'm here for you. No pressure.
+                    </p>
 
-                  <p className="text-xs mt-8" style={{ color: 'var(--text-muted)' }}>
-                    Everything here stays between us. 💙
-                  </p>
-                </motion.div>
-              ) : (
-                <>
-                  {messages.map((message) => {
-                    return (
-                      <div key={message.id} className="space-y-3">
-                        <MessageBubble message={message} />
-                      </div>
-                    );
-                  })}
-                  <AnimatePresence>
-                    {tempSystemEvent && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="flex justify-center my-4"
+                    {/* Action buttons */}
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <motion.button
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => router.push('/onboarding')}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer"
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(34,211,238,0.15), rgba(99,102,241,0.1))',
+                          border: '1px solid rgba(34,211,238,0.25)',
+                          color: 'var(--accent-cyan)',
+                        }}
                       >
-                        <span className="px-4 py-1.5 rounded-full text-xs font-medium bg-white/5 border border-white/10 text-[var(--text-secondary)] shadow-sm backdrop-blur-md">
-                          {tempSystemEvent.text}
-                        </span>
-                      </motion.div>
-                    )}
-                    {((isLoading && !isStreaming) || streamPlaceholder) && (
-                      <TypingIndicator agentId={typingAgentId || activeAgentId} />
-                    )}
-                    {staggerTypingAgentId && (
-                      <TypingIndicator agentId={staggerTypingAgentId} />
-                    )}
-                  </AnimatePresence>
-                </>
-              )}
-            </ChatContainer>
+                        <UserCheck size={16} />
+                        Tell me about yourself
+                      </motion.button>
+
+                      <motion.button
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={handleSkipOnboarding}
+                        disabled={skipLoading}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 cursor-pointer"
+                        style={{
+                          background: 'rgba(255,255,255,0.04)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        {skipLoading ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <ArrowRight size={14} />
+                        )}
+                        {skipLoading ? 'Starting...' : 'Skip — just chat'}
+                      </motion.button>
+                    </div>
+
+                    <p className="text-xs mt-8" style={{ color: 'var(--text-muted)' }}>
+                      Everything here stays between us. 💙
+                    </p>
+                  </motion.div>
+                ) : (
+                  <>
+                    {(() => {
+                      const groupedMessages = messages.map((msg, idx) => {
+                        const prevMsg = idx > 0 ? messages[idx - 1] : null;
+                        const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null;
+                        
+                        const isSameSenderAsPrev = prevMsg && prevMsg.role === msg.role;
+                        const isSameSenderAsNext = nextMsg && nextMsg.role === msg.role;
+                        
+                        const tCurrent = new Date(msg.timestamp).getTime();
+                        const tPrev = prevMsg ? new Date(prevMsg.timestamp).getTime() : 0;
+                        const tNext = nextMsg ? new Date(nextMsg.timestamp).getTime() : 0;
+                        
+                        const isWithinTimeWindowPrev = prevMsg && (tCurrent - tPrev) <= 5 * 60 * 1000;
+                        const isWithinTimeWindowNext = nextMsg && (tNext - tCurrent) <= 5 * 60 * 1000;
+                        
+                        const isGroupStart = !(isSameSenderAsPrev && isWithinTimeWindowPrev);
+                        const isGroupEnd = !(isSameSenderAsNext && isWithinTimeWindowNext);
+                        
+                        let spacingClass = 'mt-6';
+                        if (idx === 0) {
+                          spacingClass = 'mt-2';
+                        } else if (isSameSenderAsPrev && isWithinTimeWindowPrev) {
+                          spacingClass = 'mt-2.5';
+                        } else if (prevMsg && (tCurrent - tPrev) > 30 * 60 * 1000) {
+                          spacingClass = 'mt-11';
+                        } else {
+                          spacingClass = 'mt-8';
+                        }
+                        
+                        return {
+                          message: msg,
+                          isGroupStart,
+                          isGroupEnd,
+                          spacingClass,
+                        };
+                      });
+
+                      return groupedMessages.map(({ message, isGroupStart, isGroupEnd, spacingClass }) => (
+                        <div key={message.id} className={spacingClass}>
+                          <MessageBubble 
+                            message={message} 
+                            isGroupStart={isGroupStart} 
+                            isGroupEnd={isGroupEnd} 
+                          />
+                        </div>
+                      ));
+                    })()}
+                    
+                    <AnimatePresence>
+                      {tempSystemEvent && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          className="flex justify-center my-4"
+                        >
+                          <span className="px-4 py-1.5 rounded-full text-xs font-medium bg-white/5 border border-white/10 text-[var(--text-secondary)] shadow-sm backdrop-blur-md">
+                            {tempSystemEvent.text}
+                          </span>
+                        </motion.div>
+                      )}
+                      {((isLoading && !isStreaming) || streamPlaceholder) && (
+                        <TypingIndicator agentId={typingAgentId || activeAgentId} />
+                      )}
+                      {staggerTypingAgentId && (
+                        <TypingIndicator agentId={staggerTypingAgentId} />
+                      )}
+                    </AnimatePresence>
+                  </>
+                )}
+              </ChatContainer>
+            </div>
+
+            {/* Soft Bottom Fade Overlay */}
+            <div 
+              className="absolute bottom-0 left-0 right-0 h-36 pointer-events-none z-10"
+              style={{
+                background: 'linear-gradient(to top, rgba(4, 6, 20, 0.95) 0%, rgba(4, 6, 20, 0.8) 40%, rgba(4, 6, 20, 0.2) 75%, transparent 100%)',
+              }}
+            />
+
+            {/* Floating Composer & Banners */}
+            <div className="absolute bottom-0 left-0 right-0 z-20 flex flex-col pointer-events-none">
+              <div className="pointer-events-auto">
+                {/* Retry / error banner */}
+                <AnimatePresence>
+                  {chatError && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      className="mx-auto w-[calc(100%-2rem)] max-w-3xl mb-3 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm"
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                        color: 'rgba(252, 165, 165, 1)',
+                      }}
+                    >
+                      <AlertCircle size={14} className="flex-shrink-0" />
+                      <span className="flex-1">{chatError}</span>
+                      <button
+                        onClick={retryLastMessage}
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer hover:bg-white/10"
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          color: 'rgba(252, 165, 165, 1)',
+                        }}
+                      >
+                        <RefreshCw size={12} />
+                        Retry
+                      </button>
+                    </motion.div>
+                  )}
+                  {conversationLoadFailed && !chatError && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      className="mx-auto w-[calc(100%-2rem)] max-w-3xl mb-3 flex items-center gap-2 px-4 py-2 rounded-xl text-xs"
+                      style={{
+                        background: 'rgba(251, 191, 36, 0.06)',
+                        border: '1px solid rgba(251, 191, 36, 0.15)',
+                        color: 'rgba(253, 224, 71, 0.8)',
+                      }}
+                    >
+                      <AlertCircle size={12} className="flex-shrink-0" />
+                      <span>Couldn&apos;t load chat history — you can still start chatting.</span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              <div className="pointer-events-auto">
+                <ChatInput ref={inputRef} onSend={handleSend} disabled={isLoading || isCreating} />
+              </div>
+            </div>
           </div>
-
-          {/* Retry / error banner */}
-          <AnimatePresence>
-            {chatError && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -5 }}
-                className="mx-auto w-[calc(100%-2rem)] max-w-3xl mb-2 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm"
-                style={{
-                  background: 'rgba(239, 68, 68, 0.08)',
-                  border: '1px solid rgba(239, 68, 68, 0.2)',
-                  color: 'rgba(252, 165, 165, 1)',
-                }}
-              >
-                <AlertCircle size={14} className="flex-shrink-0" />
-                <span className="flex-1">{chatError}</span>
-                <button
-                  onClick={retryLastMessage}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer hover:bg-white/10"
-                  style={{
-                    background: 'rgba(239, 68, 68, 0.15)',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    color: 'rgba(252, 165, 165, 1)',
-                  }}
-                >
-                  <RefreshCw size={12} />
-                  Retry
-                </button>
-              </motion.div>
-            )}
-            {conversationLoadFailed && !chatError && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -5 }}
-                className="mx-auto w-[calc(100%-2rem)] max-w-3xl mb-2 flex items-center gap-2 px-4 py-2 rounded-xl text-xs"
-                style={{
-                  background: 'rgba(251, 191, 36, 0.06)',
-                  border: '1px solid rgba(251, 191, 36, 0.15)',
-                  color: 'rgba(253, 224, 71, 0.8)',
-                }}
-              >
-                <AlertCircle size={12} className="flex-shrink-0" />
-                <span>Couldn&apos;t load chat history — you can still start chatting.</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Input */}
-          <ChatInput ref={inputRef} onSend={handleSend} disabled={isLoading || isCreating} />
         </div>
 
         {/* Live Agent Debug Panel */}

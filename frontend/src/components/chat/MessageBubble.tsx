@@ -7,6 +7,8 @@ import EmotionalAura from './EmotionalAura';
 
 interface MessageBubbleProps {
   message: Message;
+  isGroupStart?: boolean;
+  isGroupEnd?: boolean;
 }
 
 const getEmotionDisplay = (emotion: string | undefined, emotionScore?: number, moodScore?: number) => {
@@ -67,7 +69,7 @@ const getEmotionDisplay = (emotion: string | undefined, emotionScore?: number, m
     ? emotionScore 
     : (moodScore !== undefined && moodScore !== null ? moodScore : null);
 
-  const percentage = score !== null ? ` (${Math.round(score * 100)}%)` : '';
+  const percentage = score !== null ? `${Math.round(score * 100)}%` : '';
   
   return { emoji, label, percentage };
 };
@@ -84,7 +86,7 @@ const agentConfig: Record<string, { emoji: string; name: string; gradient: strin
   relationship: { emoji: '💜', name: 'Relationship Coach', gradient: 'linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)', border: 'rgba(168, 85, 247, 0.3)' },
 };
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+export default function MessageBubble({ message, isGroupStart = true, isGroupEnd = true }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isSystem = (message.role as string) === 'system' || message.sender_type === 'system';
   const senderType = isSystem ? 'system' : (isUser ? 'user' : 'buddy');
@@ -118,32 +120,39 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
     <motion.div
       initial={{ opacity: 0, x: isUser ? 20 : -20, y: 10 }}
       animate={{ opacity: 1, x: 0, y: 0 }}
-      whileHover={{ y: -1 }}
+      whileHover={{ y: -0.5 }}
       transition={{ duration: 0.35, ease: 'easeOut' }}
       className={`flex items-end gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
     >
-      {/* AI avatar with aura */}
+      {/* Spacer or AI avatar with aura */}
       {!isUser && (
-        <div className="flex-shrink-0 mb-6">
-          <EmotionalAura emotion={message.emotionDetected || 'neutral'}>
-            <div
-              className="w-9 h-9 rounded-full flex items-center justify-center text-lg select-none"
-              style={{
-                background: config ? config.gradient : 'var(--gradient-primary)',
-                boxShadow: `0 0 12px ${config ? config.border : 'rgba(167, 139, 250, 0.2)'}`,
-              }}
-            >
-              {config ? config.emoji : '💙'}
-            </div>
-          </EmotionalAura>
+        <div className="flex-shrink-0 mb-6 w-9">
+          {isGroupStart && (
+            <EmotionalAura emotion={message.emotionDetected || 'neutral'}>
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center text-lg select-none"
+                style={{
+                  background: config ? config.gradient : 'var(--gradient-primary)',
+                  boxShadow: `0 0 12px ${config ? config.border : 'rgba(167, 139, 250, 0.2)'}`,
+                }}
+              >
+                {config ? config.emoji : '💙'}
+              </div>
+            </EmotionalAura>
+          )}
         </div>
       )}
 
       {/* Message content */}
-      <div className={`max-w-[75%] ${isUser ? 'order-1' : ''}`}>
-        {!isUser && config && (
+      <div 
+        className={`w-fit ${isUser ? 'order-1' : ''}`}
+        style={{
+          maxWidth: isUser ? '60%' : '70%',
+        }}
+      >
+        {!isUser && config && isGroupStart && (
           <div 
-            className="text-xs font-semibold mb-1 px-1 select-none flex items-center gap-1.5" 
+            className="text-xs font-semibold mb-1.5 px-1 select-none flex items-center gap-1.5" 
             style={{ color: 'var(--text-secondary)' }}
           >
             <span>{config.emoji}</span>
@@ -154,16 +163,16 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           className="px-4 py-3 rounded-2xl text-sm leading-relaxed transition-all duration-300 hover:brightness-105"
           style={{
             background: isUser
-              ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.15) 0%, rgba(59, 130, 246, 0.08) 100%)'
-              : 'linear-gradient(135deg, rgba(167, 139, 250, 0.1) 0%, rgba(244, 114, 182, 0.05) 100%)',
+              ? 'rgba(20, 35, 75, 0.8)'
+              : 'rgba(10, 16, 32, 0.75)',
             border: isUser
-              ? '1px solid rgba(56, 189, 248, 0.25)'
-              : '1px solid rgba(167, 139, 250, 0.18)',
+              ? '1px solid rgba(34, 211, 238, 0.25)'
+              : '1px solid rgba(123, 140, 255, 0.15)',
             boxShadow: isUser
-              ? '0 4px 15px rgba(56, 189, 248, 0.04)'
-              : '0 4px 15px rgba(167, 139, 250, 0.03)',
-            borderBottomRightRadius: isUser ? '6px' : '18px',
-            borderBottomLeftRadius: isUser ? '18px' : '6px',
+              ? '0 4px 20px rgba(0, 0, 0, 0.2)'
+              : '0 4px 20px rgba(0, 0, 0, 0.25)',
+            borderBottomRightRadius: isUser ? '4px' : '20px',
+            borderBottomLeftRadius: isUser ? '20px' : '4px',
             color: 'var(--text-primary)',
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
@@ -181,35 +190,28 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
         </div>
 
         {/* Timestamp & emotion */}
-        <div
-          className={`flex flex-col gap-1 mt-1.5 px-1 ${
-            isUser ? 'items-end' : 'items-start'
-          }`}
-        >
-          {emotionDisplay && (
-            <div
-              className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full mb-0.5"
-              style={{
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.05)',
-                color: 'var(--text-muted)',
-                backdropFilter: 'blur(4px)',
-              }}
-            >
-              <span className="opacity-75">Detected Emotion:</span>
-              <span className="font-semibold text-[var(--text-primary)] flex items-center gap-1">
+        {isGroupEnd && (
+          <div
+            className={`flex flex-col gap-1 mt-1 px-1 select-none ${
+              isUser ? 'items-end' : 'items-start'
+            }`}
+          >
+            {emotionDisplay && (
+              <div
+                className="flex items-center gap-1 text-[10px] text-slate-500 font-medium cursor-help"
+                title={emotionDisplay.percentage ? `Confidence: ${emotionDisplay.percentage}` : undefined}
+              >
                 <span>{emotionDisplay.emoji}</span>
-                <span>{emotionDisplay.label}</span>
-                {emotionDisplay.percentage && (
-                  <span className="opacity-75 font-normal text-[10px]">{emotionDisplay.percentage}</span>
-                )}
-              </span>
-            </div>
-          )}
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {formatMessageTime(message.timestamp)}
-          </span>
-        </div>
+                <span className="hover:text-slate-300 transition-colors uppercase tracking-wider text-[9px]">
+                  {emotionDisplay.label.toLowerCase()}
+                </span>
+              </div>
+            )}
+            <span className="text-[10px] text-slate-500 font-medium">
+              {formatMessageTime(message.timestamp)}
+            </span>
+          </div>
+        )}
       </div>
     </motion.div>
   );

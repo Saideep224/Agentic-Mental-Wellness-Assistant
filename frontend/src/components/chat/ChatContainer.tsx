@@ -56,7 +56,7 @@ export default function ChatContainer({ children }: ChatContainerProps) {
           scrollBehavior: 'auto',
         }}
       >
-        <div className="max-w-3xl mx-auto w-full space-y-4">
+        <div className="max-w-[1120px] mx-auto w-full space-y-4 pb-36">
           {children}
         </div>
       </div>

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, KeyboardEvent, forwardRef } from 'react';
 import { motion } from 'framer-motion';
-import { Send } from 'lucide-react';
+import { ArrowUp } from 'lucide-react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -12,6 +12,7 @@ interface ChatInputProps {
 const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
   ({ onSend, disabled = false }, ref) => {
     const [input, setInput] = useState('');
+    const [isFocused, setIsFocused] = useState(false);
     const localRef = useRef<HTMLTextAreaElement>(null);
 
     // Merge forwarded ref and local ref
@@ -25,11 +26,16 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
     };
 
     // Auto-resize textarea
-    useEffect(() => {
-      if (localRef.current) {
-        localRef.current.style.height = 'auto';
-        localRef.current.style.height = `${Math.min(localRef.current.scrollHeight, 150)}px`;
+    const adjustHeight = () => {
+      const textarea = localRef.current;
+      if (textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
       }
+    };
+
+    useEffect(() => {
+      adjustHeight();
     }, [input]);
 
     const handleSend = () => {
@@ -45,28 +51,31 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
     };
 
     const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         handleSend();
       }
     };
 
+    const hasText = input.trim().length > 0;
+
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.2 }}
-        className="px-4 sm:px-6 py-4 max-w-3xl mx-auto w-full"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      <div 
+        className="w-full px-4 sm:px-6 pb-6 relative z-10 mx-auto max-w-[1120px] select-none"
       >
         <div
-          className="flex items-end gap-3 p-3 rounded-2xl transition-all duration-300"
+          className="flex items-end gap-3 p-2.5 transition-all duration-300 relative"
           style={{
-            background: 'var(--glass-bg)',
-            border: input.trim().length > 0 ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid var(--glass-border)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            boxShadow: input.trim().length > 0 ? '0 0 25px rgba(56, 189, 248, 0.12), 0 0 15px rgba(167, 139, 250, 0.08)' : 'none',
+            borderRadius: '28px',
+            background: 'rgba(6, 14, 32, 0.90)',
+            backdropFilter: 'blur(18px)',
+            WebkitBackdropFilter: 'blur(18px)',
+            border: isFocused
+              ? '1px solid rgba(34, 211, 238, 0.35)'
+              : '1px solid rgba(110, 150, 210, 0.18)',
+            boxShadow: isFocused
+              ? '0 0 25px rgba(34, 211, 238, 0.12), 0 14px 45px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.025)'
+              : '0 14px 45px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.025)',
           }}
         >
           <textarea
@@ -74,43 +83,49 @@ const ChatInput = forwardRef<HTMLTextAreaElement, ChatInputProps>(
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type your message..."
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder="Message Esona..."
             disabled={disabled}
             rows={1}
             inputMode="text"
-            className="flex-1 bg-transparent resize-none text-sm leading-relaxed outline-none px-2 py-1.5"
+            aria-label="Message Esona"
+            className="flex-1 bg-transparent resize-none text-sm leading-relaxed outline-none pl-4 pr-2 py-2"
             style={{
               color: 'var(--text-primary)',
-              maxHeight: '150px',
+              minHeight: '24px',
+              maxHeight: '180px',
             }}
           />
 
           <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+            whileHover={hasText && !disabled ? { scale: 1.04, y: -0.5 } : {}}
+            whileTap={hasText && !disabled ? { scale: 0.96 } : {}}
             onClick={handleSend}
-            disabled={!input.trim() || disabled}
-            className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 cursor-pointer"
+            disabled={!hasText || disabled}
+            aria-label="Send message"
+            className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer"
             style={{
               background:
-                input.trim() && !disabled
-                  ? 'var(--gradient-primary)'
-                  : 'rgba(255, 255, 255, 0.05)',
+                hasText && !disabled
+                  ? 'rgba(34, 211, 238, 0.15)'
+                  : 'rgba(255, 255, 255, 0.03)',
+              border:
+                hasText && !disabled
+                  ? '1px solid rgba(34, 211, 238, 0.4)'
+                  : '1px solid rgba(255, 255, 255, 0.05)',
               color:
-                input.trim() && !disabled
-                  ? 'var(--bg-primary)'
-                  : 'var(--text-muted)',
-              opacity: input.trim() && !disabled ? 1 : 0.5,
+                hasText && !disabled
+                  ? '#22d3ee'
+                  : 'rgba(255, 255, 255, 0.2)',
+              opacity: hasText && !disabled ? 1 : 0.4,
+              boxShadow: hasText && !disabled ? '0 0 12px rgba(34, 211, 238, 0.2)' : 'none',
             }}
           >
-            <Send size={16} />
+            <ArrowUp size={16} strokeWidth={2.5} />
           </motion.button>
         </div>
-
-        <p className="text-center mt-2 text-[10px] sm:text-xs" style={{ color: 'var(--text-muted)' }}>
-          Press Enter to send · Shift+Enter for new line
-        </p>
-      </motion.div>
+      </div>
     );
   }
 );

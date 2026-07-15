@@ -30,8 +30,8 @@ export default function ScrollProgress({ scrollYProgress, activeScene }: Props) 
     // Map clicked index to warped physical progress offset:
     const warpedVal = index / (SCENE_NAMES.length - 1);
     const physicalProgress = warpedVal <= 0.125
-      ? warpedVal * 0.075 / 0.125
-      : 0.075 + (warpedVal - 0.125) * 0.925 / 0.875;
+      ? warpedVal * 0.07 / 0.125
+      : 0.07 + (warpedVal - 0.125) * 0.93 / 0.875;
       
     const targetScroll = docHeight * physicalProgress;
     

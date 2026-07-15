@@ -12,7 +12,7 @@ export default function HiddenThoughtsScene({ progress, isActive }: Props) {
   const shouldReduceMotion = useReducedMotion();
 
   // Scene visible range: [0.125, 0.25]
-  const opacity = useTransform(progress, [0, 0.12, 0.13, 0.245, 0.255, 1], [0, 0, 1, 1, 0, 0], { clamp: true });
+  const opacity = useTransform(progress, [0, 0.08, 0.125, 0.245, 0.255, 1], [0, 0, 1, 1, 0, 0], { clamp: true });
   
   // Parallax shifts for floating thoughts based on scroll
   const thoughtY1 = useTransform(progress, [0.125, 0.25], [50, -50], { clamp: true });

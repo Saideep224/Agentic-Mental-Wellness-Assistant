@@ -29,14 +29,14 @@ export default function CinematicHome() {
 
   // Apply fluid spring physics to scroll progress (simulating scrub: 2.0)
   const smoothProgress = useSpring(scrollYProgress, {
-    stiffness: 70,
-    damping: 30,
+    stiffness: 90,
+    damping: 25,
     restDelta: 0.0001
   });
 
-  // Warp the progress: Scene 01 gets a shorter range (0.075 instead of 0.125, a 40% reduction)
-  // Maps physical scroll progress [0, 0.075, 1.0] -> warped progress [0, 0.125, 1.0]
-  const warpedProgress = useTransform(smoothProgress, [0, 0.075, 1], [0, 0.125, 1]);
+  // Warp the progress: Scene 01 gets a shorter range (0.07 instead of 0.125, a 44% reduction)
+  // Maps physical scroll progress [0, 0.07, 1.0] -> warped progress [0, 0.125, 1.0]
+  const warpedProgress = useTransform(smoothProgress, [0, 0.07, 1], [0, 0.125, 1]);
 
   // Dynamically update the active scene index based on warped progress
   useMotionValueEvent(warpedProgress, "change", (latest) => {
@@ -47,7 +47,7 @@ export default function CinematicHome() {
 
 
   return (
-    <div ref={containerRef} className="relative h-[2000vh] w-full bg-transparent select-none">
+    <div ref={containerRef} className="relative h-[800vh] w-full bg-transparent select-none">
       {/* Sticky Viewport frame */}
       <div className="sticky top-0 h-screen w-full overflow-hidden flex items-center justify-center">
         

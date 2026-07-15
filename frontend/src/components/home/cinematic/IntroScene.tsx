@@ -15,9 +15,9 @@ export default function IntroScene({ progress, isActive }: Props) {
   const { isAuthenticated } = useAuth();
 
   // Opacity: fully visible at load, fades out as we scroll to Scene 2
-  const opacity = useTransform(progress, [0, 0.08, 0.12, 1], [1, 1, 0, 0], { clamp: true });
-  const y = useTransform(progress, [0, 0.12], [0, shouldReduceMotion ? 0 : -35]);
-  const scale = useTransform(progress, [0, 0.12], [1, shouldReduceMotion ? 1 : 0.98]);
+  const opacity = useTransform(progress, [0, 0.015, 0.10, 1], [1, 1, 0, 0], { clamp: true });
+  const y = useTransform(progress, [0, 0.10], [0, shouldReduceMotion ? 0 : -35]);
+  const scale = useTransform(progress, [0, 0.10], [1, shouldReduceMotion ? 1 : 0.98]);
 
   return (
     <motion.div
@@ -82,11 +82,13 @@ export default function IntroScene({ progress, isActive }: Props) {
           className="absolute bottom-12 flex flex-col items-center gap-2 pointer-events-auto cursor-pointer"
           onClick={() => {
             if (typeof window !== 'undefined') {
+              const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+              const targetScroll = docHeight * 0.07;
               const globalLenis = (window as any).lenis;
               if (globalLenis) {
-                globalLenis.scrollTo(window.innerHeight * 1.5, { duration: 1.5 });
+                globalLenis.scrollTo(targetScroll, { duration: 1.5 });
               } else {
-                window.scrollTo({ top: window.innerHeight * 1.5, behavior: 'smooth' });
+                window.scrollTo({ top: targetScroll, behavior: 'smooth' });
               }
             }
           }}

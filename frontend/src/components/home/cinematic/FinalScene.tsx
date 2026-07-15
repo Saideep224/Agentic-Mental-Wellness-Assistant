@@ -48,7 +48,7 @@ export default function FinalScene({ progress, isActive }: Props) {
     // Index 3 of the 8 scenes (indices 0..7), so warped progress is 3/7
     const warpedVal = 3 / 7;
     // Map to physical progress using Segment 2 of the warp:
-    const physicalProgress = 0.075 + (warpedVal - 0.125) * 0.925 / 0.875;
+    const physicalProgress = 0.07 + (warpedVal - 0.125) * 0.93 / 0.875;
     
     const targetScroll = docHeight * physicalProgress;
     window.scrollTo({

@@ -272,6 +272,7 @@ export default function ChatPage() {
   const pathname = usePathname();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const mountTimeRef = useRef<number>(Date.now());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomSentinelRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef<boolean>(true);
@@ -450,10 +451,41 @@ export default function ChatPage() {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           scrollToBottom('auto');
+          const t7 = Date.now();
+          console.log(`[PERF] T7 - Initial bottom scroll positioning complete: ${t7 - mountTimeRef.current}ms`);
         });
       });
     }
   }, [isLoading, messages.length, scrollToBottom]);
+
+  // Performance loggers for T1, T2, T5, T6
+  useEffect(() => {
+    if (token && !(window as any).__esona_t1) {
+      (window as any).__esona_t1 = Date.now();
+      console.log(`[PERF] T1 - Auth session restored: ${(window as any).__esona_t1 - mountTimeRef.current}ms`);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (user && !(window as any).__esona_t2) {
+      (window as any).__esona_t2 = Date.now();
+      console.log(`[PERF] T2 - User/profile ready: ${(window as any).__esona_t2 - mountTimeRef.current}ms`);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (messages.length > 0 && !(window as any).__esona_t5) {
+      (window as any).__esona_t5 = Date.now();
+      console.log(`[PERF] T5 - Messages normalized: ${(window as any).__esona_t5 - mountTimeRef.current}ms`);
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    if (messages.length > 0 && !(window as any).__esona_t6) {
+      (window as any).__esona_t6 = Date.now();
+      console.log(`[PERF] T6 - First messages rendered: ${(window as any).__esona_t6 - mountTimeRef.current}ms`);
+    }
+  }, [messages]);
 
   // Track new messages (smooth scroll on user send, auto on bot stream/chunk)
   useEffect(() => {
@@ -537,8 +569,14 @@ export default function ChatPage() {
   const loadConversations = useCallback(async () => {
     const token = getToken();
     if (!token) return;
+    const t3 = Date.now();
+    (window as any).__esona_t3 = t3;
+    console.log(`[PERF] T3 - Conversation request started: ${t3 - mountTimeRef.current}ms`);
     try {
       const convos = await api.getConversations(token);
+      const t4 = Date.now();
+      (window as any).__esona_t4 = t4;
+      console.log(`[PERF] T4 - Conversation response received: ${t4 - mountTimeRef.current}ms (Request took ${t4 - t3}ms)`);
       setConversations(convos);
       setConversationLoadFailed(false);
       if (convos.length > 0) {
@@ -553,16 +591,20 @@ export default function ChatPage() {
     }
   }, [activeConversationId]);
 
-  // Load conversations — hide page loader only after data arrives (min 1000ms)
+  // Load conversations — no artificial delays, instant load & cache background refresh
   useEffect(() => {
     if (!mounted || !token) return;
-    const t0 = Date.now();
+    
+    // If cached conversations already exist in state, bypass full-page loader immediately
+    if (conversations.length > 0) {
+      setIsLoadingPage(false);
+      loadConversations(); // silent background refresh
+      return;
+    }
+
     loadConversations().finally(() => {
-      const elapsed = Date.now() - t0;
-      const remaining = Math.max(0, 1000 - elapsed);
-      setTimeout(() => setIsLoadingPage(false), remaining);
+      setIsLoadingPage(false);
     });
-    // Only run once when token becomes available — subsequent chat switches don't re-show the page loader
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, token]);
 
@@ -706,40 +748,18 @@ export default function ChatPage() {
         ['--chat-bg-dim' as any]: `${bgPreferences.enabled ? bgPreferences.dim / 100 : 1}`,
       }}
     >
-      {/* ── Cinematic Background Video Layer ── */}
+      {/* ── Background Blur & Dim Overlay Layer ── */}
       {bgPreferences.enabled && (
         <div
-          className="absolute inset-0 transition-transform duration-300 chat-bg-layer"
+          className="absolute inset-0 pointer-events-none"
           style={{
             zIndex: 0,
-            filter: 'blur(var(--chat-bg-blur))',
-            transform: bgPreferences.blur > 0 ? 'scale(1.03)' : 'scale(1)',
-            pointerEvents: 'none',
-            overflow: 'hidden',
+            backdropFilter: `blur(${bgPreferences.blur}px)`,
+            WebkitBackdropFilter: `blur(${bgPreferences.blur}px)`,
+            backgroundColor: `rgba(4, 6, 20, ${bgPreferences.dim / 100})`,
           }}
-        >
-          <video
-            autoPlay
-            loop
-            muted
-            playsInline
-            poster="/background.png"
-            className="w-full h-full object-cover animate-fade-in"
-            style={{ opacity: 0.95 }}
-          >
-            <source src={videoSrc} type="video/mp4" />
-          </video>
-        </div>
+        />
       )}
-
-      {/* ── Background Dim Overlay Layer ── */}
-      <div
-        className="absolute inset-0 pointer-events-none transition-colors duration-200"
-        style={{
-          zIndex: 1,
-          backgroundColor: 'rgba(4, 6, 20, var(--chat-bg-dim))',
-        }}
-      />
 
       <Navbar />
 

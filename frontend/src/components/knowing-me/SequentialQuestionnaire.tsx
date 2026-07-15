@@ -435,20 +435,9 @@ export default function SequentialQuestionnaire({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[100] h-dvh overflow-hidden flex flex-col"
-      style={{ background: '#040614' }}
     >
-      {/* Cinematic Background */}
+      {/* Cinematic Background Overlays */}
       <div className="absolute inset-0 z-0">
-        <video
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{ opacity: 0.4 }}
-        >
-          <source src="/BG2.mp4" type="video/mp4" />
-        </video>
         {/* Dark overlay for readability */}
         <div
           className="absolute inset-0"

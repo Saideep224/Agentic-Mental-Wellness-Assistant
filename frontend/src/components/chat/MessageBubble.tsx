@@ -117,11 +117,7 @@ export default function MessageBubble({ message, isGroupStart = true, isGroupEnd
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: isUser ? 20 : -20, y: 10 }}
-      animate={{ opacity: 1, x: 0, y: 0 }}
-      whileHover={{ y: -0.5 }}
-      transition={{ duration: 0.35, ease: 'easeOut' }}
+    <div
       className={`flex items-end gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
     >
       {/* Spacer or AI avatar with aura */}
@@ -160,7 +156,7 @@ export default function MessageBubble({ message, isGroupStart = true, isGroupEnd
           </div>
         )}
         <div
-          className="px-4 py-2.5 rounded-2xl text-sm leading-relaxed transition-all duration-300 hover:brightness-105"
+          className="px-4 py-2.5 rounded-2xl text-sm leading-relaxed"
           style={{
             background: isUser
               ? 'rgba(20, 35, 75, 0.8)'
@@ -212,6 +208,6 @@ export default function MessageBubble({ message, isGroupStart = true, isGroupEnd
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

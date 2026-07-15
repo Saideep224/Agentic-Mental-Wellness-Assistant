@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface EsonaLoaderProps {
+  message?: string;
   onComplete?: () => void;
   force?: boolean;
   duration?: number;
@@ -91,9 +92,8 @@ const FRONT_TREES = [
   { x: 78, scale: 2.2 }, { x: 88, scale: 2.1 }
 ];
 
-export default function EsonaLoader({ onComplete, force = false, duration = 4500 }: EsonaLoaderProps) {
+export default function EsonaLoader({ message, onComplete, force = false, duration = 4000 }: EsonaLoaderProps) {
   const [mounted, setMounted] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState(1);
   const [stars, setStars] = useState<{ x: number; y: number; size: number; delay: number; duration: number }[]>([]);
   const [fireflies, setFireflies] = useState<{ id: number; x: number; delay: number; duration: number; size: number; drift: number }[]>([]);
@@ -127,36 +127,29 @@ export default function EsonaLoader({ onComplete, force = false, duration = 4500
       drift: -40 + Math.random() * 80
     }));
     setFireflies(generatedFireflies);
+  }, [force, onComplete]);
 
-    // Animation progress logic
-    const intervalTime = 30; // 30ms ticks
-    const steps = duration / intervalTime;
-    let currentStep = 0;
+  // Complete timeout callback (only if onComplete is provided)
+  useEffect(() => {
+    if (onComplete) {
+      const timer = setTimeout(() => {
+        if (!force && typeof window !== 'undefined') {
+          sessionStorage.setItem('esona_loaded', 'true');
+        }
+        onComplete();
+      }, duration);
+      return () => clearTimeout(timer);
+    }
+  }, [onComplete, duration, force]);
 
-    const interval = setInterval(() => {
-      currentStep++;
-      const nextProgress = Math.min(100, (currentStep / steps) * 100);
-      setProgress(nextProgress);
-
-      if (nextProgress < 33.3) {
-        setStage(1);
-      } else if (nextProgress < 66.6) {
-        setStage(2);
-      } else if (nextProgress < 100) {
-        setStage(3);
-      } else {
-        clearInterval(interval);
-        setTimeout(() => {
-          if (!force && typeof window !== 'undefined') {
-            sessionStorage.setItem('esona_loaded', 'true');
-          }
-          if (onComplete) onComplete();
-        }, 400);
-      }
-    }, intervalTime);
-
-    return () => clearInterval(interval);
-  }, [onComplete, force, duration]);
+  // High performance slow stage transition timer
+  useEffect(() => {
+    if (message) return;
+    const timer = setInterval(() => {
+      setStage((s) => (s % 3) + 1);
+    }, duration / 3);
+    return () => clearInterval(timer);
+  }, [message, duration]);
 
   if (!mounted) return null;
 
@@ -214,6 +207,10 @@ export default function EsonaLoader({ onComplete, force = false, duration = 4500
         @keyframes flame-pulse-6 {
           0%, 100% { background-color: #FFFFFF; }
           50% { background-color: #E0F2FE; }
+        }
+        @keyframes esona-progress-bar-fill {
+          0% { width: 0%; }
+          100% { width: 100%; }
         }
         .flame-pixel-5 {
           animation: flame-pulse-5 1.4s infinite ease-in-out;
@@ -321,42 +318,50 @@ export default function EsonaLoader({ onComplete, force = false, duration = 4500
           </div>
         </div>
 
-        {/* Loading Progress Bar */}
-        <div className="relative w-64 h-[3px] bg-slate-900/60 border border-white/5 rounded-full overflow-visible mt-8 mb-6">
+        {/* Loading Progress Bar - Pure CSS GPU-Accelerated Animation */}
+        <div className="relative w-64 h-[3px] bg-slate-900/60 border border-white/5 rounded-full mt-8 mb-6 overflow-visible">
           <div
-            className="h-full rounded-full transition-all duration-100 ease-out"
+            className="h-full rounded-full relative"
             style={{
-              width: `${progress}%`,
               background: 'linear-gradient(90deg, #38BDF8, #7DD3FC)',
               boxShadow: '0 0 12px #7DD3FC, 0 0 20px #38BDF8',
+              animation: `esona-progress-bar-fill ${duration}ms cubic-bezier(0.25, 1, 0.5, 1) forwards`,
             }}
-          />
-          {progress > 0 && (
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-white transition-all duration-100 ease-out"
+          >
+            {/* Edge glow dot */}
+            <div 
+              className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white"
               style={{
-                left: `calc(${progress}% - 4px)`,
                 boxShadow: '0 0 8px #FFFFFF, 0 0 16px #7DD3FC',
               }}
             />
-          )}
+          </div>
         </div>
 
-        {/* Dynamic Stage Text Cross-fade */}
+        {/* Dynamic Stage Text Cross-fade or Static Message */}
         <div className="h-6 flex items-center justify-center overflow-hidden">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={stage}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
-              className="text-base font-semibold tracking-wide text-center"
+          {message ? (
+            <div
+              className="text-sm font-semibold tracking-wide text-center"
               style={{ color: '#FFFFFF' }}
             >
-              {stageTexts[stage - 1]}
-            </motion.div>
-          </AnimatePresence>
+              {message}
+            </div>
+          ) : (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={stage}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.4, ease: 'easeOut' }}
+                className="text-sm font-semibold tracking-wide text-center"
+                style={{ color: '#FFFFFF' }}
+              >
+                {stageTexts[stage - 1]}
+              </motion.div>
+            </AnimatePresence>
+          )}
         </div>
 
         {/* Brand Subtitle */}

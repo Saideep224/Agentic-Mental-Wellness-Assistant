@@ -105,8 +105,11 @@ async def get_user_profile(current_user=Depends(get_current_user), db: AsyncSess
     personal_res = await db.execute(select(UserPersonalProfile).where(UserPersonalProfile.user_id == user_id))
     personal_profile = personal_res.scalar_one_or_none()
     
-    about_you_summary = profile_service.generate_about_you_summary(personal_profile)
-    traits = profile_service.select_profile_traits(personal_profile)
+    pdata = await profile_service.get_personalization_data(db, user_id)
+    merged_data = pdata.get("raw") or {}
+    
+    about_you_summary = profile_service.generate_about_you_summary(merged_data)
+    traits = profile_service.select_profile_traits(merged_data)
     completion_status = "READY" if completed else "PARTIAL"
     
     if not profile:

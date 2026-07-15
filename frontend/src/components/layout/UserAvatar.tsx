@@ -69,7 +69,7 @@ export default function UserAvatar({
       whileTap={enableHover ? { scale: 0.96 } : {}}
       transition={{ duration: 0.3, ease: 'easeOut' }}
       className={cn(
-        'rounded-full overflow-hidden flex items-center justify-center border shrink-0 bg-slate-950 transition-all duration-300',
+        'rounded-full overflow-hidden flex items-center justify-center border shrink-0 bg-slate-950',
         className
       )}
       style={{

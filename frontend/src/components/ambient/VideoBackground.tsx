@@ -16,20 +16,8 @@ import { useEffect, useRef, useState } from 'react';
  */
 export default function VideoBackground() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoSrc] = useState('/BG2.mp4');
   const [videoReady, setVideoReady] = useState(false);
-  const [videoSrc, setVideoSrc] = useState('/BG2.mp4');
-
-  useEffect(() => {
-    // Determine video source based on local hour on mount
-    const hour = new Date().getHours();
-    // BG1 from 6pm to 5am (hour >= 18 or hour < 5)
-    // BG2 from 5am to 6pm (hour >= 5 and hour < 18)
-    if (hour >= 18 || hour < 5) {
-      setVideoSrc('/BG1.mp4');
-    } else {
-      setVideoSrc('/BG2.mp4');
-    }
-  }, []);
 
   useEffect(() => {
     const video = videoRef.current;

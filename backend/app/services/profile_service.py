@@ -88,6 +88,20 @@ def _answer_value(answer) -> Any:
     return custom
 
 
+def _normalize_profile_data(profile_input: Any) -> dict:
+    if not profile_input:
+        return {}
+    if isinstance(profile_input, dict):
+        return profile_input
+    result = {}
+    for field in ["profession", "field_of_work", "current_challenge", "advice_preference", 
+                  "primary_support_need", "communication_style", "sleep_habits", "traits"]:
+        val = getattr(profile_input, field, None)
+        if val is not None:
+            result[field] = val
+    return result
+
+
 class ProfileService:
     async def get_profile(self, db: AsyncSession, user_id: Union[uuid.UUID, str]) -> Optional[UserPersonalProfile]:
         uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
@@ -163,17 +177,18 @@ class ProfileService:
             "analysis_status": analysis_status
         }
 
-    def generate_about_you_summary(self, personal_profile: UserPersonalProfile) -> str:
-        if not personal_profile:
+    def generate_about_you_summary(self, personal_profile: Any) -> str:
+        data = _normalize_profile_data(personal_profile)
+        if not data:
             return "Esona is still getting to know you. Complete the questionnaire to see your personalized summary here."
         
-        prof = personal_profile.profession or ""
-        field = personal_profile.field_of_work or ""
-        challenge = personal_profile.current_challenge or ""
-        advice = personal_profile.advice_preference or ""
-        support = personal_profile.primary_support_need or ""
-        comm = personal_profile.communication_style or ""
-        sleep = personal_profile.sleep_habits or ""
+        prof = data.get("profession") or ""
+        field = data.get("field_of_work") or ""
+        challenge = data.get("current_challenge") or ""
+        advice = data.get("advice_preference") or ""
+        support = data.get("primary_support_need") or ""
+        comm = data.get("communication_style") or ""
+        sleep = data.get("sleep_habits") or ""
         
         prof_lower = prof.lower().strip()
         field_lower = field.lower().strip()
@@ -233,28 +248,29 @@ class ProfileService:
         summary = " ".join(summary.split())
         return summary
 
-    def select_profile_traits(self, personal_profile: UserPersonalProfile) -> list[str]:
-        if not personal_profile:
+    def select_profile_traits(self, personal_profile: Any) -> list[str]:
+        data = _normalize_profile_data(personal_profile)
+        if not data:
             return ["Getting started"]
             
         traits = []
         
         # 1. Advice / Practical next steps
-        advice = str(personal_profile.advice_preference or "").lower()
+        advice = str(data.get("advice_preference") or "").lower()
         if "listen" in advice or "hear" in advice or "gentle" in advice:
             traits.append("Listen before advising")
         elif "action" in advice or "practical" in advice or "step" in advice or "direct" in advice:
             traits.append("Values practical next steps")
             
         # 2. Response Length / Deep reflection
-        comm = str(personal_profile.communication_style or "").lower()
+        comm = str(data.get("communication_style") or "").lower()
         if "short" in comm or "concise" in comm or "brief" in comm:
             traits.append("Likes shorter replies")
         elif "detail" in comm or "deep" in comm or "thorough" in comm:
             traits.append("Often reflects deeply")
             
         # 3. Support needs / Reassurance
-        support = str(personal_profile.primary_support_need or "").lower()
+        support = str(data.get("primary_support_need") or "").lower()
         if "validation" in support or "emotion" in support or "empathy" in support:
             traits.append("Emotional validation first")
         elif "reassure" in support or "comfort" in support or "calm" in support:

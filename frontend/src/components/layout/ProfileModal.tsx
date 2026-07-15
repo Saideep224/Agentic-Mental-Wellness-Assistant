@@ -150,52 +150,80 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                   </div>
                   <h3 className="text-base font-semibold text-white">{user?.name || 'Anonymous User'}</h3>
                   <p className="text-xs text-cyan-400 font-medium mt-1">
-                    {profile?.completion_status === 'READY' ? 'Calibrated Mind' : 'Initial Calibration'}
+                    {profile?.completion_status === 'READY' ? 'Profile Calibrated 💙' : 'Calibration Pending'}
                   </p>
                 </div>
 
-                {/* About You Section */}
-                <div className="space-y-2">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">About You</h4>
-                  <div className="p-4 rounded-2xl border border-white/5 bg-white/2">
-                    {isLoading ? (
-                      <div className="flex items-center gap-2 py-1">
-                        <div className="w-3.5 h-3.5 rounded-full border border-t-transparent animate-spin border-cyan-400" />
-                        <span className="text-xs text-slate-400">Loading summary...</span>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-300 leading-relaxed font-medium">
-                        {profile?.about_you_summary || 'No description available. Let\'s talk to Esona or complete onboarding to build your profile.'}
-                      </p>
-                    )}
+                {/* Profile Analysis Section */}
+                {profile?.completion_status !== 'READY' && (!profile?.traits || profile.traits.length === 0) ? (
+                  <div className="p-5 rounded-2xl border border-dashed border-white/10 bg-white/2 text-center space-y-4">
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Esona is still getting to know you. Complete Knowing Me or continue chatting to help Esona understand your communication style.
+                    </p>
+                    <div className="flex flex-col gap-2 pt-1">
+                      <button
+                        onClick={() => {
+                          onClose();
+                          window.location.href = '/knowing-me';
+                        }}
+                        className="py-2 px-4 rounded-xl text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-700 transition-colors cursor-pointer"
+                      >
+                        Complete Knowing Me
+                      </button>
+                      <button
+                        onClick={onClose}
+                        className="py-2 px-4 rounded-xl text-xs font-semibold text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                      >
+                        Continue Chatting
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    {/* About You Section */}
+                    <div className="space-y-2">
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">About You</h4>
+                      <div className="p-4 rounded-2xl border border-white/5 bg-white/2">
+                        {isLoading ? (
+                          <div className="flex items-center gap-2 py-1">
+                            <div className="w-3.5 h-3.5 rounded-full border border-t-transparent animate-spin border-cyan-400" />
+                            <span className="text-xs text-slate-400">Loading summary...</span>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                            {profile?.about_you_summary}
+                          </p>
+                        )}
+                      </div>
+                    </div>
 
-                {/* Esona Understands You As Section */}
-                <div className="space-y-3">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Esona Understands You As</h4>
-                  {isLoading ? (
-                    <div className="flex items-center gap-2 py-1">
-                      <div className="w-3.5 h-3.5 rounded-full border border-t-transparent animate-spin border-cyan-400" />
-                      <span className="text-xs text-slate-400">Loading trait signals...</span>
+                    {/* Esona Understands You As Section */}
+                    <div className="space-y-3">
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Esona Understands You As</h4>
+                      {isLoading ? (
+                        <div className="flex items-center gap-2 py-1">
+                          <div className="w-3.5 h-3.5 rounded-full border border-t-transparent animate-spin border-cyan-400" />
+                          <span className="text-xs text-slate-400">Loading trait signals...</span>
+                        </div>
+                      ) : profile?.traits && profile.traits.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {profile.traits.map((trait: string, idx: number) => (
+                            <span
+                              key={idx}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-cyan-500/5 border border-cyan-500/15 text-cyan-400"
+                            >
+                              {trait}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-3.5 rounded-2xl border border-dashed border-white/5 text-center">
+                          <p className="text-xs text-slate-500">No conversational traits determined yet.</p>
+                        </div>
+                      )}
                     </div>
-                  ) : profile?.traits && profile.traits.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {profile.traits.map((trait: string, idx: number) => (
-                        <span
-                          key={idx}
-                          className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-cyan-500/5 border border-cyan-500/15 text-cyan-400"
-                        >
-                          {trait}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-3.5 rounded-2xl border border-dashed border-white/5 text-center">
-                      <p className="text-xs text-slate-500">No conversational traits determined yet.</p>
-                    </div>
-                  )}
-                </div>
+                  </>
+                )}
 
                 {/* Account Section */}
                 <div className="space-y-3 pt-2">

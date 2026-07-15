@@ -35,10 +35,10 @@ import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import MoodMusicPanel from '@/components/chat/MoodMusicPanel';
 import { useChat } from '@/hooks/useChat';
-import { Conversation } from '@/types';
+import { Conversation, Message } from '@/types';
 import { getToken, getStoredUser } from '@/api';
 import * as api from '@/api';
-import { formatDate, truncateText } from '@/utils';
+import { formatDate, truncateText, getDateSeparatorLabel, formatTimeOnly } from '@/utils';
 import { skipOnboarding } from '@/api/onboarding';
 import { useAuth } from '@/providers/AuthProvider';
 
@@ -272,6 +272,12 @@ export default function ChatPage() {
   const pathname = usePathname();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const bottomSentinelRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef<boolean>(true);
+  const prevMessagesLengthRef = useRef<number>(0);
+  const historyLoadedRef = useRef<boolean>(false);
+  const [showJumpButton, setShowJumpButton] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [musicPlayerOpen, setMusicPlayerOpen] = useState(false);
@@ -412,6 +418,64 @@ export default function ChatPage() {
     .find((msg) => msg.emotionDetected)?.emotionDetected || 
     agentInsights?.current_mood || 
     'Neutral';
+
+  const scrollToBottom = useCallback((behavior: 'auto' | 'smooth' = 'auto') => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior,
+    });
+  }, []);
+
+  const handleChatScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const isNear = distanceFromBottom <= 120;
+    isNearBottomRef.current = isNear;
+    setShowJumpButton(!isNear);
+  }, []);
+
+  // Reset history loader flag when active conversation changes
+  useEffect(() => {
+    historyLoadedRef.current = false;
+  }, [activeConversationId]);
+
+  // Initial scroll to bottom once history is loaded
+  useEffect(() => {
+    if (!isLoading && messages.length > 0 && !historyLoadedRef.current) {
+      historyLoadedRef.current = true;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollToBottom('auto');
+        });
+      });
+    }
+  }, [isLoading, messages.length, scrollToBottom]);
+
+  // Track new messages (smooth scroll on user send, auto on bot stream/chunk)
+  useEffect(() => {
+    if (messages.length > prevMessagesLengthRef.current) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg && lastMsg.role === 'user') {
+        isNearBottomRef.current = true;
+        scrollToBottom('smooth');
+      } else if (isNearBottomRef.current) {
+        scrollToBottom('auto');
+      }
+      prevMessagesLengthRef.current = messages.length;
+    }
+  }, [messages, scrollToBottom]);
+
+  // Follow bot response chunk by chunk during SSE streaming
+  const lastMessageContent = messages.length > 0 ? messages[messages.length - 1].content : '';
+  useEffect(() => {
+    if (isNearBottomRef.current && isStreaming) {
+      scrollToBottom('auto');
+    }
+  }, [lastMessageContent, isStreaming, scrollToBottom]);
 
   useEffect(() => {
     if (debugOpen && activeConversationId) {
@@ -818,7 +882,7 @@ export default function ChatPage() {
           <div className="flex-1 relative overflow-hidden flex flex-col">
             {/* Messages area */}
             <div className="flex-1 overflow-hidden">
-              <ChatContainer>
+              <ChatContainer ref={scrollContainerRef} onScroll={handleChatScroll}>
                 {!user?.onboardingCompleted && !welcomeDismissed && messages.length === 0 && !isLoading ? (
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -892,51 +956,109 @@ export default function ChatPage() {
                 ) : (
                   <>
                     {(() => {
-                      const groupedMessages = messages.map((msg, idx) => {
-                        const prevMsg = idx > 0 ? messages[idx - 1] : null;
-                        const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null;
-                        
-                        const isSameSenderAsPrev = prevMsg && prevMsg.role === msg.role;
-                        const isSameSenderAsNext = nextMsg && nextMsg.role === msg.role;
-                        
-                        const tCurrent = new Date(msg.timestamp).getTime();
-                        const tPrev = prevMsg ? new Date(prevMsg.timestamp).getTime() : 0;
-                        const tNext = nextMsg ? new Date(nextMsg.timestamp).getTime() : 0;
-                        
-                        const isWithinTimeWindowPrev = prevMsg && (tCurrent - tPrev) <= 5 * 60 * 1000;
-                        const isWithinTimeWindowNext = nextMsg && (tNext - tCurrent) <= 5 * 60 * 1000;
-                        
-                        const isGroupStart = !(isSameSenderAsPrev && isWithinTimeWindowPrev);
-                        const isGroupEnd = !(isSameSenderAsNext && isWithinTimeWindowNext);
-                        
-                        let spacingClass = 'mt-6';
-                        if (idx === 0) {
-                          spacingClass = 'mt-2';
-                        } else if (isSameSenderAsPrev && isWithinTimeWindowPrev) {
-                          spacingClass = 'mt-2.5';
-                        } else if (prevMsg && (tCurrent - tPrev) > 30 * 60 * 1000) {
-                          spacingClass = 'mt-11';
-                        } else {
-                          spacingClass = 'mt-8';
+                      const orderedMessages = [...messages].sort(
+                        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+                      );
+
+                      interface ConversationItem {
+                        type: 'date-separator' | 'message';
+                        id: string;
+                        dateLabel?: string;
+                        message?: Message;
+                        isGroupStart?: boolean;
+                        isGroupEnd?: boolean;
+                        spacingClass?: string;
+                      }
+                      
+                      const items: ConversationItem[] = [];
+                      let lastDateStr = '';
+
+                      const getLocalDateString = (dateVal: string | Date) => {
+                        try {
+                          return new Date(dateVal).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" });
+                        } catch {
+                          return '';
                         }
+                      };
+
+                      orderedMessages.forEach((msg, idx) => {
+                        const dateStr = getLocalDateString(msg.timestamp);
                         
-                        return {
+                        if (dateStr && dateStr !== lastDateStr) {
+                          items.push({
+                            type: 'date-separator',
+                            id: `date-${msg.id}`,
+                            dateLabel: getDateSeparatorLabel(msg.timestamp)
+                          });
+                          lastDateStr = dateStr;
+                        }
+
+                        const prevMsg = idx > 0 ? orderedMessages[idx - 1] : null;
+                        const nextMsg = idx < orderedMessages.length - 1 ? orderedMessages[idx + 1] : null;
+
+                        const isSameSenderAsPrev = prevMsg && prevMsg.role === msg.role;
+                        const isWithin5MinPrev = prevMsg && (new Date(msg.timestamp).getTime() - new Date(prevMsg.timestamp).getTime()) <= 5 * 60 * 1000;
+                        const isSameDateAsPrev = prevMsg && getLocalDateString(msg.timestamp) === getLocalDateString(prevMsg.timestamp);
+                        const isSameGroupPrev = isSameSenderAsPrev && isWithin5MinPrev && isSameDateAsPrev;
+
+                        const isSameSenderAsNext = nextMsg && nextMsg.role === msg.role;
+                        const isWithin5MinNext = nextMsg && (new Date(nextMsg.timestamp).getTime() - new Date(msg.timestamp).getTime()) <= 5 * 60 * 1000;
+                        const isSameDateAsNext = nextMsg && getLocalDateString(nextMsg.timestamp) === getLocalDateString(msg.timestamp);
+                        const isSameGroupNext = isSameSenderAsNext && isWithin5MinNext && isSameDateAsNext;
+
+                        const isGroupStart = !isSameGroupPrev;
+                        const isGroupEnd = !isSameGroupNext;
+
+                        // WhatsApp-like dense spacing rules (Step 5):
+                        let spacingClass = 'mt-4'; // default for sender changes
+                        if (isSameGroupPrev) {
+                          spacingClass = 'mt-1'; // same group spacing (4px)
+                        } else if (prevMsg) {
+                          const timeGap = new Date(msg.timestamp).getTime() - new Date(prevMsg.timestamp).getTime();
+                          if (timeGap >= 20 * 60 * 1000) {
+                            spacingClass = 'mt-7'; // large time gap (28px)
+                          }
+                        }
+
+                        items.push({
+                          type: 'message',
+                          id: msg.id,
                           message: msg,
                           isGroupStart,
                           isGroupEnd,
-                          spacingClass,
-                        };
+                          spacingClass
+                        });
                       });
 
-                      return groupedMessages.map(({ message, isGroupStart, isGroupEnd, spacingClass }) => (
-                        <div key={message.id} className={spacingClass}>
-                          <MessageBubble 
-                            message={message} 
-                            isGroupStart={isGroupStart} 
-                            isGroupEnd={isGroupEnd} 
-                          />
-                        </div>
-                      ));
+                      return items.map((item) => {
+                        if (item.type === 'date-separator') {
+                          return (
+                            <div key={item.id} className="flex justify-center mt-6 mb-4 select-none">
+                              <div 
+                                className="px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-md backdrop-blur-md"
+                                style={{
+                                  background: 'rgba(10, 16, 32, 0.75)',
+                                  borderColor: 'rgba(34, 211, 238, 0.2)',
+                                  color: '#94a3b8',
+                                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
+                                }}
+                              >
+                                {item.dateLabel}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div key={item.id} className={item.spacingClass}>
+                            <MessageBubble 
+                              message={item.message!} 
+                              isGroupStart={item.isGroupStart} 
+                              isGroupEnd={item.isGroupEnd} 
+                            />
+                          </div>
+                        );
+                      });
                     })()}
                     
                     <AnimatePresence>
@@ -959,6 +1081,9 @@ export default function ChatPage() {
                         <TypingIndicator agentId={staggerTypingAgentId} />
                       )}
                     </AnimatePresence>
+
+                    {/* Bottom Sentinel */}
+                    <div ref={bottomSentinelRef} className="h-2 w-full pointer-events-none" aria-hidden="true" />
                   </>
                 )}
               </ChatContainer>
@@ -971,6 +1096,30 @@ export default function ChatPage() {
                 background: 'linear-gradient(to top, rgba(4, 6, 20, 0.95) 0%, rgba(4, 6, 20, 0.8) 40%, rgba(4, 6, 20, 0.2) 75%, transparent 100%)',
               }}
             />
+
+            {/* Jump to Latest Button */}
+            <AnimatePresence>
+              {showJumpButton && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                  onClick={() => {
+                    isNearBottomRef.current = true;
+                    scrollToBottom('smooth');
+                  }}
+                  className="absolute bottom-24 right-6 sm:right-10 z-30 w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 border pointer-events-auto"
+                  style={{
+                    background: 'rgba(6, 14, 32, 0.85)',
+                    borderColor: 'rgba(34, 211, 238, 0.3)',
+                    boxShadow: '0 0 12px rgba(34, 211, 238, 0.2)',
+                    color: 'rgba(34, 211, 238, 0.8)',
+                  }}
+                >
+                  <ChevronDown size={18} />
+                </motion.button>
+              )}
+            </AnimatePresence>
 
             {/* Floating Composer & Banners */}
             <div className="absolute bottom-0 left-0 right-0 z-20 flex flex-col pointer-events-none">

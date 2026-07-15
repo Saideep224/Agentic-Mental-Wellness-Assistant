@@ -210,3 +210,66 @@ export function removeFromStorage(key: string): void {
     // Ignore errors
   }
 }
+
+/**
+ * Format only the time portion of a date (in local Kolkata timezone)
+ */
+export function formatTimeOnly(date: Date | string | null | undefined): string {
+  if (!date) return '';
+  try {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    });
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Format date separators (Today, Yesterday, or Month D, YYYY in Kolkata timezone)
+ */
+export function getDateSeparatorLabel(date: Date | string | null | undefined): string {
+  if (!date) return '';
+  try {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    if (isNaN(d.getTime())) return '';
+
+    const getLocalDateString = (dateObj: Date) => {
+      return dateObj.toLocaleDateString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+      });
+    };
+
+    const dString = getLocalDateString(d);
+    
+    const today = new Date();
+    const todayString = getLocalDateString(today);
+
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayString = getLocalDateString(yesterday);
+
+    if (dString === todayString) {
+      return 'Today';
+    }
+    if (dString === yesterdayString) {
+      return 'Yesterday';
+    }
+
+    return d.toLocaleDateString("en-US", {
+      timeZone: "Asia/Kolkata",
+      month: "long",
+      day: "numeric",
+      year: "numeric"
+    });
+  } catch {
+    return '';
+  }
+}

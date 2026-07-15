@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { Message } from '@/types';
-import { formatMessageTime } from '@/utils';
+import { formatTimeOnly } from '@/utils';
 import EmotionalAura from './EmotionalAura';
 
 interface MessageBubbleProps {
@@ -126,7 +126,7 @@ export default function MessageBubble({ message, isGroupStart = true, isGroupEnd
     >
       {/* Spacer or AI avatar with aura */}
       {!isUser && (
-        <div className="flex-shrink-0 mb-6 w-9">
+        <div className="flex-shrink-0 mb-1 w-9">
           {isGroupStart && (
             <EmotionalAura emotion={message.emotionDetected || 'neutral'}>
               <div
@@ -143,16 +143,16 @@ export default function MessageBubble({ message, isGroupStart = true, isGroupEnd
         </div>
       )}
 
-      {/* Message content */}
+      {/* Message content wrapper */}
       <div 
-        className={`w-fit ${isUser ? 'order-1' : ''}`}
+        className={`w-fit flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
         style={{
           maxWidth: isUser ? '60%' : '70%',
         }}
       >
         {!isUser && config && isGroupStart && (
           <div 
-            className="text-xs font-semibold mb-1.5 px-1 select-none flex items-center gap-1.5" 
+            className="text-[11px] font-semibold mb-1 px-1 select-none flex items-center gap-1.5" 
             style={{ color: 'var(--text-secondary)' }}
           >
             <span>{config.emoji}</span>
@@ -160,7 +160,7 @@ export default function MessageBubble({ message, isGroupStart = true, isGroupEnd
           </div>
         )}
         <div
-          className="px-4 py-3 rounded-2xl text-sm leading-relaxed transition-all duration-300 hover:brightness-105"
+          className="px-4 py-2.5 rounded-2xl text-sm leading-relaxed transition-all duration-300 hover:brightness-105"
           style={{
             background: isUser
               ? 'rgba(20, 35, 75, 0.8)'
@@ -178,40 +178,39 @@ export default function MessageBubble({ message, isGroupStart = true, isGroupEnd
             WebkitBackdropFilter: 'blur(12px)',
           }}
         >
-          <div className="markdown-content whitespace-pre-wrap">
-            {message.isPlaceholder ? (
-              <span className="italic opacity-70 animate-pulse inline-flex items-center gap-1">
-                {message.content}
+          <div className="flex flex-col">
+            <div className="markdown-content whitespace-pre-wrap break-words text-sm leading-relaxed pb-1">
+              {message.isPlaceholder ? (
+                <span className="italic opacity-70 animate-pulse inline-flex items-center gap-1">
+                  {message.content}
+                </span>
+              ) : (
+                message.content
+              )}
+            </div>
+            
+            {/* Inline Bubble Metadata */}
+            <div 
+              className="flex items-center justify-end gap-2 mt-1 px-0.5 select-none self-end text-[10px] leading-none"
+              style={{
+                color: isUser ? 'rgba(255, 255, 255, 0.5)' : 'rgba(255, 255, 255, 0.4)',
+              }}
+            >
+              {emotionDisplay && (
+                <span 
+                  className="flex items-center gap-1 opacity-75 uppercase tracking-wider text-[9px] hover:opacity-100 transition-opacity cursor-help"
+                  title={emotionDisplay.percentage ? `Confidence: ${emotionDisplay.percentage}` : undefined}
+                >
+                  <span>{emotionDisplay.emoji}</span>
+                  <span>{emotionDisplay.label.toLowerCase()}</span>
+                </span>
+              )}
+              <span className="font-medium whitespace-nowrap">
+                {formatTimeOnly(message.timestamp)}
               </span>
-            ) : (
-              message.content
-            )}
+            </div>
           </div>
         </div>
-
-        {/* Timestamp & emotion */}
-        {isGroupEnd && (
-          <div
-            className={`flex flex-col gap-1 mt-1 px-1 select-none ${
-              isUser ? 'items-end' : 'items-start'
-            }`}
-          >
-            {emotionDisplay && (
-              <div
-                className="flex items-center gap-1 text-[10px] text-slate-500 font-medium cursor-help"
-                title={emotionDisplay.percentage ? `Confidence: ${emotionDisplay.percentage}` : undefined}
-              >
-                <span>{emotionDisplay.emoji}</span>
-                <span className="hover:text-slate-300 transition-colors uppercase tracking-wider text-[9px]">
-                  {emotionDisplay.label.toLowerCase()}
-                </span>
-              </div>
-            )}
-            <span className="text-[10px] text-slate-500 font-medium">
-              {formatMessageTime(message.timestamp)}
-            </span>
-          </div>
-        )}
       </div>
     </motion.div>
   );

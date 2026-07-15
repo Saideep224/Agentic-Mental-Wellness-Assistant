@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from 'react';
  */
 export default function VideoBackground() {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [videoSrc] = useState('/BG2.mp4');
+  const [videoSrc] = useState('/BG1.mp4');
   const [videoReady, setVideoReady] = useState(false);
 
   useEffect(() => {

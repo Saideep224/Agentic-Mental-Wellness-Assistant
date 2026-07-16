@@ -50,63 +50,193 @@ SITUATION_KEYWORDS = {
 
 # --- Core Analysis Methods ---
 
-def detect_explicit_emotion(message: str) -> List[str]:
-    """Matches the clean user message against explicit English and Telugu emotion patterns."""
+def analyze_phrase_assertions(message: str) -> List[Dict[str, Any]]:
+    """
+    Parses a user message into distinct clauses by splitting on conjunctions
+    and identifies negation, past tense, and third-person references.
+    """
     text_clean = message.lower().strip()
-    text_clean = re.sub(r"[^\w\s]", " ", text_clean)
-    words = text_clean.split()
+    # Normalize punctuation, keeping apostrophes for don't/isn't etc.
+    text_clean = re.sub(r"[^\w\s']", " ", text_clean)
     
+    # Split on clause boundaries
+    clauses = re.split(r"\b(?:but|however|yet|although|though|except)\b", text_clean)
+    
+    parsed_clauses = []
+    for clause in clauses:
+        words = clause.split()
+        if not words:
+            continue
+            
+        clause_str = " ".join(words)
+        
+        # Negation check: ignore "no reason", "no idea", "no clue", "no choice"
+        clean_for_negation = re.sub(r"\bno\s+(?:reason|idea|clue|choice|option|way)\b", " ", clause_str)
+        negation_regex = r"\b(?:not|no|dont|don't|never|aint|isnt|isn't|arent|aren't|wasnt|wasn't|no\s+longer|anymore|nomore|em\s+ledu|ledu|kadu|kaadu|kavatle|kavatledu|cheppatledu|em|kaadu|kavatam)\b"
+        negated = bool(re.search(negation_regex, clean_for_negation))
+        
+        past_regex = r"\b(?:was|were|yesterday|earlier|before|past|previously|ninna|unde)\b"
+        past_tense = bool(re.search(past_regex, clause_str))
+        
+        # Experiencer checks
+        strong_third_regex = r"\b(?:she|he|they|vadiki|vaadi|vaadu|ame|ataniki|amedi|variki)\b"
+        first_person_regex = r"\b(?:i|im|i'm|naku|naaku|me|my|unna)\b"
+        
+        third_person = False
+        
+        # Check index of first person vs strong third person
+        has_first = bool(re.search(first_person_regex, clause_str))
+        has_strong_third = bool(re.search(strong_third_regex, clause_str))
+        
+        if has_strong_third:
+            if has_first:
+                # Find positions
+                first_pos = re.search(first_person_regex, clause_str).start()
+                third_pos = re.search(strong_third_regex, clause_str).start()
+                if third_pos < first_pos:
+                    third_person = True
+            else:
+                third_person = True
+                
+        soft_third_regex = r"\b(?:boss|friend|wife|gf|girlfriend|bf|boyfriend|husband|partner|someone|roomie|roommate)\b"
+        if re.search(soft_third_regex, clause_str) and not has_first:
+            third_person = True
+            
+        # Telugu ga undi / ga unna overrides third person unless strong third person subject is before it
+        is_telugu_self_report = any(w.endswith(("ga", "giri", "unna", "undi")) for w in words) or any(w.startswith(("chirak", "badha", "bayam", "kangaru", "ardham")) for w in words)
+        if is_telugu_self_report:
+            # Only count as third person if strong Telugu third person is present
+            strong_telugu_third = r"\b(?:vadiki|vaadi|vaadu|ame|ataniki|amedi|variki)\b"
+            if not re.search(strong_telugu_third, clause_str):
+                third_person = False
+            
+        parsed_clauses.append({
+            "text": clause,
+            "words": words,
+            "negated": negated,
+            "past_tense": past_tense,
+            "third_person": third_person
+        })
+        
+    return parsed_clauses
+
+
+
+
+def detect_explicit_emotion(message: str) -> List[str]:
+    """Matches the clean user message against explicit English and Telugu emotion patterns with structural filters."""
+    clauses = analyze_phrase_assertions(message)
     detected = []
     
     # 1. Frustration / Anger
-    frust_words = {"frustrated", "frustration", "pissed", "annoyed", "annoyance", "furious", "enraged", "mad", "angry", "anger", "hate", "hates", "hating", "annoy", "annoying"}
-    if (frust_words & set(words) or 
-        any(w.startswith(("chirak", "cirak")) for w in words) or 
-        "fed up" in text_clean or "sick of" in text_clean):
-        detected.append("frustration")
-        
+    frust_words = {"frustrated", "frustration", "pissed", "annoyed", "annoyance", "furious", "enraged", "mad", "angry", "anger", "hate", "hates", "hating", "annoy", "annoying", "irritated", "irritating", "patience"}
     # 2. Sadness
     sad_words = {"sad", "sadness", "depressed", "depression", "heartbroken", "heartbreak", "crying", "cry", "hopeless", "hopelessness", "devastated", "miserable", "hurt", "grief", "grieving", "miss", "missing"}
-    if (sad_words & set(words) or 
-        any(w.startswith(("badha", "baadha", "bhada")) for w in words)):
-        detected.append("sadness")
-    # check "feeling low", "feel low", "feeling down", "feel down", "feel empty", "feeling empty"
-    for i, w in enumerate(words):
-        if w in ("feel", "feeling", "feelingso", "feelso"):
-            for offset in (1, 2, 3):
-                if i + offset < len(words) and words[i + offset] in ("low", "down", "empty"):
-                    detected.append("sadness")
-                    
     # 3. Anxiety / Fear
     anx_words = {"anxious", "anxiety", "worried", "worry", "panic", "panicking", "scared", "afraid", "terrified", "dread", "overthinking", "nervous", "tension", "tense"}
-    if (anx_words & set(words) or 
-        any(w.startswith(("bhayam", "bayam", "bhayan", "bayan", "kangaru", "kangaaru", "kangat")) for w in words) or 
-        "panic attack" in text_clean):
-        detected.append("anxiety")
-        
     # 4. Stress
-    stress_words = {"stressed", "stress", "stressing", "overwhelmed", "exhausted", "burnout", "burnt", "burned", "tired", "exhausting", "pressure", "struggling", "struggle", "cope", "deadline", "deadlines", "swamped", "busy"}
-    if stress_words & set(words) or "too much pressure" in text_clean:
-        detected.append("stress")
-        
+    stress_words = {"stressed", "stress", "stressing", "overwhelmed", "exhausted", "burnout", "burnt", "burned", "tired", "exhausting", "pressure", "struggling", "struggle", "cope", "deadline", "deadlines", "swamped", "busy", "disturb", "disturbed"}
     # 5. Loneliness
     lonely_words = {"lonely", "loneliness", "isolated", "isolation", "alone", "nobody"}
-    if lonely_words & set(words) or "all alone" in text_clean or "no one" in text_clean:
-        detected.append("loneliness")
-        
     # 6. Joy
     joy_words = {"happy", "joy", "excited", "grateful", "blessed", "glad"}
-    if joy_words & set(words) or "so glad" in text_clean:
-        detected.append("joy")
-        
     # 7. Confusion
-    conf_words = {"confused", "confusion"}
-    if (conf_words & set(words) or 
-        any(w.startswith(("ardham", "ardam")) for w in words) or 
-        "don't know what" in text_clean or "dont know what" in text_clean or "em ardam" in text_clean or "kavatle" in text_clean or "not sure" in text_clean):
-        detected.append("confusion")
+    conf_words = {"confused", "confusion", "weird", "nothing", "explain", "off", "feeling", "know", "sure"}
+
+
+    for clause in clauses:
+        words = clause["words"]
+        text_clause = " ".join(words)
         
+        def has_match(words_set, prefix_tuple=None):
+            if words_set & set(words):
+                return True
+            if prefix_tuple:
+                return any(w.startswith(prefix_tuple) for w in words)
+            return False
+            
+        # Frustration
+        is_frust = False
+        if has_match(frust_words, ("chirak", "cirak", "irritat")):
+            is_frust = True
+        if "fed up" in text_clause or "sick of" in text_clause or "patience is gone" in text_clause or "done with" in text_clause:
+            is_frust = True
+        if is_frust and not (clause["negated"] or clause["past_tense"] or clause["third_person"]):
+            detected.append("frustration")
+                
+        # Sadness
+        is_sad = False
+        if has_match(sad_words, ("badha", "baadha", "bhada")) or "baledu" in words:
+            is_sad = True
+        for i, w in enumerate(words):
+            if w in ("feel", "feeling", "feelingso", "feelso"):
+                for offset in (1, 2, 3):
+                    if i + offset < len(words) and words[i + offset] in ("low", "down", "empty"):
+                        is_sad = True
+        if is_sad:
+            is_negated = clause["negated"]
+            if "baledu" in words and not ("cheppatledu" in words or "fine" in words or "okay" in words):
+                is_negated = False
+            if not (is_negated or clause["past_tense"] or clause["third_person"]):
+                detected.append("sadness")
+                    
+        # Anxiety
+        is_anx = False
+        if has_match(anx_words, ("bhayam", "bayam", "bhayan", "bayan", "kangaru", "kangaaru", "kangat")):
+            is_anx = True
+        if "panic attack" in text_clause:
+            is_anx = True
+        if is_anx and not (clause["negated"] or clause["past_tense"] or clause["third_person"]):
+            detected.append("anxiety")
+                
+        # Stress
+        is_stress = False
+        if has_match(stress_words):
+            is_stress = True
+        if "too much pressure" in text_clause:
+            is_stress = True
+        if is_stress and not (clause["negated"] or clause["past_tense"] or clause["third_person"]):
+            detected.append("stress")
+                
+        # Loneliness
+        is_lonely = False
+        if has_match(lonely_words):
+            is_lonely = True
+        if "all alone" in text_clause or "no one" in text_clause:
+            is_lonely = True
+        if is_lonely and not (clause["negated"] or clause["past_tense"] or clause["third_person"]):
+            detected.append("loneliness")
+                
+        # Joy
+        is_joy = False
+        if has_match(joy_words):
+            is_joy = True
+        if "so glad" in text_clause:
+            is_joy = True
+        if is_joy and not (clause["negated"] or clause["past_tense"] or clause["third_person"]):
+            detected.append("joy")
+                
+        # Confusion
+        is_conf = False
+        if {"confused", "confusion"} & set(words):
+            is_conf = True
+        if any(w.startswith(("ardham", "ardam")) for w in words):
+            if clause["negated"] or "kavatle" in words or "kavatledu" in words:
+                is_conf = True
+        if has_match(conf_words):
+            if "don't know what" in text_clause or "dont know what" in text_clause or "not sure" in text_clause:
+                is_conf = True
+            elif "feel nothing" in text_clause or "feel weird" in text_clause or "feels off" in text_clause or "explain it" in text_clause:
+                is_conf = True
+            elif "don't even know" in text_clause or "dont even know" in text_clause:
+                is_conf = True
+        if is_conf and not (clause["past_tense"] or clause["third_person"]):
+            detected.append("confusion")
+
+
+            
     return list(set(detected))
+
 
 
 def determine_conversation_stage(
@@ -114,7 +244,7 @@ def determine_conversation_stage(
 ) -> str:
     """Classifies the conversation movement stage based on history and current inputs."""
     msg = message.lower().strip()
-    msg_clean = re.sub(r"[^\w\s]", " ", msg)
+    msg_clean = re.sub(r"[^\w\s']", " ", msg)
     words = msg_clean.split()
     
     # Crisis overrides
@@ -127,18 +257,6 @@ def determine_conversation_stage(
         if primary_emotion != "neutral":
             return "disclosure"
         return "opening"
-    
-    # Split greeting words and banter words
-    greeting_words = ["hi", "hey", "hello", "yo", "sup", "whats up", "good morning", "good night"]
-    banter_words = ["ok", "okay", "cool", "nice", "fine", "lol", "lmao", "haha", "thanks", "thank you", "thank u"]
-    
-    if len(words) <= 3:
-        if any(w in greeting_words for w in words):
-            if len(history) <= 2:
-                return "opening"
-            return "casual"
-        if any(w in banter_words for w in words):
-            return "casual"
 
     # Seeking advice or action
     advice_triggers = ["what should i do", "how to solve", "help me fix", "give me advice", "suggest", "what do i do"]
@@ -153,6 +271,19 @@ def determine_conversation_stage(
     recovery_triggers = ["thanks", "thank you", "feel better", "helpful", "makes sense", "thank u"]
     if any(t in msg for t in recovery_triggers) and primary_emotion == "neutral":
         return "recovery"
+    
+    # Split greeting words and banter words
+    greeting_words = ["hi", "hey", "hello", "yo", "sup", "whats up", "good morning", "good night"]
+    banter_words = ["ok", "okay", "cool", "nice", "fine", "lol", "lmao", "haha", "thanks", "thank you", "thank u"]
+    
+    if len(words) <= 3:
+        if any(w in greeting_words for w in words):
+            if len(history) <= 2:
+                return "opening"
+            return "casual"
+        if any(w in banter_words for w in words):
+            return "casual"
+
 
     # Normal transitions: check history depth
     # Count how many historical user messages disclosed an emotion
@@ -185,10 +316,10 @@ def build_user_signal(
     # 1. Parse Explicit Emotions
     explicits = detect_explicit_emotion(user_message)
     
-    # Prioritize confusion over frustration in case of multiple matches
-    if "confusion" in explicits:
-        explicits.remove("confusion")
-        explicits.insert(0, "confusion")
+    # Sort by priority to ensure correct primary emotion matching
+    priority = ["anxiety", "frustration", "sadness", "stress", "loneliness", "confusion", "joy"]
+    explicits = sorted(explicits, key=lambda e: priority.index(e) if e in priority else 99)
+
 
     # 2. Extract Classifier Winner
     emotions_order = ["sadness", "anger", "fear", "anxiety", "happy", "excitement", "frustration", "loneliness", "neutral"]
@@ -461,7 +592,18 @@ class ResponseCritic:
         if "as an ai" in text_lower or "mental health companion" in text_lower or "cannot provide" in text_lower:
             failed.append("UNNECESSARY_DISCLAIMER")
 
+        # 8. Unsupported Inference / Hallucinated Empathy Check
+        absolute_assertions = ["always", "obviously", "clearly", "definitely", "stuck in a loop", "treated unfairly", "don't understand you", "hurt you"]
+        uncertainty_modifiers = ["maybe", "sounds like", "could be", "seems", "perhaps", "wonder", "might", "potentially", "i hear", "sounds", "like"]
+        
+        has_absolute = any(a in text_lower for a in absolute_assertions)
+        has_uncertainty = any(u in text_lower for u in uncertainty_modifiers)
+        
+        if has_absolute and not has_uncertainty:
+            failed.append("UNSUPPORTED_INFERENCE")
+
         return failed
 
 
 response_critic = ResponseCritic()
+

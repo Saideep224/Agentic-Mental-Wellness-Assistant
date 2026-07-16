@@ -264,25 +264,15 @@ async def cognitive_analyzer_agent(state: AgentState) -> dict:
         "want to sleep and never wake up", "don't want to exist", "live anymore"
     ]
     if any(keyword in msg_lower for keyword in crisis_keywords) or s_data.get("crisis_detected"):
-        detected_emotion = "Crisis"
         confidence_score = 0.95
         mood_score = 0.05
-        
-        # Override agent data
-        e_data["primary_emotion"] = "crisis"
-        e_data["sadness"] = 0.95
-        e_data["stress"] = 0.95
-        e_data["emotional_intensity"] = 10
-        
-        # Override local variables for compatibility
-        stress_val = 0.95
-        sadness_val = 0.95
         
         s_data = {
             "is_safe": False,
             "crisis_detected": True,
             "safety_action": "crisis_protocol"
         }
+
 
     # Populate backward-compatible keys
     emotion_dimensions = {

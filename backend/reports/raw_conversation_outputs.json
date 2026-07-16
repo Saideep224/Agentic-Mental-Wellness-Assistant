@@ -1,0 +1,34 @@
+{
+  "Conversation A": {
+    "user_messages": [
+      "hey"
+    ],
+    "raw_output": "hey! what's up?"
+  },
+  "Conversation B": {
+    "user_messages": [
+      "yeah I'm good today"
+    ],
+    "raw_output": "that's what i love to hear, glad you're having a good one"
+  },
+  "Conversation C": {
+    "user_messages": [
+      "idk i just feel low today"
+    ],
+    "raw_output": "i'm so sorry you're feeling that way, i'm right here if you want to vent about it"
+  },
+  "Conversation D": {
+    "user_messages": [
+      "my exam is tomorrow and im stressed",
+      "i still didn't start studying"
+    ],
+    "raw_output_turn1": "ughhh the pre-exam stress is actually the worst 😭 ||| how's the studying going so far?",
+    "raw_output_turn2": "oh no, that's totally okay though! we all have those days"
+  },
+  "Conversation E": {
+    "user_messages": [
+      "how's your day going?"
+    ],
+    "raw_output": "hey, not bad at all! just chilling, how about you"
+  }
+}

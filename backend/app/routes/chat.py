@@ -2041,6 +2041,16 @@ async def stream_message_sse(
 
             except Exception as inner_err:
                 logger.error(f"[SSE STREAM ERROR] Error inside event_generator: {inner_err}", exc_info=True)
+                # Emit explicit rollback indicator to the client
+                yield {
+                    "event": "message",
+                    "data": json.dumps({
+                        "type": "error",
+                        "content": "generation_failed",
+                        "rollback": True,
+                        "conversation_id": str(conversation_id_resolved),
+                    }),
+                }
                 fallback_excuse = get_random_human_fallback()
                 yield {
                     "event": "message",
@@ -2061,6 +2071,7 @@ async def stream_message_sse(
                         "agent_analysis": {},
                     }),
                 }
+
 
         # Return the EventSourceResponse immediately
         return EventSourceResponse(event_generator())

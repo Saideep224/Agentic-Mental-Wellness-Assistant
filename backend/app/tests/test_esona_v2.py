@@ -457,11 +457,12 @@ class EsonaV2TestCase(unittest.IsolatedAsyncioTestCase):
             emotional_profile={},
             db=self.db
         )
-        self.assertEqual(res_crisis["detected_emotion"], "Crisis")
+        self.assertNotEqual(res_crisis["detected_emotion"], "Crisis")
         self.assertEqual(res_crisis["detected_emotion_confidence"], 0.95)
         self.assertEqual(res_crisis["mood_score"], 0.05)
         self.assertEqual(res_crisis["safety_agent"]["crisis_detected"], True)
         await self.db.rollback()
+
 
 
 

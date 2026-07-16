@@ -555,6 +555,18 @@ class ResponseCritic:
         text_lower = candidate.lower().strip()
         word_count = len(text_lower.split())
 
+        # Stage machine validations (V3)
+        stage = plan.get("conversation_stage") or signal.get("conversation_stage") or "Listening"
+        
+        if stage == "Listening":
+            advice_indicators = ["try", "should", "suggest", "recommend", "how about", "why don't you", "you need to", "you must", "tips to", "solution"]
+            if any(indicator in text_lower for indicator in advice_indicators):
+                failed.append("ADVICE_IN_LISTENING_STAGE")
+                
+        if stage == "Reflection":
+            if "?" in candidate:
+                failed.append("QUESTION_IN_REFLECTION_STAGE")
+
         # 1. Clinical/Therapist Phrasing Check
         if any(p in text_lower for p in self.FORBIDDEN_THERAPIST_PHRASES):
             failed.append("TOO_CLINICAL")
@@ -587,11 +599,17 @@ class ResponseCritic:
             failed.append("ROBOTIC_LIST")
 
         # 6. Length mismatch & Strict 80-word limit
-        if word_count > 80:
-            failed.append("EXCEEDS_MAX_WORDS")
+        pref_len = plan.get("desired_length", "medium")
+        if stage == "Greeting":
+            if word_count > 15:
+                failed.append("TOO_VERBOSE")
+        elif stage in ("Reflection", "Closure"):
+            if word_count > 40:
+                failed.append("TOO_VERBOSE")
         else:
-            pref_len = plan.get("desired_length", "medium")
-            if pref_len == "short" and word_count > 45:
+            if word_count > 80:
+                failed.append("EXCEEDS_MAX_WORDS")
+            elif pref_len == "short" and word_count > 45:
                 failed.append("TOO_VERBOSE")
 
         # 7. Unnecessary disclaimer check
@@ -621,6 +639,45 @@ class ResponseCritic:
 
         return failed
 
+
+
+class MoodTrendTracker:
+    @staticmethod
+    async def get_mood_trend(db, user_id) -> str:
+        """Fetch last 3 logs and calculate intensity trends."""
+        try:
+            from sqlalchemy import select
+            import uuid
+            from app.models.mood_log import MoodLog
+            
+            user_uuid = uuid.UUID(str(user_id)) if isinstance(user_id, str) else user_id
+            result = await db.execute(
+                select(MoodLog)
+                .where(MoodLog.user_id == user_uuid)
+                .order_by(MoodLog.created_at.desc())
+                .limit(3)
+            )
+            logs = result.scalars().all()
+            if len(logs) < 2:
+                return "Stable"
+            
+            latest = logs[0]
+            prev = logs[1]
+            
+            latest_neg = (latest.sadness or 0.0) + (latest.anxiety or 0.0) + (latest.stress or 0.0)
+            prev_neg = (prev.sadness or 0.0) + (prev.anxiety or 0.0) + (prev.stress or 0.0)
+            
+            if latest_neg < prev_neg - 0.05:
+                return "Improving"
+            elif latest_neg > prev_neg + 0.05:
+                return "Worsening"
+            else:
+                return "Stable"
+        except Exception as e:
+            logger.warning(f"Failed to calculate mood trend: {e}")
+            return "Stable"
+
+mood_trend_tracker = MoodTrendTracker()
 
 response_critic = ResponseCritic()
 

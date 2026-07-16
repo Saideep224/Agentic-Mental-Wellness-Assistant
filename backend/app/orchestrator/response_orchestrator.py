@@ -445,11 +445,20 @@ ORCHESTRATED RESPONSE DIRECTIVES:
 {recent_responses_block}
 =================================================
 OUTPUT FORMAT REQUIREMENT (CRITICAL):
-Output ONLY your final conversational response to the user.
-Do NOT include any reasoning, planning, analysis, internal thoughts, XML tags, or chain-of-thought.
-Do NOT wrap your response in any tags such as <reasoning>, <thinking>, <analysis>, or similar.
-Do NOT explain your strategy, thought process, or emotional assessment.
-Your entire output must be the exact message the user will see in the chat.
+First, you MUST output an internal reasoning block wrapped in `<reasoning>` tags. The reasoning block must be a valid JSON object matching exactly this schema:
+{{
+  "primary_emotion": "Sadness" | "Anger" | "Fear" | "Anxiety" | "Happiness" | "Excitement" | "Frustration" | "Loneliness" | "Neutral",
+  "secondary_emotion": string | null,
+  "emotion_intensity": integer between 1-10,
+  "hidden_emotion": "fear" | "shame" | "guilt" | "loneliness" | "embarrassment" | "helplessness" | "relief" | "none" | string,
+  "conversation_stage": "Greeting" | "Listening" | "Exploring" | "Understanding" | "Helping" | "Reflection" | "Closure",
+  "user_need": "listening" | "validation" | "grounding" | "exploration" | "celebration" | "direct_advice" | "crisis_support",
+  "risk_level": "low" | "medium" | "high" | "crisis",
+  "best_strategy": "Comfort" | "Explore" | "Clarify" | "Encourage" | "Celebrate" | "Ground" | "Reframe" | "Reflect" | "Problem Solve" | "Listen Only" | "Crisis Support",
+  "confidence_score": float
+}}
+
+After the closing </reasoning> tag, output your final conversational response to the user.
 Split your response into 1 to 3 short chat bubbles using the " ||| " delimiter (with spaces around it).
 
 FEW-SHOT EXAMPLES (CRITICAL):

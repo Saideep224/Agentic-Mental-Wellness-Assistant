@@ -24,11 +24,11 @@ GROQ_MODELS = ["llama-3.3-70b-specdec", "llama3-70b-8192", "gemma2-9b-it"]
 
 # Centralized Route Priorities
 ROUTE_PROVIDER_PRIORITY = {
-    "FAST_SOCIAL": ["Groq", "OpenRouter", "Gemini", "OpenAI", "DeepSeek", "Ollama"],
-    "NORMAL_CHAT": ["Groq", "OpenRouter", "Gemini", "OpenAI", "DeepSeek", "Ollama"],
-    "EMOTIONAL_SUPPORT": ["OpenRouter", "Groq", "Gemini", "OpenAI", "DeepSeek", "Ollama"],
-    "DEEP_PERSONAL": ["OpenRouter", "Gemini", "Groq", "OpenAI", "DeepSeek", "Ollama"],
-    "SNAPSHOT_GENERATION": ["Gemini", "OpenRouter", "Groq", "OpenAI", "DeepSeek", "Ollama"],
+    "FAST_SOCIAL": ["Groq", "Gemini", "OpenRouter", "OpenAI", "DeepSeek", "Ollama"],
+    "NORMAL_CHAT": ["Groq", "Gemini", "OpenRouter", "OpenAI", "DeepSeek", "Ollama"],
+    "EMOTIONAL_SUPPORT": ["Groq", "Gemini", "OpenRouter", "OpenAI", "DeepSeek", "Ollama"],
+    "DEEP_PERSONAL": ["Groq", "Gemini", "OpenRouter", "OpenAI", "DeepSeek", "Ollama"],
+    "SNAPSHOT_GENERATION": ["Groq", "Gemini", "OpenRouter", "OpenAI", "DeepSeek", "Ollama"],
 }
 
 

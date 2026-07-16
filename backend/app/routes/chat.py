@@ -1744,17 +1744,20 @@ async def stream_message_sse(
                         memory_limit = 5
                         kg_limit = 5 if category == "EMOTIONAL_SUPPORT" else 10
 
-                        history = await _build_conversation_history(s_db, conversation_id_resolved, limit=history_limit)
-
                         from app.agents import memory_agent, personality_agent, emotion_agent, behavior_agent, growth_agent, intent_agent, safety_agent
                         from app.services.emotion_service import emotion_service
                         from app.services.knowledge_graph_service import knowledge_graph_service
+                        from app.services.emotional_intelligence import mood_trend_tracker
 
+                        history_task = asyncio.create_task(_build_conversation_history(s_db, conversation_id_resolved, limit=history_limit))
                         mem_task = asyncio.create_task(memory_agent.retrieve_context(s_db, str(current_user.id), message, limit=memory_limit))
                         kg_task = asyncio.create_task(knowledge_graph_service.retrieve_relevant_relationships(s_db, current_user.id, message))
                         emotion_task = asyncio.create_task(emotion_service.classify_emotion_fast(message))
-                        
-                        memories_res, kg_res, emotion_res = await asyncio.gather(mem_task, kg_task, emotion_task)
+                        trend_task = asyncio.create_task(mood_trend_tracker.get_mood_trend(s_db, current_user.id))
+
+                        history, memories_res, kg_res, emotion_res, emotional_trend = await asyncio.gather(
+                            history_task, mem_task, kg_task, emotion_task, trend_task
+                        )
                         memories = memories_res.get("memories", [])
                         graph_relationships = [f"- {r.subject} -> {r.predicate} -> {r.object}" for r in kg_res[:kg_limit]]
 
@@ -1786,31 +1789,30 @@ async def stream_message_sse(
                         s_data = safety_agent.check_safety(analysis, message)
                         
                         from app.services.emotional_intelligence import build_user_signal, select_response_strategy
+                        from app.services.reasoning_engine import reasoning_engine
+                        
                         personalization = emotional_profile.get("personality_profile", {})
-                        user_signal = build_user_signal(
-                            user_message=message,
-                            history=history,
-                            personalization=personalization,
-                            blended_scores=blended_scores
-                        )
-                        # Ensure UserSignal primary_emotion is capitalized for backward compatibility check
-                        if user_signal.get("primary_emotion"):
-                            user_signal["primary_emotion"] = user_signal["primary_emotion"].lower()
-                            
-                        response_plan = select_response_strategy(user_signal, personalization)
-
-                        from app.orchestrator.response_orchestrator import response_orchestrator
-                        orchestrated = response_orchestrator.determine_tone_and_strategy(
-                            personality=p_data,
-                            emotion=e_data,
-                            behavior=b_data,
-                            growth=g_data,
-                            message_type="emotional",
-                            user_signal=user_signal,
-                            personalization=personalization,
-                        )
-                        tone = orchestrated["tone"]
-                        strategy = orchestrated["strategy"]
+                        
+                        # State Machine Transition (V3)
+                        prev_stage = reasoning_engine.get_previous_stage(history)
+                        detected_emotion = emotion_res.get("detected_emotion", "Neutral")
+                        stage = reasoning_engine.transition_stage(prev_stage, message, history, detected_emotion)
+                        strategy = reasoning_engine.select_strategy_for_stage(stage, detected_emotion, "low" if detected_emotion != "Crisis" else "crisis")
+                        
+                        user_signal = {
+                            "primary_emotion": detected_emotion,
+                            "intensity": emotion_res.get("intensity", 5),
+                            "conversation_stage": stage,
+                            "emotional_trend": emotional_trend
+                        }
+                        response_plan = {
+                            "conversation_stage": stage,
+                            "primary_strategy": strategy,
+                            "desired_length": "medium" if detected_emotion != "Neutral" else "short",
+                            "tone": "empathetic" if detected_emotion.lower() in ["sadness", "frustration"] else "calming"
+                        }
+                        
+                        tone = response_plan["tone"]
                         
                         # Comfort kit if negative emotions
                         comfort_kit_dict = {}
@@ -1882,7 +1884,13 @@ async def stream_message_sse(
                                 "content": f"System Note: Here is a summary of the earlier part of this conversation:\n\"{summary}\"\nUse it for context, but do not repeat it verbatim."
                             })
                             
-                        for h in history:
+                        # Rolling summary history threshold: if exceeds 10 messages, send summary + last 4 messages
+                        if len(history) > 10:
+                            history_to_send = history[-4:]
+                        else:
+                            history_to_send = history
+                            
+                        for h in history_to_send:
                             messages.append({"role": h["role"], "content": h["content"]})
                         messages.append({"role": "user", "content": message})
 
@@ -1977,7 +1985,26 @@ async def stream_message_sse(
                             "safety_agent": s_data,
                             "retrieved_memories": memories,
                             "response_strategy": {"tone": tone, "strategy": strategy},
+                            "conversation_stage": stage,
                         }
+                        
+                        # Parse internal reasoning from ResponseAgent (V3)
+                        if isinstance(gen_res, dict) and gen_res.get("reasoning"):
+                            try:
+                                from app.utils.helpers import safe_json_parse
+                                reasoning_dict = safe_json_parse(gen_res["reasoning"])
+                                if reasoning_dict:
+                                    agent_analysis["conversation_stage"] = reasoning_dict.get("conversation_stage", stage)
+                                    agent_analysis["user_need"] = reasoning_dict.get("user_need", "")
+                                    agent_analysis["hidden_emotion"] = reasoning_dict.get("hidden_emotion", "")
+                                    agent_analysis["best_strategy"] = reasoning_dict.get("best_strategy", strategy)
+                                    agent_analysis["intensity"] = reasoning_dict.get("emotion_intensity", 5)
+                                    
+                                    # Overwrite detected_emotion and mood_score if model returned a primary emotion in reasoning
+                                    if reasoning_dict.get("primary_emotion"):
+                                        detected_emotion = reasoning_dict["primary_emotion"]
+                            except Exception as parse_err:
+                                logger.warning(f"Failed to parse internal reasoning JSON: {parse_err}")
 
                     # Save response and run background learning tasks async
                     background_tasks.add_task(

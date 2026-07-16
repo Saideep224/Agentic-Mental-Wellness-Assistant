@@ -26,6 +26,8 @@ def invalidate_profile_caches(user_id: Union[uuid.UUID, str]):
     uid = str(user_id)
     _profile_context_cache.pop(uid, None)
     _personalization_block_cache.pop(uid, None)
+    from app.database import _profile_cache
+    _profile_cache.pop(uid, None)
 
 
 QUESTION_FIELDS = {
@@ -105,9 +107,18 @@ def _normalize_profile_data(profile_input: Any) -> dict:
 class ProfileService:
     async def get_profile(self, db: AsyncSession, user_id: Union[uuid.UUID, str]) -> Optional[UserPersonalProfile]:
         uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+        uid_str = str(uid)
+        
+        from app.database import _profile_cache
+        if uid_str in _profile_cache:
+            return _profile_cache[uid_str]
+
         try:
             result = await db.execute(select(UserPersonalProfile).where(UserPersonalProfile.user_id == uid))
-            return result.scalars().first()
+            profile = result.scalars().first()
+            if profile:
+                _profile_cache[uid_str] = profile
+            return profile
         except Exception as exc:
             logger.warning("Personal profile lookup failed for %s: %s", uid, exc)
             return None

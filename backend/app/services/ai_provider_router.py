@@ -21,8 +21,8 @@ PROVIDER_TIMEOUTS = {
 # Source of truth for provider priority
 PROVIDER_PRIORITY = (
     "groq",
-    "openrouter",
     "gemini",
+    "openrouter",
     "openai",
 )
 

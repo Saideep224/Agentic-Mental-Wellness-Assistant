@@ -532,12 +532,15 @@ class ResponseCritic:
         "understand your concern", "empathize with your", "must be difficult",
         "must be challenging", "must be tough", "as an ai", "here to support you",
         "understand how you feel", "let's explore", "let's unpack", "unpack that",
-        "explore that", "validate your"
+        "explore that", "validate your", "i'm here for you", "i understand",
+        "thank you for sharing", "feelings are valid", "appreciate your openness",
+        "your feelings are", "i appreciate your"
     ]
 
     GENERIC_EMPATHY_OPENERS = [
         "that sounds tough", "that sounds heavy", "i'm sorry you're feeling",
-        "i'm sorry to hear", "that must be really", "i can imagine how"
+        "i'm sorry to hear", "that must be really", "i can imagine how",
+        "i am sorry you"
     ]
 
     def audit(
@@ -550,6 +553,7 @@ class ResponseCritic:
         """Runs quality checks and returns a list of failed check identifiers."""
         failed = []
         text_lower = candidate.lower().strip()
+        word_count = len(text_lower.split())
 
         # 1. Clinical/Therapist Phrasing Check
         if any(p in text_lower for p in self.FORBIDDEN_THERAPIST_PHRASES):
@@ -582,11 +586,13 @@ class ResponseCritic:
         if any(line.strip().startswith(("-", "*", "1.", "2.")) for line in candidate.splitlines()):
             failed.append("ROBOTIC_LIST")
 
-        # 6. Length mismatch
-        word_count = len(text_lower.split())
-        pref_len = plan.get("desired_length", "medium")
-        if pref_len == "short" and word_count > 45:
-            failed.append("TOO_VERBOSE")
+        # 6. Length mismatch & Strict 80-word limit
+        if word_count > 80:
+            failed.append("EXCEEDS_MAX_WORDS")
+        else:
+            pref_len = plan.get("desired_length", "medium")
+            if pref_len == "short" and word_count > 45:
+                failed.append("TOO_VERBOSE")
 
         # 7. Unnecessary disclaimer check
         if "as an ai" in text_lower or "mental health companion" in text_lower or "cannot provide" in text_lower:
@@ -602,8 +608,20 @@ class ResponseCritic:
         if has_absolute and not has_uncertainty:
             failed.append("UNSUPPORTED_INFERENCE")
 
+        # 9. Opening Repetition Guard
+        if recent_responses:
+            cand_words = text_lower.split()
+            cand_first_word = cand_words[0] if cand_words else ""
+            for past in recent_responses[-5:]:
+                past_words = past.lower().split()
+                past_first_word = past_words[0] if past_words else ""
+                if cand_first_word and cand_first_word == past_first_word and cand_first_word in ["hmm", "ah", "oof", "damn", "hey", "yeah", "honestly", "welp"]:
+                    failed.append("REPEATED_OPENING")
+                    break
+
         return failed
 
 
 response_critic = ResponseCritic()
+
 

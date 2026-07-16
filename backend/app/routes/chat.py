@@ -1641,8 +1641,17 @@ async def stream_message_sse(
                     p_start = time.perf_counter()
                     from app.services.profile_service import profile_service
                     
-                    emotional_profile = await _get_emotional_profile_dict(s_db, current_user.id, current_user.name)
-                    personalization_block = await profile_service.build_personalization_prompt_block(s_db, current_user.id)
+                    try:
+                        emotional_profile = await _get_emotional_profile_dict(s_db, current_user.id, current_user.name)
+                    except Exception as e:
+                        logger.warning(f"Failed to load emotional profile: {e}")
+                        emotional_profile = {}
+                        
+                    try:
+                        personalization_block = await profile_service.build_personalization_prompt_block(s_db, current_user.id)
+                    except Exception as e:
+                        logger.warning(f"Failed to load personalization block: {e}")
+                        personalization_block = ""
                     profile_context = personalization_block
                     logger.info(f"[CHAT PERF][trace={trace_id}] personalization_complete +{int((time.perf_counter() - start_time) * 1000)}ms duration={int((time.perf_counter() - p_start) * 1000)}ms")
 
@@ -1749,11 +1758,46 @@ async def stream_message_sse(
                         from app.services.knowledge_graph_service import knowledge_graph_service
                         from app.services.emotional_intelligence import mood_trend_tracker
 
-                        history_task = asyncio.create_task(_build_conversation_history(s_db, conversation_id_resolved, limit=history_limit))
-                        mem_task = asyncio.create_task(memory_agent.retrieve_context(s_db, str(current_user.id), message, limit=memory_limit))
-                        kg_task = asyncio.create_task(knowledge_graph_service.retrieve_relevant_relationships(s_db, current_user.id, message))
-                        emotion_task = asyncio.create_task(emotion_service.classify_emotion_fast(message))
-                        trend_task = asyncio.create_task(mood_trend_tracker.get_mood_trend(s_db, current_user.id))
+                        async def timed_history():
+                            t = time.perf_counter()
+                            res = await _build_conversation_history(s_db, conversation_id_resolved, limit=history_limit)
+                            logger.info(f"History Retrieval: {int((time.perf_counter() - t)*1000)}ms")
+                            return res
+
+                        async def timed_mem():
+                            t = time.perf_counter()
+                            res = await memory_agent.retrieve_context(s_db, str(current_user.id), message, limit=memory_limit)
+                            logger.info(f"Memory Retrieval: {int((time.perf_counter() - t)*1000)}ms")
+                            return res
+
+                        async def timed_kg():
+                            t = time.perf_counter()
+                            try:
+                                res = await knowledge_graph_service.retrieve_relevant_relationships(s_db, current_user.id, message)
+                            except Exception as e:
+                                logger.warning(f"Failed to retrieve KG: {e}")
+                                res = []
+                            logger.info(f"Knowledge Graph: {int((time.perf_counter() - t)*1000)}ms")
+                            return res
+
+                        async def timed_emotion():
+                            t = time.perf_counter()
+                            res = await emotion_service.classify_emotion_fast(message)
+                            logger.info(f"Emotion Analysis: {int((time.perf_counter() - t)*1000)}ms")
+                            return res
+
+                        async def timed_trend():
+                            t = time.perf_counter()
+                            res = await mood_trend_tracker.get_mood_trend(s_db, current_user.id)
+                            logger.info(f"Mood Trend: {int((time.perf_counter() - t)*1000)}ms")
+                            return res
+
+                        logger.info("Conversation Started")
+                        history_task = asyncio.create_task(timed_history())
+                        mem_task = asyncio.create_task(timed_mem())
+                        kg_task = asyncio.create_task(timed_kg())
+                        emotion_task = asyncio.create_task(timed_emotion())
+                        trend_task = asyncio.create_task(timed_trend())
 
                         history, memories_res, kg_res, emotion_res, emotional_trend = await asyncio.gather(
                             history_task, mem_task, kg_task, emotion_task, trend_task
@@ -1818,35 +1862,47 @@ async def stream_message_sse(
                         comfort_kit_dict = {}
                         from app.services.recommendation_service import recommendation_service
                         if detected_emotion.lower() in recommendation_service.NEGATIVE_EMOTIONS:
-                            kit = await recommendation_service.build_comfort_kit(
-                                db=s_db,
-                                user_id=str(current_user.id),
-                                detected_emotion=detected_emotion,
-                                graph_relationships=graph_relationships,
-                                personality_profile=emotional_profile.get("personality_profile", {}),
-                            )
-                            comfort_kit_dict = {
-                                "emotional_trigger": kit.emotional_trigger,
-                                "interests": kit.interests,
-                                "hobbies": kit.hobbies,
-                                "coping_activities": kit.coping_activities,
-                                "comfort_environment": kit.comfort_environment,
-                                "activity_suggestions": kit.activity_suggestions,
-                                "is_empty": kit.is_empty,
-                            }
+                            try:
+                                kit = await recommendation_service.build_comfort_kit(
+                                    db=s_db,
+                                    user_id=str(current_user.id),
+                                    detected_emotion=detected_emotion,
+                                    graph_relationships=graph_relationships,
+                                    personality_profile=emotional_profile.get("personality_profile", {}),
+                                )
+                                comfort_kit_dict = {
+                                    "emotional_trigger": kit.emotional_trigger,
+                                    "interests": kit.interests,
+                                    "hobbies": kit.hobbies,
+                                    "coping_activities": kit.coping_activities,
+                                    "comfort_environment": kit.comfort_environment,
+                                    "activity_suggestions": kit.activity_suggestions,
+                                    "is_empty": kit.is_empty,
+                                }
+                            except Exception as e:
+                                logger.warning(f"Failed to build comfort kit: {e}")
+                                comfort_kit_dict = {"is_empty": True}
                             
                         # Retrieve emotion timeline
                         from app.services.mood_tracker import MoodTracker
                         from zoneinfo import ZoneInfo
                         mt = MoodTracker(s_db)
-                        emotion_timeline = await mt.retrieve_emotion_timeline(current_user.id, days=7)
+                        try:
+                            emotion_timeline = await mt.retrieve_emotion_timeline(current_user.id, days=7)
+                        except Exception as e:
+                            logger.warning(f"Failed to retrieve emotion timeline: {e}")
+                            emotion_timeline = []
                         
                         # Growth insights check
                         growth_insight = None
                         total_msgs = len([m for m in history if m.get("role") == "user"])
                         if total_msgs > 0 and total_msgs % 15 == 0:
-                            from app.services.growth_insights_service import growth_insights_service
-                            growth_insight = await growth_insights_service.get_top_insight_for_chat(s_db, str(current_user.id))
+                            try:
+                                from app.services.growth_insights_service import growth_insights_service
+                                growth_insight = await growth_insights_service.get_top_insight_for_chat(s_db, str(current_user.id))
+                            except Exception as e:
+                                logger.warning(f"Failed to retrieve growth insight: {e}")
+                                growth_insight = None
                         
                         # Build system prompt
                         system_prompt = response_orchestrator.build_final_prompt(

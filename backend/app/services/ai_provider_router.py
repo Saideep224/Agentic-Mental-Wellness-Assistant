@@ -1,35 +1,73 @@
-"""Centralized AI Provider Router with per-request health-based failover, circuit breakers, and telemetry."""
+"""
+ESONA Provider Manager V2 - Centralized AI Provider Router with per-request
+health monitoring, failover, circuit breakers, strict timeouts, and background checks.
+"""
+
 import os
 import time
 import logging
 import asyncio
 import uuid
-from typing import AsyncGenerator, Dict, Any, List
+from typing import AsyncGenerator, Dict, Any, List, Optional
 from openai import AsyncOpenAI, RateLimitError, AuthenticationError, APIStatusError, InternalServerError, APIConnectionError
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Configured timeouts per provider (first-token/connect timeout)
-PROVIDER_TIMEOUTS = {
-    "groq": 5.0,
-    "openrouter": 7.0,
-    "gemini": 6.0,
-    "openai": 7.0,
+# Configured first-token (TTFB) and full completion timeouts per provider
+PROVIDER_TIMEOUTS_FIRST_TOKEN = {
+    "openrouter": 2.5,
+    "groq": 1.5,
+    "gemini": 2.0,
+    "openai": 2.0,
 }
 
-# Source of truth for provider priority
+PROVIDER_TIMEOUTS_FULL = {
+    "openrouter": 6.0,
+    "groq": 5.0,
+    "gemini": 6.0,
+    "openai": 6.0,
+}
+
+# Default search priorities
 PROVIDER_PRIORITY = (
+    "openrouter",
     "groq",
     "gemini",
-    "openrouter",
     "openai",
 )
 
-# Cooldowns and configuration thresholds
-COOLDOWN_RATE_LIMIT = 60.0
-COOLDOWN_AUTH_ERROR = 600.0
-COOLDOWN_CONSECUTIVE_FAILURES = 30.0
+
+class ProviderStats:
+    """Tracks latency, switch rates, and failures for a provider."""
+    def __init__(self, provider: str):
+        self.provider = provider
+        self.latency_sum = 0.0
+        self.latency_count = 0
+        self.success_count = 0
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.last_success_time = None
+
+    def record_success(self, latency_ms: float):
+        self.latency_sum += latency_ms
+        self.latency_count += 1
+        self.success_count += 1
+        self.last_success_time = time.time()
+
+    def record_failure(self):
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+
+    @property
+    def average_latency(self) -> float:
+        return self.latency_sum / self.latency_count if self.latency_count > 0 else 0.0
+
+    @property
+    def success_rate(self) -> float:
+        total = self.success_count + self.failure_count
+        return self.success_count / total if total > 0 else 1.0
+
 
 class ProviderHealth:
     def __init__(self, provider: str):
@@ -38,7 +76,6 @@ class ProviderHealth:
         self.circuit_state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
         self.disabled_until = None
         self.last_error_type = None
-        self.last_success_at = None
 
     def is_available(self) -> bool:
         now = time.time()
@@ -50,7 +87,6 @@ class ProviderHealth:
                 logger.info(f"[AI_PROVIDER] provider={self.provider} stage=HALF_OPEN_PROBE")
                 return True
             return False
-        # HALF_OPEN allows a single probe request
         return True
 
     def record_success(self):
@@ -60,24 +96,22 @@ class ProviderHealth:
         self.circuit_state = "CLOSED"
         self.disabled_until = None
         self.last_error_type = None
-        self.last_success_at = time.time()
 
     def record_failure(self, error_type: str):
         self.consecutive_failures += 1
         self.last_error_type = error_type
         
         cooldown = 0.0
-        if error_type == "RATE_LIMIT":
+        # Rule 7: Cooldown on 3 consecutive failures
+        if self.consecutive_failures >= 3:
             self.circuit_state = "OPEN"
-            cooldown = COOLDOWN_RATE_LIMIT
+            cooldown = 300.0  # 5 minutes
+        elif error_type == "RATE_LIMIT":
+            self.circuit_state = "OPEN"
+            cooldown = 60.0
         elif error_type == "AUTH_ERROR":
             self.circuit_state = "OPEN"
-            cooldown = COOLDOWN_AUTH_ERROR
-        else:
-            # TIMEOUT, SERVER_ERROR, NETWORK_ERROR, INVALID_RESPONSE, UNKNOWN_ERROR
-            if self.consecutive_failures >= 2:
-                self.circuit_state = "OPEN"
-                cooldown = COOLDOWN_CONSECUTIVE_FAILURES
+            cooldown = 600.0
 
         if self.circuit_state == "OPEN":
             self.disabled_until = time.time() + cooldown
@@ -86,16 +120,31 @@ class ProviderHealth:
                 f"reason={error_type} cooldown_seconds={int(cooldown)}"
             )
 
-class AIProviderRouter:
+
+class ProviderManager:
+    """Manages AI providers failovers, circuit states, and response streams."""
+
     def __init__(self):
         self.health_states: Dict[str, ProviderHealth] = {
             p: ProviderHealth(p) for p in PROVIDER_PRIORITY
         }
+        self.stats: Dict[str, ProviderStats] = {
+            p: ProviderStats(p) for p in PROVIDER_PRIORITY
+        }
         self.clients: Dict[str, AsyncOpenAI] = {}
         self._log_startup_config()
+        
+        # Start background health task
+        if not self._is_mocked_env():
+            asyncio.create_task(self.start_background_health_loop())
+
+    def _is_mocked_env(self) -> bool:
+        import sys
+        if "pytest" in sys.modules:
+            return True
+        return False
 
     def _log_startup_config(self):
-        # Startup telemetry logs (do not expose keys)
         logger.info(f"[AI_CONFIG] provider=groq configured={bool(os.environ.get('GROQ_API_KEY'))}")
         logger.info(f"[AI_CONFIG] provider=openrouter configured={bool(settings.OPENROUTER_API_KEY)}")
         logger.info(f"[AI_CONFIG] provider=gemini configured={bool(settings.GEMINI_API_KEY)}")
@@ -104,7 +153,6 @@ class AIProviderRouter:
     def _get_client(self, provider: str, api_key: str, base_url: str | None) -> AsyncOpenAI:
         client_key = f"{provider}:{base_url}"
         if client_key not in self.clients:
-            # Disable automatic retries inside OpenAI SDK (interactive speed is critical)
             self.clients[client_key] = AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url,
@@ -117,7 +165,6 @@ class AIProviderRouter:
         if provider == "groq":
             groq_key = os.environ.get("GROQ_API_KEY")
             if groq_key:
-                # Fallback list of models on Groq
                 groq_models = ["llama-3.3-70b-specdec", "llama3-70b-8192", "gemma2-9b-it"]
                 for m in groq_models:
                     configs.append({
@@ -156,6 +203,27 @@ class AIProviderRouter:
                 })
         return configs
 
+    def select_provider_priority(self, route_category: str, history_len: int = 0) -> List[str]:
+        """Dynamically order providers based on input details/rules."""
+        # 1. Crisis -> Groq (fastest healthy provider)
+        if route_category == "SAFETY_CRITICAL":
+            return ["groq", "gemini", "openai", "openrouter"]
+            
+        # 2. Greetings/Casual -> OpenRouter
+        if route_category == "FAST_SOCIAL":
+            return ["openrouter", "groq", "gemini", "openai"]
+            
+        # 3. Heavy reasoning -> Gemini or OpenAI
+        if route_category == "DEEP_PERSONAL":
+            return ["gemini", "openai", "groq", "openrouter"]
+            
+        # 4. Very long conversations -> OpenRouter
+        if history_len > 15:
+            return ["openrouter", "gemini", "openai", "groq"]
+            
+        # Default: OpenRouter -> Groq -> Gemini -> OpenAI
+        return ["openrouter", "groq", "gemini", "openai"]
+
     def classify_error(self, exc: Exception) -> str:
         err_str = str(exc).lower()
         if isinstance(exc, RateLimitError):
@@ -180,17 +248,14 @@ class AIProviderRouter:
             if status in (500, 502, 503):
                 return "SERVER_ERROR"
 
-        # Safe fallback regex string matching
-        if "429" in err_str or "rate limit" in err_str or "quota" in err_str or "resource_exhausted" in err_str or "too many requests" in err_str:
+        if "429" in err_str or "rate limit" in err_str or "quota" in err_str or "resource_exhausted" in err_str:
             return "RATE_LIMIT"
-        if "401" in err_str or "403" in err_str or "unauthorized" in err_str or "forbidden" in err_str or "invalid api key" in err_str or "invalid_api_key" in err_str:
+        if "401" in err_str or "403" in err_str or "unauthorized" in err_str or "invalid api key" in err_str:
             return "AUTH_ERROR"
         if "timeout" in err_str or "timed out" in err_str:
             return "TIMEOUT"
-        if "500" in err_str or "502" in err_str or "503" in err_str or "504" in err_str or "server error" in err_str:
+        if "500" in err_str or "502" in err_str or "503" in err_str or "504" in err_str:
             return "SERVER_ERROR"
-        if "connection" in err_str or "network" in err_str or "dns" in err_str or "transport" in err_str or "reset" in err_str or "refused" in err_str:
-            return "NETWORK_ERROR"
             
         return "UNKNOWN_ERROR"
 
@@ -200,36 +265,52 @@ class AIProviderRouter:
         c_stripped = content.strip()
         if not c_stripped:
             return False
-        # Remove masking fallback phrases from success logic
         lower_content = c_stripped.lower()
         if "my brain lagged for a moment" in lower_content:
             return False
-        if "sorry my bad, something went off on my end" in lower_content:
+        if "sorry my bad" in lower_content:
             return False
         if "internal server error" in lower_content:
-            return False
-        if "exception:" in lower_content or "traceback (most recent call" in lower_content:
             return False
         return True
 
     def get_safe_local_fallback(self, messages: list) -> str:
-        """Predefined category/emotion aware lightweight local fallback."""
-        user_message = ""
-        for m in reversed(messages):
-            if m.get("role") == "user":
-                user_message = m.get("content", "").lower()
-                break
-                
-        # Simple local keyword categorization
-        if any(w in user_message for w in ["hi", "hey", "hello", "sup"]):
-            return "hey :) I'm here. what's up?"
-        if any(w in user_message for w in ["sad", "cry", "depress", "hurt", "pain"]):
-            return "I'm here. you don't have to explain everything at once."
-        if any(w in user_message for w in ["stress", "anxious", "worry", "panic", "overwhelm"]):
-            return "okay, slow down with me for a sec. one thing at a time."
-        if any(w in user_message for w in ["angry", "mad", "hate", "annoy", "frustrate"]):
-            return "yeah, I can tell this really got to you. take your time."
-        return "gotcha. wanna just hang here for a bit?"
+        return "I'm having a temporary connection issue. Let me try that again."
+
+    async def _ping_provider(self, provider: str) -> bool:
+        """Background health check: ping a provider with a minimal token budget."""
+        configs = self._get_provider_config(provider)
+        if not configs:
+            return False
+        config = configs[0]
+        client = self._get_client(provider, config["api_key"], config["base_url"])
+        try:
+            async with asyncio.timeout(5.0):
+                response = await client.chat.completions.create(
+                    model=config["model"],
+                    messages=[{"role": "user", "content": "ping"}],
+                    max_tokens=5,
+                    temperature=0.1
+                )
+                content = response.choices[0].message.content
+                return bool(content and len(content.strip()) > 0)
+        except Exception:
+            return False
+
+    async def start_background_health_loop(self):
+        """Rule 8: Background health checks every 5 minutes."""
+        while True:
+            await asyncio.sleep(300.0)
+            logger.info("[BackgroundHealthCheck] Running scheduled checks...")
+            for provider in PROVIDER_PRIORITY:
+                health = self.health_states[provider]
+                if health.circuit_state == "OPEN" or health.consecutive_failures > 0:
+                    success = await self._ping_provider(provider)
+                    if success:
+                        logger.info(f"[BackgroundHealthCheck] Provider {provider} recovered.")
+                        health.record_success()
+                    else:
+                        logger.warning(f"[BackgroundHealthCheck] Provider {provider} is still unhealthy.")
 
     async def generate(
         self,
@@ -240,34 +321,27 @@ class AIProviderRouter:
         route_category: str = "NORMAL_CHAT"
     ) -> str:
         request_id = uuid.uuid4().hex[:8]
-        logger.info(f"[CHAT_TRACE] request_id={request_id} stage=GENERATION_STARTED")
+        logger.info(f"[ProviderManager] request_id={request_id} stage=GENERATION_STARTED")
         
         last_error = None
-        current_provider_idx = 0
+        providers = self.select_provider_priority(route_category)
         
-        while current_provider_idx < len(PROVIDER_PRIORITY):
-            provider = PROVIDER_PRIORITY[current_provider_idx]
+        for provider in providers:
             health = self.health_states[provider]
-            
             if not health.is_available():
-                logger.info(f"[AI_PROVIDER] request_id={request_id} provider={provider} stage=SKIPPED reason=CIRCUIT_OPEN")
-                current_provider_idx += 1
                 continue
                 
             configs = self._get_provider_config(provider)
             if not configs:
-                current_provider_idx += 1
                 continue
                 
-            success = False
             for config in configs:
                 api_key = config["api_key"]
                 base_url = config["base_url"]
                 model = config["model"]
                 
-                logger.info(f"[AI_PROVIDER] request_id={request_id} provider={provider} stage=ATTEMPT_STARTED model={model}")
                 client = self._get_client(provider, api_key, base_url)
-                timeout_val = PROVIDER_TIMEOUTS.get(provider, 7.0)
+                timeout_val = PROVIDER_TIMEOUTS_FULL.get(provider, 6.0)
                 
                 start_time = time.perf_counter()
                 try:
@@ -289,25 +363,27 @@ class AIProviderRouter:
                         
                     health.record_success()
                     latency = int((time.perf_counter() - start_time) * 1000)
-                    logger.info(f"[AI_PROVIDER] request_id={request_id} provider={provider} stage=SUCCESS latency_ms={latency}")
-                    logger.info(f"[CHAT_TRACE] request_id={request_id} stage=RESPONSE_COMPLETE total_latency_ms={latency} provider={provider}")
+                    self.stats[provider].record_success(latency)
+                    
+                    # Rule 15: Log Telemetry
+                    logger.info(
+                        f"[ProviderManager Telemetry] request_id={request_id} provider={provider} "
+                        f"latency_ms={latency} status=SUCCESS"
+                    )
                     return content.strip()
                     
                 except Exception as exc:
                     error_type = self.classify_error(exc)
                     health.record_failure(error_type)
+                    self.stats[provider].record_failure()
                     last_error = exc
                     
-                    next_provider = PROVIDER_PRIORITY[current_provider_idx + 1] if current_provider_idx + 1 < len(PROVIDER_PRIORITY) else "Fallback"
                     logger.warning(
-                        f"[AI_PROVIDER] request_id={request_id} from_provider={provider} "
-                        f"to_provider={next_provider} stage=FAILOVER reason={error_type} error={str(exc)}"
+                        f"[ProviderManager Fallback] request_id={request_id} failed_provider={provider} "
+                        f"reason={error_type} error={str(exc)}"
                     )
-            
-            current_provider_idx += 1
-
-        # All providers failed, trigger safe local fallback
-        logger.warning(f"[CHAT_TRACE] request_id={request_id} stage=ALL_PROVIDERS_FAILED. Triggering safe fallback.")
+        
+        # Rule 16: Return safe fallback if all providers fail
         return self.get_safe_local_fallback(messages)
 
     async def stream(
@@ -318,34 +394,28 @@ class AIProviderRouter:
         route_category: str = "NORMAL_CHAT"
     ) -> AsyncGenerator[str, None]:
         request_id = uuid.uuid4().hex[:8]
-        logger.info(f"[CHAT_TRACE] request_id={request_id} stage=STREAM_STARTED")
+        logger.info(f"[ProviderManager] request_id={request_id} stage=STREAM_STARTED")
         
         last_error = None
-        current_provider_idx = 0
+        providers = self.select_provider_priority(route_category)
         
-        while current_provider_idx < len(PROVIDER_PRIORITY):
-            provider = PROVIDER_PRIORITY[current_provider_idx]
+        for provider in providers:
             health = self.health_states[provider]
-            
             if not health.is_available():
-                logger.info(f"[AI_PROVIDER] request_id={request_id} provider={provider} stage=SKIPPED reason=CIRCUIT_OPEN")
-                current_provider_idx += 1
                 continue
                 
             configs = self._get_provider_config(provider)
             if not configs:
-                current_provider_idx += 1
                 continue
                 
-            success = False
             for config in configs:
                 api_key = config["api_key"]
                 base_url = config["base_url"]
                 model = config["model"]
                 
-                logger.info(f"[AI_PROVIDER] request_id={request_id} provider={provider} stage=ATTEMPT_STARTED model={model}")
                 client = self._get_client(provider, api_key, base_url)
-                timeout_val = PROVIDER_TIMEOUTS.get(provider, 7.0)
+                first_token_timeout = PROVIDER_TIMEOUTS_FIRST_TOKEN.get(provider, 2.0)
+                full_timeout = PROVIDER_TIMEOUTS_FULL.get(provider, 6.0)
                 
                 start_time = time.perf_counter()
                 yielded_anything = False
@@ -358,61 +428,65 @@ class AIProviderRouter:
                         "stream": True
                     }
                     
-                    # Connect phase timeout
-                    async with asyncio.timeout(timeout_val):
+                    # Rule 10: Stream first token timeout check
+                    async with asyncio.timeout(first_token_timeout):
                         response = await client.chat.completions.create(**kwargs)
+                        iterator = response.__aiter__()
+                        first_chunk = await iterator.__anext__()
                         
-                    # Stream iterate phase with rolling idle timeout
-                    iterator = response.__aiter__()
-                    while True:
-                        try:
-                            # 5.0s idle timeout between chunks to catch hung streams without stopping slow complete replies
-                            async with asyncio.timeout(5.0):
-                                chunk = await iterator.__anext__()
-                        except StopAsyncIteration:
-                            break
-                            
-                        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                            content = chunk.choices[0].delta.content
-                            yielded_anything = True
-                            yield content
-                            
-                    if yielded_anything:
-                        health.record_success()
-                        latency = int((time.perf_counter() - start_time) * 1000)
-                        logger.info(f"[AI_PROVIDER] request_id={request_id} provider={provider} stage=SUCCESS latency_ms={latency}")
-                        logger.info(f"[CHAT_TRACE] request_id={request_id} stage=RESPONSE_COMPLETE total_latency_ms={latency} provider={provider}")
-                        return
-                    else:
-                        raise ValueError("Stream yielded empty tokens")
+                    ttfb = int((time.perf_counter() - start_time) * 1000)
+                    logger.info(f"[ProviderManager] request_id={request_id} provider={provider} stage=FIRST_TOKEN ttfb_ms={ttfb}")
+                    
+                    yielded_anything = True
+                    if first_chunk.choices and first_chunk.choices[0].delta and first_chunk.choices[0].delta.content:
+                        yield first_chunk.choices[0].delta.content
                         
+                    # Stream the rest under full timeout limits
+                    remaining_timeout = max(0.1, full_timeout - (time.perf_counter() - start_time))
+                    async with asyncio.timeout(remaining_timeout):
+                        while True:
+                            try:
+                                async with asyncio.timeout(5.0):
+                                    chunk = await iterator.__anext__()
+                                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                                    yield chunk.choices[0].delta.content
+                            except StopAsyncIteration:
+                                break
+                                
+                    health.record_success()
+                    latency = int((time.perf_counter() - start_time) * 1000)
+                    self.stats[provider].record_success(latency)
+                    
+                    logger.info(
+                        f"[ProviderManager Telemetry] request_id={request_id} provider={provider} "
+                        f"ttfb_ms={ttfb} total_ms={latency} status=SUCCESS"
+                    )
+                    return
                 except Exception as exc:
                     if yielded_anything:
-                        # If we already sent chunks, we cannot roll back the SSE connection.
-                        # We just log the interruption and stop.
-                        logger.error(f"[AI_PROVIDER] request_id={request_id} provider={provider} stage=STREAM_INTERRUPTED error={str(exc)}")
+                        # Already started streaming to client, log and stop
+                        logger.error(f"[ProviderManager] request_id={request_id} provider={provider} stage=STREAM_INTERRUPTED error={str(exc)}")
                         return
                         
                     error_type = self.classify_error(exc)
                     health.record_failure(error_type)
+                    self.stats[provider].record_failure()
                     last_error = exc
                     
-                    next_provider = PROVIDER_PRIORITY[current_provider_idx + 1] if current_provider_idx + 1 < len(PROVIDER_PRIORITY) else "Fallback"
                     logger.warning(
-                        f"[AI_PROVIDER] request_id={request_id} from_provider={provider} "
-                        f"to_provider={next_provider} stage=FAILOVER reason={error_type} error={str(exc)}"
+                        f"[ProviderManager Fallback] request_id={request_id} failed_provider={provider} "
+                        f"reason={error_type} error={str(exc)}"
                     )
                     
-            current_provider_idx += 1
-
-        # All providers failed, output safe local fallback
-        logger.warning(f"[CHAT_TRACE] request_id={request_id} stage=ALL_PROVIDERS_FAILED. Triggering safe fallback stream.")
+        # Rule 16: Return safe fallback if all providers fail
+        logger.warning(f"[ProviderManager] request_id={request_id} stage=ALL_PROVIDERS_FAILED. Yielding fallback stream.")
         fallback_text = self.get_safe_local_fallback(messages)
-        # Yield character-by-character or chunk-by-chunk to simulate streaming
         chunk_size = 4
         for i in range(0, len(fallback_text), chunk_size):
             yield fallback_text[i:i+chunk_size]
             await asyncio.sleep(0.01)
 
-# Central router instance singleton
-ai_provider_router = AIProviderRouter()
+
+# Singleton instances
+provider_manager = ProviderManager()
+ai_provider_router = provider_manager

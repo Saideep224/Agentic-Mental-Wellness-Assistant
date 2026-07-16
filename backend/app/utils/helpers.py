@@ -70,8 +70,8 @@ HUMAN_FALLBACK_RESPONSES = [
 
 
 def get_random_human_fallback() -> str:
-    """Returns a randomized, human-like excuse to keep conversation continuity on error."""
-    return random.choice(HUMAN_FALLBACK_RESPONSES)
+    """Returns the production connection issue fallback string."""
+    return "I'm having a temporary connection issue. Let me try that again."
 
 
 def get_speculative_transition(message: str) -> str:

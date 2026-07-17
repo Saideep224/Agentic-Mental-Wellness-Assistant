@@ -12,6 +12,7 @@ from app.database.session import (
     write_queue,
     _history_cache,
     _profile_cache,
+    _emotional_profile_cache,
     _memory_cache,
 )
 
@@ -24,5 +25,6 @@ __all__ = [
     "write_queue",
     "_history_cache",
     "_profile_cache",
+    "_emotional_profile_cache",
     "_memory_cache",
 ]

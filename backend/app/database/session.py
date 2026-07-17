@@ -38,7 +38,8 @@ async def get_db() -> AsyncSession:  # type: ignore[misc]
 
 # ── In-Memory Session Caches for Fallback Resilience ─────────
 _history_cache: dict[tuple[str, str], list[dict]] = {}  # key: (user_id, conversation_id)
-_profile_cache: dict[str, dict] = {}                   # key: user_id
+_profile_cache: dict[str, DeclarativeBase] = {}            # key: user_id (ORM models)
+_emotional_profile_cache: dict[str, dict] = {}         # key: user_id (profile dicts)
 _memory_cache: dict[str, list] = {}                     # key: user_id
 
 # ── Background Task Writing Queue for Async Recovery ────────

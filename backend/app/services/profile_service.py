@@ -26,8 +26,9 @@ def invalidate_profile_caches(user_id: Union[uuid.UUID, str]):
     uid = str(user_id)
     _profile_context_cache.pop(uid, None)
     _personalization_block_cache.pop(uid, None)
-    from app.database import _profile_cache
+    from app.database import _profile_cache, _emotional_profile_cache
     _profile_cache.pop(uid, None)
+    _emotional_profile_cache.pop(uid, None)
 
 
 QUESTION_FIELDS = {

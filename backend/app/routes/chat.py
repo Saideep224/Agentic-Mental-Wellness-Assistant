@@ -8,6 +8,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
@@ -24,7 +25,8 @@ from app.models.conversation import Conversation, Message, MessageRole
 from app.models.user_profile import UserProfile
 from app.models.mood_log import MoodLog
 from app.routes.auth import get_current_user
-from app.database import _history_cache, _profile_cache, write_queue
+from app.database import _history_cache, _emotional_profile_cache, write_queue
+from app.orchestrator import response_orchestrator
 _recent_responses_cache: dict[str, list[str]] = {}
 _RESPONSE_CACHE_SIZE = 20
 from app.utils.helpers import get_random_human_fallback, get_speculative_transition, normalize_uuid, detect_specialist_action
@@ -361,11 +363,11 @@ async def _get_emotional_profile_dict(
             })
             
         # Update in-memory fallback cache
-        _profile_cache[str(user_id)] = profile_dict
+        _emotional_profile_cache[str(user_id)] = profile_dict
         return profile_dict
     except Exception as e:
         logger.warning(f"[DB FAIL] _get_emotional_profile_dict failed: {e}. Falling back to in-memory cache.")
-        return _profile_cache.get(str(user_id), profile_dict)
+        return _emotional_profile_cache.get(str(user_id), profile_dict)
 
 
 async def _get_conversation_summary(db: AsyncSession, user_id: str, conversation_id: str) -> str | None:

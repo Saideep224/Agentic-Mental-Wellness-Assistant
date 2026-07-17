@@ -133,7 +133,7 @@ async def mock_llm_completion(messages, **kwargs):
             return res
             
     # 2. Response Agent mock response
-    elif "You are Buddy, an AI wellness companion." in sys_content or "You are Esona, an AI wellness companion." in sys_content:
+    elif "You are Buddy, an AI wellness companion." in sys_content or "You are Esona" in sys_content:
         # Determine intent mode from the prompt content
         print(f"[DEBUG MOCK] Response Agent called.")
         if "INTENT: CRISIS" in sys_content:
@@ -167,6 +167,18 @@ async def mock_llm_completion(messages, **kwargs):
                 "oh damn, that really sucks... I'm sorry you're dealing with that. ||| "
                 "I'm here if you wanna vent, okay?"
             )
+    elif "You compile personalization profiles." in sys_content:
+        import inspect
+        if any("test_personalization" in frame.filename for frame in inspect.stack()):
+            print(f"[DEBUG MOCK] Profile Summarizer bypassed for test_personalization.py.")
+            return await original_generate_chat_completion_with_fallback(messages, **kwargs)
+        print(f"[DEBUG MOCK] Profile Summarizer called.")
+        return """1. Age/life stage: 20-year-old student
+2. Communication: wants casual/short/direct, emoji preference, youth-oriented tone
+3. Support style: listen first, validation preference
+4. Emotional patterns: overthinking under stress
+5. Interests: gaming, reading
+6. Tone: warm, direct, casual"""
             
     print("[DEBUG MOCK] Unmatched sys_content.")
     return await original_generate_chat_completion_with_fallback(messages, **kwargs)

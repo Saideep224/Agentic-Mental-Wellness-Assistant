@@ -133,8 +133,9 @@ class ChatStreamResilienceTestCase(unittest.IsolatedAsyncioTestCase):
             yielded_content.append(chunk)
 
         # Assertions
-        self.assertEqual(len(yielded_content), 1)
-        self.assertEqual(yielded_content[0], "hello from provider b")
+        self.assertEqual(len(yielded_content), 2)
+        self.assertEqual(yielded_content[0].text, "hello from provider b")
+        self.assertTrue(yielded_content[1].finished)
         mock_client_a.chat.completions.create.assert_called_once()
         mock_client_b.chat.completions.create.assert_called_once()
 

@@ -291,7 +291,7 @@ async def _mock_generate(messages, temperature, max_tokens, response_format, pre
             hasattr(AsyncOpenAI, "_mock_return_value")
         )
         if not has_real_mock:
-            raise APIConnectionError("Real network blocked in test environment", request=None)
+            raise APIConnectionError(message="Real network blocked in test environment", request=None)
 
     last_error = None
     for name, base_url, api_key, model in _providers(route_category, preferred_model):
@@ -336,7 +336,7 @@ async def _mock_stream(messages, temperature, max_tokens, preferred_model, route
             hasattr(AsyncOpenAI, "_mock_return_value")
         )
         if not has_real_mock:
-            raise APIConnectionError("Real network blocked in test environment", request=None)
+            raise APIConnectionError(message="Real network blocked in test environment", request=None)
 
     for name, base_url, api_key, model in _providers(route_category, preferred_model):
         try:

@@ -91,7 +91,7 @@ class OverhaulScenariosTestCase(unittest.TestCase):
             mock_settings.OPENROUTER_MODEL = "google/gemma-4-31b-it:free"
             mock_settings.OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
             
-            mock_settings.GEMINI_API_KEY = "gemini-key"
+            mock_settings.GEMINI_API_KEY = ""
             mock_settings.GEMINI_MODEL = "gemini-2.5-flash"
             mock_settings.GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai/"
             

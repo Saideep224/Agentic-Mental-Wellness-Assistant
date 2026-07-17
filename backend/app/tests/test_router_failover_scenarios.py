@@ -3,12 +3,12 @@ import unittest
 import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from openai import RateLimitError, AuthenticationError, InternalServerError, APIConnectionError
-from app.services.ai_provider_router import AIProviderRouter, ProviderHealth
+from app.services.ai_provider_router import ProviderManager, ProviderHealth
 
 class RouterFailoverScenariosTestCase(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         # Create a fresh router instance for each test
-        self.router = AIProviderRouter()
+        self.router = ProviderManager()
         # Reset health state for testing predictability
         for p in self.router.health_states.values():
             p.consecutive_failures = 0
@@ -38,12 +38,14 @@ class RouterFailoverScenariosTestCase(unittest.IsolatedAsyncioTestCase):
         # Reset
         health.record_success()
 
-        # 3. Timeout -> OPEN for 30s only after 2 consecutive failures
+        # 3. Timeout -> OPEN for 300s only after 3 consecutive failures
         health.record_failure("TIMEOUT")
         self.assertEqual(health.circuit_state, "CLOSED")  # Should still be closed on 1st fail
         health.record_failure("TIMEOUT")
-        self.assertEqual(health.circuit_state, "OPEN")    # OPEN on 2nd consecutive fail
-        self.assertAlmostEqual(health.disabled_until - time.time(), 30.0, delta=5.0)
+        self.assertEqual(health.circuit_state, "CLOSED")  # Should still be closed on 2nd fail
+        health.record_failure("TIMEOUT")
+        self.assertEqual(health.circuit_state, "OPEN")    # OPEN on 3rd consecutive fail
+        self.assertAlmostEqual(health.disabled_until - time.time(), 300.0, delta=10.0)
 
     @patch("app.services.ai_provider_router.os.environ.get")
     @patch("app.services.ai_provider_router.settings")
@@ -94,7 +96,7 @@ class RouterFailoverScenariosTestCase(unittest.IsolatedAsyncioTestCase):
             return or_client
 
         with patch.object(self.router, "_get_client", side_effect=mock_get_client):
-            res = await self.router.generate([{"role": "user", "content": "hi"}])
+            res = await self.router.generate([{"role": "user", "content": "hi"}], route_category="SAFETY_CRITICAL")
             self.assertEqual(res, "Hello from OpenRouter!")
             self.assertEqual(self.router.health_states["groq"].circuit_state, "OPEN")
             self.assertEqual(self.router.health_states["openrouter"].circuit_state, "CLOSED")
@@ -145,8 +147,8 @@ class RouterFailoverScenariosTestCase(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(self.router, "_get_client", return_value=failing_client):
             res = await self.router.generate([{"role": "user", "content": "feeling so stressed out"}])
-            # Should fall back to the Stress fallback message
-            self.assertIn("slow down with me", res.lower())
+            # Should fall back to the uniform fallback message
+            self.assertEqual(res, "I'm having a temporary connection issue. Let me try that again.")
 
 if __name__ == "__main__":
     unittest.main()

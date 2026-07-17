@@ -141,7 +141,11 @@ class ProviderManager:
         
         # Start background health task
         if not self._is_mocked_env():
-            asyncio.create_task(self.start_background_health_loop())
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.start_background_health_loop())
+            except RuntimeError:
+                logger.info("[AI_PROVIDER] No running event loop detected during initialization. Deferring background health loop.")
 
     def _is_mocked_env(self) -> bool:
         import sys

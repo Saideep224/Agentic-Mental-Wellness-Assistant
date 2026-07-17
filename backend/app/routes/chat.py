@@ -1799,8 +1799,34 @@ async def stream_message_sse(
                         emotion_task = asyncio.create_task(timed_emotion())
                         trend_task = asyncio.create_task(timed_trend())
 
-                        history, memories_res, kg_res, emotion_res, emotional_trend = await asyncio.gather(
-                            history_task, mem_task, kg_task, emotion_task, trend_task
+                        async def timed_timeline():
+                            t = time.perf_counter()
+                            from app.services.mood_tracker import MoodTracker
+                            mt = MoodTracker(s_db)
+                            try:
+                                res = await mt.retrieve_emotion_timeline(current_user.id, days=7)
+                            except Exception as e:
+                                logger.warning(f"Failed to retrieve emotion timeline: {e}")
+                                res = []
+                            logger.info(f"Timeline Retrieval: {int((time.perf_counter() - t)*1000)}ms")
+                            return res
+
+                        async def timed_growth_insight():
+                            t = time.perf_counter()
+                            try:
+                                from app.services.growth_insights_service import growth_insights_service
+                                res = await growth_insights_service.get_top_insight_for_chat(s_db, str(current_user.id))
+                            except Exception as e:
+                                logger.warning(f"Failed to retrieve growth insight: {e}")
+                                res = None
+                            logger.info(f"Growth Insight Retrieval: {int((time.perf_counter() - t)*1000)}ms")
+                            return res
+
+                        timeline_task = asyncio.create_task(timed_timeline())
+                        insight_task = asyncio.create_task(timed_growth_insight())
+
+                        history, memories_res, kg_res, emotion_res, emotional_trend, emotion_timeline, growth_insight_raw = await asyncio.gather(
+                            history_task, mem_task, kg_task, emotion_task, trend_task, timeline_task, insight_task
                         )
                         memories = memories_res.get("memories", [])
                         graph_relationships = [f"- {r.subject} -> {r.predicate} -> {r.object}" for r in kg_res[:kg_limit]]
@@ -1883,26 +1909,11 @@ async def stream_message_sse(
                                 logger.warning(f"Failed to build comfort kit: {e}")
                                 comfort_kit_dict = {"is_empty": True}
                             
-                        # Retrieve emotion timeline
-                        from app.services.mood_tracker import MoodTracker
-                        from zoneinfo import ZoneInfo
-                        mt = MoodTracker(s_db)
-                        try:
-                            emotion_timeline = await mt.retrieve_emotion_timeline(current_user.id, days=7)
-                        except Exception as e:
-                            logger.warning(f"Failed to retrieve emotion timeline: {e}")
-                            emotion_timeline = []
-                        
                         # Growth insights check
                         growth_insight = None
                         total_msgs = len([m for m in history if m.get("role") == "user"])
                         if total_msgs > 0 and total_msgs % 15 == 0:
-                            try:
-                                from app.services.growth_insights_service import growth_insights_service
-                                growth_insight = await growth_insights_service.get_top_insight_for_chat(s_db, str(current_user.id))
-                            except Exception as e:
-                                logger.warning(f"Failed to retrieve growth insight: {e}")
-                                growth_insight = None
+                            growth_insight = growth_insight_raw
                         
                         # Build system prompt
                         system_prompt = response_orchestrator.build_final_prompt(
@@ -1967,15 +1978,20 @@ async def stream_message_sse(
                             temperature=0.7, 
                             route_category=category
                         ):
+                            if chunk.finished:
+                                continue
+                            text = chunk.text
+                            if not text:
+                                continue
                             if not first_chunk:
                                 first_chunk = True
                                 logger.info(f"[CHAT PERF][trace={trace_id}] llm_first_chunk +{int((time.perf_counter() - start_time) * 1000)}ms")
-                            full_response += chunk
+                            full_response += text
                             yield {
                                 "event": "message",
                                 "data": json.dumps({
                                     "type": "chunk",
-                                    "content": chunk,
+                                    "content": text,
                                     "conversation_id": str(conversation_id_resolved),
                                 }),
                             }

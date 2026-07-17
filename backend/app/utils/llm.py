@@ -4,7 +4,7 @@ import logging
 import re
 import time
 import os
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Any
 from openai import AsyncOpenAI
 from app.config import settings
 
@@ -322,9 +322,10 @@ async def _mock_generate(messages, temperature, max_tokens, response_format, pre
     raise RuntimeError("No mock LLM provider is available")
 
 
-async def _mock_stream(messages, temperature, max_tokens, preferred_model, route_category) -> AsyncGenerator[str, None]:
+async def _mock_stream(messages, temperature, max_tokens, preferred_model, route_category) -> AsyncGenerator[Any, None]:
     from unittest.mock import Mock, MagicMock, AsyncMock
     from openai import APIConnectionError
+    from app.services.ai_provider_router import TokenChunk
     import sys
     
     if "pytest" in sys.modules:
@@ -353,7 +354,8 @@ async def _mock_stream(messages, temperature, max_tokens, preferred_model, route
             response = await client.chat.completions.create(**kwargs)
             async for chunk in response:
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+                    yield TokenChunk(text=chunk.choices[0].delta.content, finished=False)
+            yield TokenChunk(text="", finished=True)
             return
         except Exception:
             continue
@@ -391,7 +393,7 @@ async def generate_chat_completion_stream_with_fallback(
     max_tokens: int = 800,
     preferred_model: str | None = None,
     route_category: str = "NORMAL_CHAT"
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[Any, None]:
     if _is_mocked_env():
         async for chunk in _mock_stream(messages, temperature, max_tokens, preferred_model, route_category):
             yield chunk

@@ -37,6 +37,11 @@ PROVIDER_PRIORITY = (
     "openai",
 )
 
+class TokenChunk:
+    def __init__(self, text: str, finished: bool):
+        self.text = text
+        self.finished = finished
+
 
 class ProviderStats:
     """Tracks latency, switch rates, and failures for a provider."""
@@ -392,12 +397,12 @@ class ProviderManager:
         temperature: float = 0.7,
         max_tokens: int = 800,
         route_category: str = "NORMAL_CHAT"
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[TokenChunk, None]:
         request_id = uuid.uuid4().hex[:8]
         logger.info(f"[ProviderManager] request_id={request_id} stage=STREAM_STARTED")
         
-        last_error = None
         providers = self.select_provider_priority(route_category)
+        partial_content = ""
         
         for provider in providers:
             health = self.health_states[provider]
@@ -419,10 +424,20 @@ class ProviderManager:
                 
                 start_time = time.perf_counter()
                 yielded_anything = False
+                
+                # Guide fallback provider with partial generation context (Step 5)
+                active_messages = list(messages)
+                if partial_content:
+                    active_messages.append({"role": "assistant", "content": partial_content})
+                    active_messages.append({
+                        "role": "system",
+                        "content": f"Your previous generation was cut off. You generated: \"{partial_content}\". Please continue exactly from where it left off. Do not repeat what you already said."
+                    })
+                
                 try:
                     kwargs = {
                         "model": model,
-                        "messages": messages,
+                        "messages": active_messages,
                         "temperature": temperature,
                         "max_tokens": min(max_tokens, 500),
                         "stream": True
@@ -439,7 +454,9 @@ class ProviderManager:
                     
                     yielded_anything = True
                     if first_chunk.choices and first_chunk.choices[0].delta and first_chunk.choices[0].delta.content:
-                        yield first_chunk.choices[0].delta.content
+                        token = first_chunk.choices[0].delta.content
+                        yield TokenChunk(text=token, finished=False)
+                        partial_content += token
                         
                     # Stream the rest under full timeout limits
                     remaining_timeout = max(0.1, full_timeout - (time.perf_counter() - start_time))
@@ -449,7 +466,9 @@ class ProviderManager:
                                 async with asyncio.timeout(5.0):
                                     chunk = await iterator.__anext__()
                                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                                    yield chunk.choices[0].delta.content
+                                    token = chunk.choices[0].delta.content
+                                    yield TokenChunk(text=token, finished=False)
+                                    partial_content += token
                             except StopAsyncIteration:
                                 break
                                 
@@ -461,30 +480,27 @@ class ProviderManager:
                         f"[ProviderManager Telemetry] request_id={request_id} provider={provider} "
                         f"ttfb_ms={ttfb} total_ms={latency} status=SUCCESS"
                     )
+                    yield TokenChunk(text="", finished=True)
                     return
                 except Exception as exc:
-                    if yielded_anything:
-                        # Already started streaming to client, log and stop
-                        logger.error(f"[ProviderManager] request_id={request_id} provider={provider} stage=STREAM_INTERRUPTED error={str(exc)}")
-                        return
-                        
                     error_type = self.classify_error(exc)
                     health.record_failure(error_type)
                     self.stats[provider].record_failure()
-                    last_error = exc
                     
                     logger.warning(
                         f"[ProviderManager Fallback] request_id={request_id} failed_provider={provider} "
-                        f"reason={error_type} error={str(exc)}"
+                        f"reason={error_type} error={str(exc)} mid_stream={yielded_anything}"
                     )
                     
         # Rule 16: Return safe fallback if all providers fail
-        logger.warning(f"[ProviderManager] request_id={request_id} stage=ALL_PROVIDERS_FAILED. Yielding fallback stream.")
-        fallback_text = self.get_safe_local_fallback(messages)
-        chunk_size = 4
-        for i in range(0, len(fallback_text), chunk_size):
-            yield fallback_text[i:i+chunk_size]
-            await asyncio.sleep(0.01)
+        if not partial_content:
+            logger.warning(f"[ProviderManager] request_id={request_id} stage=ALL_PROVIDERS_FAILED. Yielding fallback stream.")
+            fallback_text = self.get_safe_local_fallback(messages)
+            chunk_size = 4
+            for i in range(0, len(fallback_text), chunk_size):
+                yield TokenChunk(text=fallback_text[i:i+chunk_size], finished=False)
+                await asyncio.sleep(0.01)
+            yield TokenChunk(text="", finished=True)
 
 
 # Singleton instances

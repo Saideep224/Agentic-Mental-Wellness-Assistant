@@ -25,8 +25,16 @@ const plusJakartaSans = Plus_Jakarta_Sans({
   display: 'swap',
 });
 
+const getMetadataBase = () => {
+  try {
+    return new URL(process.env.NEXTAUTH_URL || 'http://localhost:3000');
+  } catch {
+    return new URL('http://localhost:3000');
+  }
+};
+
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXTAUTH_URL || 'http://localhost:3000'),
+  metadataBase: getMetadataBase(),
   title: 'ESONA',
   description:
     'An emotionally adaptive AI that truly understands you — your moods, your words, your silence. Esona is a multi-agent mental wellness chatbot that grows with you.',

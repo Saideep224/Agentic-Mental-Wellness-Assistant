@@ -41,7 +41,11 @@ export default function LoginPage() {
       const searchParams = new URLSearchParams(window.location.search);
       const urlError = searchParams.get('error');
       if (urlError) {
-        setError(decodeURIComponent(urlError));
+        try {
+          setError(decodeURIComponent(urlError));
+        } catch (e) {
+          setError(urlError);
+        }
       }
     }
   }, []);

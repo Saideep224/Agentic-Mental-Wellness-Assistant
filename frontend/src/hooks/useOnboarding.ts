@@ -51,12 +51,28 @@ export function useOnboarding() {
       let initialResponses: OnboardingResponse[] = [];
 
       if (storedIndex) {
-        initialIdx = parseInt(storedIndex, 10);
-        setCurrentIndex(initialIdx);
+        try {
+          const parsed = parseInt(storedIndex, 10);
+          if (!isNaN(parsed)) {
+            initialIdx = parsed;
+            setCurrentIndex(initialIdx);
+          }
+        } catch (e) {
+          console.warn('[useOnboarding] Failed to parse stored index:', e);
+          localStorage.removeItem('esona_onboarding_index');
+        }
       }
       if (storedResponses) {
-        initialResponses = JSON.parse(storedResponses);
-        setResponses(initialResponses);
+        try {
+          const parsed = JSON.parse(storedResponses);
+          if (Array.isArray(parsed)) {
+            initialResponses = parsed;
+            setResponses(initialResponses);
+          }
+        } catch (e) {
+          console.warn('[useOnboarding] Failed to parse stored responses:', e);
+          localStorage.removeItem('esona_onboarding_responses');
+        }
       }
 
       // Restore selections for the current index

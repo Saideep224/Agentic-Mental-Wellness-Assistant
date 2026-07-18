@@ -135,13 +135,29 @@ export default function EsonaLogo({
             opacity: aiState === 'speaking' ? { duration: 2.5, repeat: Infinity, ease: 'easeInOut' } : isHovered ? { duration: 0.3 } : { duration: 7, repeat: Infinity, ease: 'easeInOut' },
           }}
         />
-      )}
-
-      {/* 2. Magical Floating Particles (Anime Spirit Orbs) */}
+      )}      {/* 2. Magical Floating Particles (Anime Spirit Orbs) */}
       {mounted && showParticles && (
         <div className="absolute inset-0 overflow-visible pointer-events-none">
+          <style>{`
+            @keyframes logo-particle-drift {
+              0% {
+                transform: translateY(0) translateX(0);
+                opacity: 0;
+              }
+              15% {
+                opacity: 0.7;
+              }
+              85% {
+                opacity: 0.7;
+              }
+              100% {
+                transform: translateY(var(--ty)) translateX(var(--tx));
+                opacity: 0;
+              }
+            }
+          `}</style>
           {PARTICLE_TEMPLATES.map((particle, idx) => (
-            <motion.div
+            <div
               key={idx}
               className="absolute rounded-full bg-cyan-300"
               style={{
@@ -150,24 +166,15 @@ export default function EsonaLogo({
                 width: `${4 * particle.scale}px`,
                 height: `${4 * particle.scale}px`,
                 filter: `drop-shadow(0 0 4px rgba(56, 189, 248, 0.8))`,
-              }}
-              initial={{ y: 0, x: 0, opacity: 0 }}
-              animate={{
-                y: -height * 1.1,
-                x: [0, particle.tx / 2, particle.tx, particle.tx / 2, 0],
-                opacity: [0, 0.7, 0.8, 0.3, 0],
-              }}
-              transition={{
-                duration: isHovered ? particle.duration * 0.7 : particle.duration,
-                repeat: Infinity,
-                delay: particle.delay,
-                ease: 'easeInOut',
-              }}
+                animation: `logo-particle-drift ${isHovered ? particle.duration * 0.7 : particle.duration}s infinite ease-in-out`,
+                animationDelay: `${particle.delay}s`,
+                '--ty': `${-height * 1.1}px`,
+                '--tx': `${particle.tx}px`,
+              } as React.CSSProperties}
             />
           ))}
         </div>
       )}
-
       {/* 3. Main Logo Container (With 3D Tilt support) */}
       <motion.div
         className="w-full h-full relative cursor-pointer"

@@ -211,7 +211,10 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
   }, []);
 
   const sendMessage = useCallback(
-    async (content: string, overrideConversationId?: string) => {
+    async (content: string, overrideConversationId?: string, isRetry = false) => {
+      if (!isRetry) {
+        lastClientMessageIdRef.current = null;
+      }
       const targetId = overrideConversationId || conversationId;
       if (!targetId || !content.trim()) return;
       const token = api.getToken();
@@ -642,7 +645,7 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
       }
       return prev;
     });
-    sendMessage(content);
+    sendMessage(content, undefined, true);
   }, [sendMessage]);
 
   return {

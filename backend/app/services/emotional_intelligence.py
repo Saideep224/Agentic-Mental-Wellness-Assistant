@@ -161,6 +161,12 @@ def detect_explicit_emotion(message: str) -> List[str]:
             is_frust = True
         if "fed up" in text_clause or "sick of" in text_clause or "patience is gone" in text_clause or "done with" in text_clause:
             is_frust = True
+        if any(pat in text_clause for pat in [
+            "why did you", "why did u", "did i talk", "did I talk", "stop reminding", "don't remind", "dont remind",
+            "stop saying", "why are you", "why are u", "you keep saying", "u keep saying", "you're not helping",
+            "ur not helping", "not what i meant", "not what i said", "stop it", "leave me alone"
+        ]):
+            is_frust = True
         if is_frust and not (clause["negated"] or clause["past_tense"] or clause["third_person"]):
             detected.append("frustration")
                 

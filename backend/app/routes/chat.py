@@ -1918,9 +1918,21 @@ async def stream_message_sse(
                             growth_insight = growth_insight_raw
                         
                         # Build system prompt
+                        from app.services.profile_service import profile_service
+                        pdata_res = await profile_service.get_personalization_data(s_db, current_user.id)
+                        # raw contains flat profile fields: age, profession, interests, goals, stress_triggers, etc.
+                        merged_profile = dict(pdata_res.get("raw", {}))
+                        # personality contains AI-inferred sub-dicts: personality_profile, reply_style, etc.
+                        personality_data = pdata_res.get("personality", {})
+                        for k, v in personality_data.items():
+                            if isinstance(v, dict):
+                                merged_profile.update(v)
+                            else:
+                                merged_profile[k] = v
+
                         system_prompt = response_orchestrator.build_final_prompt(
                             user_name=current_user.name,
-                            personality_profile=emotional_profile.get("personality_profile", {}),
+                            personality_profile=merged_profile,
                             personality=p_data,
                             emotion=e_data,
                             behavior=b_data,

@@ -46,12 +46,7 @@ export default function AuthCallbackPage() {
         const userMeta = session.user.user_metadata || {};
         
         // Detect OAuth provider
-        let provider = 'github';
-        if (session.user.app_metadata.provider) {
-          provider = session.user.app_metadata.provider;
-        } else if (session.user.identities && session.user.identities.length > 0) {
-          provider = session.user.identities[0].provider;
-        }
+        const provider = session.user.app_metadata?.provider || session.user.identities?.[0]?.provider || 'credentials';
 
 
 

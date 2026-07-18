@@ -51,6 +51,7 @@ const getHelperText = (q: any) => {
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const shouldReduceMotion = useReducedMotion();
   const [mounted, setMounted] = useState(false);
   // showLoader is reserved for onboarding-complete redirect sequence (not used for status check)
   const [showLoader, setShowLoader] = useState(false);
@@ -359,7 +360,7 @@ export default function OnboardingPage() {
     gridColsClass = "grid-cols-2";
   }
 
-  const shouldReduceMotion = useReducedMotion();
+  // Question variants for animation
   const questionVariants = {
     enter: (dir: number) => ({
       x: shouldReduceMotion ? 0 : (dir > 0 ? 30 : -30),

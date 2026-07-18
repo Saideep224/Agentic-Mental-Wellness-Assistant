@@ -382,6 +382,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     setMounted(true);
+    console.log('Chat mounted');
     
     if (typeof window !== 'undefined') {
       window.scrollTo(0, 0);
@@ -574,6 +575,7 @@ export default function ChatPage() {
     console.log(`[PERF] T3 - Conversation request started: ${t3 - mountTimeRef.current}ms`);
     try {
       const convos = await api.getConversations(token);
+      console.log('Conversation loaded');
       const t4 = Date.now();
       (window as any).__esona_t4 = t4;
       console.log(`[PERF] T4 - Conversation response received: ${t4 - mountTimeRef.current}ms (Request took ${t4 - t3}ms)`);
@@ -586,6 +588,7 @@ export default function ChatPage() {
         }
       }
     } catch (err) {
+      console.log('Conversation loaded (failed/fallback)');
       console.error('Failed to load conversations:', err);
       setConversationLoadFailed(true);
     }
@@ -598,12 +601,14 @@ export default function ChatPage() {
     // If cached conversations already exist in state, bypass full-page loader immediately
     if (conversations.length > 0) {
       setIsLoadingPage(false);
+      console.log('READY');
       loadConversations(); // silent background refresh
       return;
     }
 
     loadConversations().finally(() => {
       setIsLoadingPage(false);
+      console.log('READY');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, token]);

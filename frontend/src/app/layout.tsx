@@ -6,6 +6,7 @@ import ThemeProvider from '@/providers/ThemeProvider';
 import FloatingParticles from '@/components/ambient/FloatingParticles';
 import VideoBackground from '@/components/ambient/VideoBackground';
 import PageTransition from '@/components/layout/PageTransition';
+import ErrorBoundary from '@/components/layout/ErrorBoundary';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -103,18 +104,20 @@ export default function RootLayout({
         }}
       >
         <AuthProvider>
-          <ThemeProvider>
-            {/* Ambient background */}
-            <VideoBackground />
-            <FloatingParticles />
+          <ErrorBoundary>
+            <ThemeProvider>
+              {/* Ambient background */}
+              <VideoBackground />
+              <FloatingParticles />
 
-            {/* Main content with smooth page fade */}
-            <div className="relative z-10 min-h-screen">
-              <PageTransition>
-                {children}
-              </PageTransition>
-            </div>
-          </ThemeProvider>
+              {/* Main content with smooth page fade */}
+              <div className="relative z-10 min-h-screen">
+                <PageTransition>
+                  {children}
+                </PageTransition>
+              </div>
+            </ThemeProvider>
+          </ErrorBoundary>
         </AuthProvider>
       </body>
     </html>

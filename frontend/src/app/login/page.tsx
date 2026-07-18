@@ -99,6 +99,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setIsLoading(true);
+    console.log('LOGIN START');
 
     try {
       if (mode === 'register') {
@@ -166,6 +167,10 @@ export default function LoginPage() {
         api.setToken(jwtToken);
         api.setStoredUser(freshUser);
         console.log('[Auth] Login getMe success. onboardingCompleted:', freshUser.onboardingCompleted);
+
+        console.log('user', freshUser);
+        console.log('session', session);
+        console.log('profile', freshUser);
 
         // Use authLogin() to set AuthProvider state before navigating
         authLogin(jwtToken, freshUser);

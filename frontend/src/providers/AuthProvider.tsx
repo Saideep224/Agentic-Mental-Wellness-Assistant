@@ -74,6 +74,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         const { data: { session } } = await supabase.auth.getSession();
 
         if (session) {
+          console.log('Session received');
           const jwtToken = session.access_token;
           // Optimistically set token + a basic user from Supabase metadata
           // so route guard never sees a null user during getMe() round-trip.
@@ -100,10 +101,12 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           // Try to refresh user from backend — but DON'T clear session on failure
           try {
             const freshUser = await getMe(jwtToken);
+            console.log('Profile loaded');
             setUser(freshUser);
             localStorage.setItem('esona_user', JSON.stringify(freshUser));
             console.log('[AuthProvider] getMe OK:', freshUser.email, '| onboardingCompleted:', freshUser.onboardingCompleted);
           } catch (getMeErr: any) {
+            console.log('Profile loaded (fallback/cached)');
             // Backend may be cold-starting or returning a transient error.
             // Do NOT wipe the session — Supabase session is valid.
             // We'll use the cached/supabase-derived user until backend warms up.
@@ -148,6 +151,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (session) {
+        console.log('Session received');
         const jwtToken = session.access_token;
         const supabaseUser: User = mapUser({
           id: session.user.id,
@@ -169,10 +173,11 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         // Try to sync with backend — non-fatal on failure
         try {
           const freshUser = await getMe(jwtToken);
-          console.log('[AuthProvider] onAuthStateChange getMe OK:', freshUser.email);
+          console.log('Profile loaded');
           setUser(freshUser);
           localStorage.setItem('esona_user', JSON.stringify(freshUser));
         } catch (err: any) {
+          console.log('Profile loaded (fallback/cached)');
           const status = (err as any)?.status;
           console.warn('[AuthProvider] onAuthStateChange getMe failed. Status:', status, '| Keeping session.');
           // Only invalidate on confirmed invalid sub claim, not on 401 (Render cold start)

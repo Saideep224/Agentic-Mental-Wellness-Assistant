@@ -58,6 +58,10 @@ export default function AuthCallbackPage() {
         api.setStoredUser(freshUser);
         console.log('[Auth Callback] Successfully synced session with FastAPI backend:', freshUser);
 
+        console.log('user', freshUser);
+        console.log('session', session);
+        console.log('profile', freshUser);
+
         if (!freshUser.onboardingCompleted) {
           setStatus('Redirecting to onboarding...');
           router.replace('/onboarding');

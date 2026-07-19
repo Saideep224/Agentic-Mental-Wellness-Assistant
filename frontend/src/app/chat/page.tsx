@@ -287,6 +287,7 @@ export default function ChatPage() {
   const [musicPlayerOpen, setMusicPlayerOpen] = useState(false);
   const [bgPanelOpen, setBgPanelOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [showEmotionLabels, setShowEmotionLabels] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [skipLoading, setSkipLoading] = useState(false);
@@ -939,54 +940,7 @@ export default function ChatPage() {
               </div>
             </div>
 
-            {/* Background Settings Popover */}
-            <div className="relative flex-shrink-0 flex items-center gap-3 mr-3">
-              <div className="relative">
-                <button
-                  onClick={() => {
-                    setBgPanelOpen(!bgPanelOpen);
-                    setMusicPlayerOpen(false); // Close mood when opening bg settings
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-200 cursor-pointer ${
-                    bgPanelOpen 
-                      ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400' 
-                      : 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10'
-                  }`}
-                >
-                  <Sliders size={13} />
-                  <span>Background</span>
-                </button>
-                
-                <AnimatePresence>
-                  {bgPanelOpen && !isMobile && (
-                    <>
-                      {/* Click outside backdrop for desktop */}
-                      <div 
-                        className="fixed inset-0 z-40 bg-transparent cursor-default" 
-                        onClick={() => setBgPanelOpen(false)}
-                      />
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        className="absolute right-0 mt-2 z-50 w-72"
-                      >
-                        <BackgroundSettingsPanel
-                          preferences={bgPreferences}
-                          onSave={(prefs) => {
-                            setBgPreferences(prefs);
-                            localStorage.setItem('esona_chat_background_preferences', JSON.stringify(prefs));
-                          }}
-                          containerRef={containerRef}
-                          isMobile={false}
-                          onClose={() => setBgPanelOpen(false)}
-                        />
-                      </motion.div>
-                    </>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
+
 
             {/* Hidden Dev Insights Toggle */}
             <div className="ml-auto flex-shrink-0">
@@ -1086,35 +1040,69 @@ export default function ChatPage() {
                   </motion.div>
                 ) : (
                   <>
-                    {normalizedConversationItems.map((item) => {
-                      if (item.type === 'date-separator') {
-                        return (
-                          <div key={item.id} className="flex justify-center mt-6 mb-4 select-none">
-                            <div 
-                              className="px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-md backdrop-blur-md"
-                              style={{
-                                background: 'rgba(10, 16, 32, 0.75)',
-                                borderColor: 'rgba(34, 211, 238, 0.2)',
-                                color: '#94a3b8',
-                                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
-                              }}
-                            >
-                              {item.dateLabel}
-                            </div>
+                    {isLoading && messages.length === 0 ? (
+                      <div className="space-y-6 py-4">
+                        {/* User skeleton */}
+                        <div className="flex justify-end gap-3 items-end">
+                          <div className="w-[45%] h-12 bg-white/5 border border-white/10 rounded-2xl rounded-br-sm animate-pulse flex items-center justify-center">
+                            <span className="text-[10px] text-slate-500 font-medium">Restoring memories...</span>
                           </div>
-                        );
-                      }
-
-                      return (
-                        <div key={item.id} className={item.spacingClass}>
-                          <MessageBubble 
-                            message={item.message!} 
-                            isGroupStart={item.isGroupStart} 
-                            isGroupEnd={item.isGroupEnd} 
-                          />
                         </div>
-                      );
-                    })}
+                        {/* Esona skeleton */}
+                        <div className="flex justify-start gap-3 items-end">
+                          <div className="w-9 h-9 rounded-full bg-white/5 border border-white/10 animate-pulse flex items-center justify-center text-xs">
+                            💙
+                          </div>
+                          <div className="w-[55%] h-16 bg-white/5 border border-white/10 rounded-2xl rounded-bl-sm animate-pulse flex flex-col justify-center px-4 space-y-2">
+                            <div className="h-2 bg-white/10 rounded w-5/6 animate-pulse" />
+                            <div className="h-2 bg-white/10 rounded w-2/3 animate-pulse" />
+                          </div>
+                        </div>
+                        {/* User skeleton 2 */}
+                        <div className="flex justify-end gap-3 items-end">
+                          <div className="w-[30%] h-10 bg-white/5 border border-white/10 rounded-2xl rounded-br-sm animate-pulse flex items-center justify-center">
+                            <span className="text-[10px] text-slate-500 font-medium">Esona is getting everything ready...</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.5 }}
+                      >
+                        {normalizedConversationItems.map((item) => {
+                          if (item.type === 'date-separator') {
+                            return (
+                              <div key={item.id} className="flex justify-center mt-6 mb-4 select-none">
+                                <div 
+                                  className="px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-md backdrop-blur-md"
+                                  style={{
+                                    background: 'rgba(10, 16, 32, 0.75)',
+                                    borderColor: 'rgba(34, 211, 238, 0.2)',
+                                    color: '#94a3b8',
+                                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
+                                  }}
+                                >
+                                  {item.dateLabel}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div key={item.id} className={item.spacingClass}>
+                              <MessageBubble 
+                                message={item.message!} 
+                                isGroupStart={item.isGroupStart} 
+                                isGroupEnd={item.isGroupEnd} 
+                                showEmotionLabels={showEmotionLabels}
+                              />
+                            </div>
+                          );
+                        })}
+                      </motion.div>
+                    )}
                     
                     <AnimatePresence>
                       {tempSystemEvent && (
@@ -1256,6 +1244,25 @@ export default function ChatPage() {
                   <h3 className="text-sm font-semibold tracking-wide uppercase text-sky-400">
                     Agent Insights & Diagnostics
                   </h3>
+                </div>
+
+                {/* Show Emotion Labels Toggle */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
+                  <span className="text-xs font-semibold text-slate-300">
+                    Show Emotion Labels
+                  </span>
+                  <button
+                    onClick={() => setShowEmotionLabels(!showEmotionLabels)}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none cursor-pointer ${
+                      showEmotionLabels ? 'bg-cyan-500' : 'bg-slate-800'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform duration-200 ${
+                        showEmotionLabels ? 'translate-x-4.5' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
                 </div>
 
                 {/* Premium Overview Card */}

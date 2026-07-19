@@ -9,6 +9,7 @@ interface MessageBubbleProps {
   message: Message;
   isGroupStart?: boolean;
   isGroupEnd?: boolean;
+  showEmotionLabels?: boolean;
 }
 
 const getEmotionDisplay = (emotion: string | undefined, emotionScore?: number, moodScore?: number) => {
@@ -86,12 +87,12 @@ const agentConfig: Record<string, { emoji: string; name: string; gradient: strin
   relationship: { emoji: '💜', name: 'Relationship Coach', gradient: 'linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)', border: 'rgba(168, 85, 247, 0.3)' },
 };
 
-export default function MessageBubble({ message, isGroupStart = true, isGroupEnd = true }: MessageBubbleProps) {
+export default function MessageBubble({ message, isGroupStart = true, isGroupEnd = true, showEmotionLabels = false }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isSystem = (message.role as string) === 'system' || message.sender_type === 'system';
   const senderType = isSystem ? 'system' : (isUser ? 'user' : 'buddy');
   const config = agentConfig[senderType];
-  const emotionDisplay = isUser ? getEmotionDisplay(message.emotionDetected, message.emotionScore, message.moodScore) : null;
+  const emotionDisplay = showEmotionLabels ? getEmotionDisplay(message.emotionDetected, message.emotionScore, message.moodScore) : null;
 
   if (senderType === 'system') {
     return (

@@ -151,7 +151,7 @@ export default function EsonaLoader({ message, onComplete, force = false, durati
     return () => clearInterval(timer);
   }, [message, duration]);
 
-  if (!mounted) return null;
+
 
   const stageTexts = [
     'Loading memories...',

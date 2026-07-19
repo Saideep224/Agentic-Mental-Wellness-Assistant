@@ -287,3 +287,17 @@ def test_100_scenarios_evaluation_suite():
     
     # Assert quality threshold: V2 must pass at least 95/100 of these complex test cases
     assert quality_score >= 95
+
+
+def test_v4_rules_engine():
+    import os
+    os.environ["FORCE_SEMANTIC_RULES"] = "true"
+    try:
+        from app.services.emotion_service import detect_semantic_emotion
+        res = detect_semantic_emotion("I stopped talking to my reshma. I feel like she is not feeling the same way as I do in our bond . I pretty say abt it")
+        assert res is not None
+        assert res["primary"] == "Heartbreak"
+        assert res["secondary"] == "Sadness"
+        assert res["confidence"] == 0.95
+    finally:
+        os.environ.pop("FORCE_SEMANTIC_RULES", None)

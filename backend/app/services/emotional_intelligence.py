@@ -686,6 +686,59 @@ class ResponseCritic:
 
         return failed
 
+    def score_response(
+        self,
+        candidate: str,
+        signal: UserSignal,
+        plan: ResponsePlan,
+        recent_responses: List[str]
+    ) -> int:
+        """Scores a response on Esona V5 quality metrics (0 to 100)."""
+        failed_checks = self.audit(candidate, signal, plan, recent_responses)
+        
+        # Start with base score of 100
+        score = 100
+        
+        # Deduct based on failed audit checks
+        if "TOO_CLINICAL" in failed_checks:
+            score -= 20
+        if "GENERIC_EMPATHY" in failed_checks:
+            score -= 10
+        if "REPEATED_PHRASE" in failed_checks:
+            score -= 15
+        if "CONSECUTIVE_REPEATED_OPENING" in failed_checks or "REPEATED_OPENING" in failed_checks:
+            score -= 10
+        if "MULTIPLE_QUESTIONS" in failed_checks:
+            score -= 10
+        if "ROBOTIC_LIST" in failed_checks:
+            score -= 15
+        if "NORMAL_CHAT_LENGTH_MISMATCH" in failed_checks:
+            score -= 10
+        if "EMOTIONAL_CHAT_LENGTH_MISMATCH" in failed_checks:
+            score -= 10
+        if "VERY_EMOTIONAL_CHAT_LENGTH_MISMATCH" in failed_checks:
+            score -= 10
+        if "UNNECESSARY_DISCLAIMER" in failed_checks:
+            score -= 25
+        if "UNSUPPORTED_INFERENCE" in failed_checks:
+            score -= 10
+        if "ADVICE_IN_LISTENING_STAGE" in failed_checks:
+            score -= 15
+        if "QUESTION_IN_REFLECTION_STAGE" in failed_checks:
+            score -= 10
+            
+        # Additional token checks for premium impact
+        text_lower = candidate.lower().strip()
+        
+        # Repetition in the last 20 responses (Part 6)
+        if recent_responses:
+            for past in recent_responses[-20:]:
+                if text_lower == past.lower().strip():
+                    score -= 30
+                    break
+        
+        # Return final clamped score
+        return max(0, min(100, score))
 
 
 class MoodTrendTracker:

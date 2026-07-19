@@ -297,7 +297,62 @@ def test_v4_rules_engine():
         res = detect_semantic_emotion("I stopped talking to my reshma. I feel like she is not feeling the same way as I do in our bond . I pretty say abt it")
         assert res is not None
         assert res["primary"] == "Heartbreak"
-        assert res["secondary"] == "Sadness"
-        assert res["confidence"] == 0.95
+        assert res["secondary"] == "Loneliness"
+        assert res["third"] == "Sadness"
+        assert res["confidence"] >= 0.95
+    finally:
+        os.environ.pop("FORCE_SEMANTIC_RULES", None)
+
+
+def test_never_neutral_overrides():
+    import os
+    os.environ["FORCE_SEMANTIC_RULES"] = "true"
+    try:
+        from app.services.emotion_service import detect_semantic_emotion
+        
+        # Test "I miss her."
+        res1 = detect_semantic_emotion("I miss her.")
+        assert res1 is not None
+        assert res1["primary"] == "Sadness"
+        
+        # Test "My parents are disappointed."
+        res2 = detect_semantic_emotion("My parents are disappointed.")
+        assert res2 is not None
+        assert res2["primary"] == "Family Pressure"
+        
+        # Test "I failed."
+        res3 = detect_semantic_emotion("I failed.")
+        assert res3 is not None
+        assert res3["primary"] == "Academic Stress"
+        
+        # Test "I don't know why I'm alive."
+        res4 = detect_semantic_emotion("I don't know why I'm alive.")
+        assert res4 is not None
+        assert res4["primary"] == "Hopelessness"
+        
+        # Test "I feel empty."
+        res5 = detect_semantic_emotion("I feel empty.")
+        assert res5 is not None
+        assert res5["primary"] == "Emotional Numbness"
+        
+        # Test "I'm scared."
+        res6 = detect_semantic_emotion("I'm scared.")
+        assert res6 is not None
+        assert res6["primary"] == "Fear"
+        
+        # Test "I can't sleep."
+        res7 = detect_semantic_emotion("I can't sleep.")
+        assert res7 is not None
+        assert res7["primary"] == "Anxiety"
+        
+        # Test "I keep thinking."
+        res8 = detect_semantic_emotion("I keep thinking.")
+        assert res8 is not None
+        assert res8["primary"] == "Overthinking"
+        
+        # Test "I'm tired of everything."
+        res9 = detect_semantic_emotion("I'm tired of everything.")
+        assert res9 is not None
+        assert res9["primary"] == "Hopelessness"
     finally:
         os.environ.pop("FORCE_SEMANTIC_RULES", None)

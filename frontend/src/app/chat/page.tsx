@@ -843,12 +843,8 @@ export default function ChatPage() {
     );
   };
 
-  if (!mounted || isLoadingPage) {
-    return (
-      <AnimatePresence>
-        <FullPageTransition message="Loading your conversations..." />
-      </AnimatePresence>
-    );
+  if (!mounted) {
+    return null;
   }
 
   return (
@@ -1040,28 +1036,32 @@ export default function ChatPage() {
                   </motion.div>
                 ) : (
                   <>
-                    {isLoading && messages.length === 0 ? (
+                    {(isLoading || isLoadingPage) && messages.length === 0 ? (
                       <div className="space-y-6 py-4">
-                        {/* User skeleton */}
-                        <div className="flex justify-end gap-3 items-end">
-                          <div className="w-[45%] h-12 bg-white/5 border border-white/10 rounded-2xl rounded-br-sm animate-pulse flex items-center justify-center">
-                            <span className="text-[10px] text-slate-500 font-medium">Restoring memories...</span>
-                          </div>
-                        </div>
-                        {/* Esona skeleton */}
+                        {/* Esona skeleton 1 */}
                         <div className="flex justify-start gap-3 items-end">
                           <div className="w-9 h-9 rounded-full bg-white/5 border border-white/10 animate-pulse flex items-center justify-center text-xs">
                             💙
                           </div>
-                          <div className="w-[55%] h-16 bg-white/5 border border-white/10 rounded-2xl rounded-bl-sm animate-pulse flex flex-col justify-center px-4 space-y-2">
-                            <div className="h-2 bg-white/10 rounded w-5/6 animate-pulse" />
-                            <div className="h-2 bg-white/10 rounded w-2/3 animate-pulse" />
+                          <div className="w-[60%] h-16 bg-white/5 border border-white/10 rounded-2xl rounded-bl-sm animate-pulse flex flex-col justify-center px-4 space-y-2">
+                            <span className="text-xs text-cyan-400/80 font-medium animate-pulse">Esona is restoring your conversations...</span>
+                            <div className="h-1.5 bg-white/10 rounded w-5/6 animate-pulse" />
                           </div>
                         </div>
-                        {/* User skeleton 2 */}
+                        {/* User skeleton */}
                         <div className="flex justify-end gap-3 items-end">
-                          <div className="w-[30%] h-10 bg-white/5 border border-white/10 rounded-2xl rounded-br-sm animate-pulse flex items-center justify-center">
-                            <span className="text-[10px] text-slate-500 font-medium">Esona is getting everything ready...</span>
+                          <div className="w-[45%] h-12 bg-white/5 border border-white/10 rounded-2xl rounded-br-sm animate-pulse flex items-center justify-center">
+                            <span className="text-[10px] text-slate-500 font-medium animate-pulse">Loading your safe space...</span>
+                          </div>
+                        </div>
+                        {/* Esona skeleton 2 */}
+                        <div className="flex justify-start gap-3 items-end">
+                          <div className="w-9 h-9 rounded-full bg-white/5 border border-white/10 animate-pulse flex items-center justify-center text-xs">
+                            💙
+                          </div>
+                          <div className="w-[50%] h-14 bg-white/5 border border-white/10 rounded-2xl rounded-bl-sm animate-pulse flex flex-col justify-center px-4 space-y-2">
+                            <div className="h-2 bg-white/10 rounded w-3/4 animate-pulse" />
+                            <div className="h-2 bg-white/10 rounded w-1/2 animate-pulse" />
                           </div>
                         </div>
                       </div>

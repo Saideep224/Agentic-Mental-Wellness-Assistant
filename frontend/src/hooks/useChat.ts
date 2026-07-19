@@ -253,6 +253,7 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
       let currentSenderType = 'buddy';
       let buddyBubbleSpawned = false;
       let streamCompleted = false;
+      let firstTokenLogged = false;
 
       const cleanUpConnection = () => {
         if (connectionTimeout) {
@@ -262,6 +263,7 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
         if (eventSourceRef.current) {
           eventSourceRef.current.close();
           eventSourceRef.current = null;
+          console.log('STREAM CLOSED');
         }
         setTypingAgentId(null);
       };
@@ -410,6 +412,7 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
 
               if (data.type === 'connected') {
                 console.log('[useChat] SSE stream connected successfully. Trace ID:', data.trace_id);
+                console.log('SSE CONNECTED');
                 setIsLoading(false);
                 setStreamPlaceholder(null);
                 return;
@@ -457,6 +460,10 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
                   return [...prev, specBubble];
                 });
               } else if (data.type === 'specialist_chunk') {
+                if (!firstTokenLogged) {
+                  firstTokenLogged = true;
+                  console.log('FIRST TOKEN');
+                }
                 burstQueue += data.content;
                 const messageId = activeBubbleId.split('-')[0];
                 processBurst(messageId);
@@ -502,11 +509,17 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
                   });
                 }
                 
+                if (!firstTokenLogged) {
+                  firstTokenLogged = true;
+                  console.log('FIRST TOKEN');
+                }
                 burstQueue += data.content;
                 const messageId = activeBubbleId.split('-')[0];
                 processBurst(messageId);
               } else if (data.type === 'done') {
                 console.log("AI RESPONSE RECEIVED");
+                console.log("DONE RECEIVED");
+                console.log("LAST TOKEN");
                 streamCompleted = true;
                 // Clear the client_message_id on successful completion
                 lastClientMessageIdRef.current = null;
@@ -530,7 +543,7 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
                           break;
                         }
                       }
-                      return prev.map((msg, idx) => {
+                      const updated = prev.map((msg, idx) => {
                         if (msg.id === activeBubbleId) {
                           return {
                             ...msg,
@@ -555,6 +568,9 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
                         }
                         return msg;
                       });
+                      console.log('MESSAGE SAVED');
+                      console.log('UI UPDATED');
+                      return updated;
                     });
                     cleanUpConnection();
                   }
@@ -593,6 +609,18 @@ export function useChat({ conversationId, activeSpecialistId, onboardingComplete
               connectionTimeout = null;
             }
             if (inactivityTimeout) { clearTimeout(inactivityTimeout); inactivityTimeout = null; }
+            
+            // If assistant response already exists, ignore onerror and finish stream normally
+            if (isMessageCreated) {
+              console.log('[useChat] onerror triggered but assistant response already exists. Finishing stream normally.');
+              setIsStreaming(false);
+              setIsLoading(false);
+              setTypingAgentId(null);
+              setStreamPlaceholder(null);
+              cleanUpConnection();
+              return;
+            }
+
             cleanUpConnection();
 
             if (!isMessageCreated) {

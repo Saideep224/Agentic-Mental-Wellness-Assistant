@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -267,6 +267,9 @@ function BackgroundSettingsPanel({ preferences, onSave, containerRef, isMobile, 
   );
 }
 
+let conversationsRequestPromise: Promise<any> | null = null;
+let conversationsRequestToken: string | null = null;
+
 export default function ChatPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -459,6 +462,84 @@ export default function ChatPage() {
     }
   }, [isLoading, messages.length, scrollToBottom]);
 
+  interface ConversationItem {
+    type: 'date-separator' | 'message';
+    id: string;
+    dateLabel?: string;
+    message?: Message;
+    isGroupStart?: boolean;
+    isGroupEnd?: boolean;
+    spacingClass?: string;
+  }
+
+  const normalizedConversationItems = useMemo(() => {
+    const orderedMessages = [...messages].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    const items: ConversationItem[] = [];
+    let lastDateStr = '';
+
+    const getLocalDateString = (dateVal: string | Date) => {
+      try {
+        return new Date(dateVal).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" });
+      } catch {
+        return '';
+      }
+    };
+
+    orderedMessages.forEach((msg, idx) => {
+      const dateStr = getLocalDateString(msg.timestamp);
+      
+      if (dateStr && dateStr !== lastDateStr) {
+        items.push({
+          type: 'date-separator',
+          id: `date-${msg.id}`,
+          dateLabel: getDateSeparatorLabel(msg.timestamp)
+        });
+        lastDateStr = dateStr;
+      }
+
+      const prevMsg = idx > 0 ? orderedMessages[idx - 1] : null;
+      const nextMsg = idx < orderedMessages.length - 1 ? orderedMessages[idx + 1] : null;
+
+      const isSameSenderAsPrev = prevMsg && prevMsg.role === msg.role;
+      const isWithin5MinPrev = prevMsg && (new Date(msg.timestamp).getTime() - new Date(prevMsg.timestamp).getTime()) <= 5 * 60 * 1000;
+      const isSameDateAsPrev = prevMsg && getLocalDateString(msg.timestamp) === getLocalDateString(prevMsg.timestamp);
+      const isSameGroupPrev = isSameSenderAsPrev && isWithin5MinPrev && isSameDateAsPrev;
+
+      const isSameSenderAsNext = nextMsg && nextMsg.role === msg.role;
+      const isWithin5MinNext = nextMsg && (new Date(nextMsg.timestamp).getTime() - new Date(msg.timestamp).getTime()) <= 5 * 60 * 1000;
+      const isSameDateAsNext = nextMsg && getLocalDateString(nextMsg.timestamp) === getLocalDateString(msg.timestamp);
+      const isSameGroupNext = isSameSenderAsNext && isWithin5MinNext && isSameDateAsNext;
+
+      const isGroupStart = !isSameGroupPrev;
+      const isGroupEnd = !isSameGroupNext;
+
+      // WhatsApp-like dense spacing rules (Step 5):
+      let spacingClass = 'mt-4'; // default for sender changes
+      if (isSameGroupPrev) {
+        spacingClass = 'mt-1'; // same group spacing (4px)
+      } else if (prevMsg) {
+        const timeGap = new Date(msg.timestamp).getTime() - new Date(prevMsg.timestamp).getTime();
+        if (timeGap >= 20 * 60 * 1000) {
+          spacingClass = 'mt-7'; // large time gap (28px)
+        }
+      }
+
+      items.push({
+        type: 'message',
+        id: msg.id,
+        message: msg,
+        isGroupStart,
+        isGroupEnd,
+        spacingClass
+      });
+    });
+
+    return items;
+  }, [messages]);
+
   // Performance loggers for T1, T2, T5, T6
   useEffect(() => {
     if (token && !(window as any).__esona_t1) {
@@ -570,11 +651,33 @@ export default function ChatPage() {
   const loadConversations = useCallback(async () => {
     const token = getToken();
     if (!token) return;
+
+    if (conversationsRequestPromise && conversationsRequestToken === token) {
+      try {
+        const convos = await conversationsRequestPromise;
+        setConversations(convos);
+        setConversationLoadFailed(false);
+        if (convos.length > 0) {
+          if (!activeConversationId) {
+            const buddyConv = convos.find((c: any) => c.agent_id === 'buddy' || !c.agent_id) || convos[0];
+            setActiveConversationId(buddyConv.id);
+          }
+        }
+      } catch (err) {
+        setConversationLoadFailed(true);
+      }
+      return;
+    }
+
     const t3 = Date.now();
     (window as any).__esona_t3 = t3;
     console.log(`[PERF] T3 - Conversation request started: ${t3 - mountTimeRef.current}ms`);
+    
+    conversationsRequestToken = token;
+    conversationsRequestPromise = api.getConversations(token);
+    
     try {
-      const convos = await api.getConversations(token);
+      const convos = await conversationsRequestPromise;
       console.log('Conversation loaded');
       const t4 = Date.now();
       (window as any).__esona_t4 = t4;
@@ -583,7 +686,7 @@ export default function ChatPage() {
       setConversationLoadFailed(false);
       if (convos.length > 0) {
         if (!activeConversationId) {
-          const buddyConv = convos.find((c) => c.agent_id === 'buddy' || !c.agent_id) || convos[0];
+          const buddyConv = convos.find((c: any) => c.agent_id === 'buddy' || !c.agent_id) || convos[0];
           setActiveConversationId(buddyConv.id);
         }
       }
@@ -591,6 +694,9 @@ export default function ChatPage() {
       console.log('Conversation loaded (failed/fallback)');
       console.error('Failed to load conversations:', err);
       setConversationLoadFailed(true);
+    } finally {
+      conversationsRequestPromise = null;
+      conversationsRequestToken = null;
     }
   }, [activeConversationId]);
 
@@ -980,111 +1086,35 @@ export default function ChatPage() {
                   </motion.div>
                 ) : (
                   <>
-                    {(() => {
-                      const orderedMessages = [...messages].sort(
-                        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-                      );
-
-                      interface ConversationItem {
-                        type: 'date-separator' | 'message';
-                        id: string;
-                        dateLabel?: string;
-                        message?: Message;
-                        isGroupStart?: boolean;
-                        isGroupEnd?: boolean;
-                        spacingClass?: string;
-                      }
-                      
-                      const items: ConversationItem[] = [];
-                      let lastDateStr = '';
-
-                      const getLocalDateString = (dateVal: string | Date) => {
-                        try {
-                          return new Date(dateVal).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" });
-                        } catch {
-                          return '';
-                        }
-                      };
-
-                      orderedMessages.forEach((msg, idx) => {
-                        const dateStr = getLocalDateString(msg.timestamp);
-                        
-                        if (dateStr && dateStr !== lastDateStr) {
-                          items.push({
-                            type: 'date-separator',
-                            id: `date-${msg.id}`,
-                            dateLabel: getDateSeparatorLabel(msg.timestamp)
-                          });
-                          lastDateStr = dateStr;
-                        }
-
-                        const prevMsg = idx > 0 ? orderedMessages[idx - 1] : null;
-                        const nextMsg = idx < orderedMessages.length - 1 ? orderedMessages[idx + 1] : null;
-
-                        const isSameSenderAsPrev = prevMsg && prevMsg.role === msg.role;
-                        const isWithin5MinPrev = prevMsg && (new Date(msg.timestamp).getTime() - new Date(prevMsg.timestamp).getTime()) <= 5 * 60 * 1000;
-                        const isSameDateAsPrev = prevMsg && getLocalDateString(msg.timestamp) === getLocalDateString(prevMsg.timestamp);
-                        const isSameGroupPrev = isSameSenderAsPrev && isWithin5MinPrev && isSameDateAsPrev;
-
-                        const isSameSenderAsNext = nextMsg && nextMsg.role === msg.role;
-                        const isWithin5MinNext = nextMsg && (new Date(nextMsg.timestamp).getTime() - new Date(msg.timestamp).getTime()) <= 5 * 60 * 1000;
-                        const isSameDateAsNext = nextMsg && getLocalDateString(nextMsg.timestamp) === getLocalDateString(msg.timestamp);
-                        const isSameGroupNext = isSameSenderAsNext && isWithin5MinNext && isSameDateAsNext;
-
-                        const isGroupStart = !isSameGroupPrev;
-                        const isGroupEnd = !isSameGroupNext;
-
-                        // WhatsApp-like dense spacing rules (Step 5):
-                        let spacingClass = 'mt-4'; // default for sender changes
-                        if (isSameGroupPrev) {
-                          spacingClass = 'mt-1'; // same group spacing (4px)
-                        } else if (prevMsg) {
-                          const timeGap = new Date(msg.timestamp).getTime() - new Date(prevMsg.timestamp).getTime();
-                          if (timeGap >= 20 * 60 * 1000) {
-                            spacingClass = 'mt-7'; // large time gap (28px)
-                          }
-                        }
-
-                        items.push({
-                          type: 'message',
-                          id: msg.id,
-                          message: msg,
-                          isGroupStart,
-                          isGroupEnd,
-                          spacingClass
-                        });
-                      });
-
-                      return items.map((item) => {
-                        if (item.type === 'date-separator') {
-                          return (
-                            <div key={item.id} className="flex justify-center mt-6 mb-4 select-none">
-                              <div 
-                                className="px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-md backdrop-blur-md"
-                                style={{
-                                  background: 'rgba(10, 16, 32, 0.75)',
-                                  borderColor: 'rgba(34, 211, 238, 0.2)',
-                                  color: '#94a3b8',
-                                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
-                                }}
-                              >
-                                {item.dateLabel}
-                              </div>
-                            </div>
-                          );
-                        }
-
+                    {normalizedConversationItems.map((item) => {
+                      if (item.type === 'date-separator') {
                         return (
-                          <div key={item.id} className={item.spacingClass}>
-                            <MessageBubble 
-                              message={item.message!} 
-                              isGroupStart={item.isGroupStart} 
-                              isGroupEnd={item.isGroupEnd} 
-                            />
+                          <div key={item.id} className="flex justify-center mt-6 mb-4 select-none">
+                            <div 
+                              className="px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-md backdrop-blur-md"
+                              style={{
+                                background: 'rgba(10, 16, 32, 0.75)',
+                                borderColor: 'rgba(34, 211, 238, 0.2)',
+                                color: '#94a3b8',
+                                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
+                              }}
+                            >
+                              {item.dateLabel}
+                            </div>
                           </div>
                         );
-                      });
-                    })()}
+                      }
+
+                      return (
+                        <div key={item.id} className={item.spacingClass}>
+                          <MessageBubble 
+                            message={item.message!} 
+                            isGroupStart={item.isGroupStart} 
+                            isGroupEnd={item.isGroupEnd} 
+                          />
+                        </div>
+                      );
+                    })}
                     
                     <AnimatePresence>
                       {tempSystemEvent && (

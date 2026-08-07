@@ -222,20 +222,20 @@ class ProviderManager:
         if route_category == "SAFETY_CRITICAL":
             return ["groq", "gemini", "openai", "openrouter"]
             
-        # 2. Greetings/Casual -> Gemini / OpenRouter
+        # 2. Greetings/Casual -> OpenRouter
         if route_category == "FAST_SOCIAL":
-            return ["gemini", "openrouter", "groq", "openai"]
+            return ["openrouter", "groq", "gemini", "openai"]
             
         # 3. Heavy reasoning -> Gemini or OpenAI
         if route_category == "DEEP_PERSONAL":
             return ["gemini", "openai", "groq", "openrouter"]
             
-        # 4. Very long conversations -> Gemini / OpenRouter
+        # 4. Very long conversations -> OpenRouter
         if history_len > 15:
-            return ["gemini", "openrouter", "openai", "groq"]
+            return ["openrouter", "gemini", "openai", "groq"]
             
-        # Default: Gemini -> OpenRouter -> Groq -> OpenAI
-        return ["gemini", "openrouter", "groq", "openai"]
+        # Default: OpenRouter -> Groq -> Gemini -> OpenAI
+        return ["openrouter", "groq", "gemini", "openai"]
 
     def classify_error(self, exc: Exception) -> str:
         err_str = str(exc).lower()

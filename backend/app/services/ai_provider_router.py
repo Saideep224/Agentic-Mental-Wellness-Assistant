@@ -16,24 +16,24 @@ logger = logging.getLogger(__name__)
 
 # Configured first-token (TTFB) and full completion timeouts per provider
 PROVIDER_TIMEOUTS_FIRST_TOKEN = {
-    "openrouter": 2.5,
-    "groq": 1.5,
-    "gemini": 2.0,
-    "openai": 2.0,
+    "openrouter": 4.0,
+    "groq": 3.0,
+    "gemini": 4.0,
+    "openai": 4.0,
 }
 
 PROVIDER_TIMEOUTS_FULL = {
-    "openrouter": 6.0,
-    "groq": 5.0,
-    "gemini": 6.0,
-    "openai": 6.0,
+    "openrouter": 12.0,
+    "groq": 10.0,
+    "gemini": 12.0,
+    "openai": 12.0,
 }
 
-# Default search priorities
+# Default search priorities (Gemini preferred first if configured for rock-solid stability)
 PROVIDER_PRIORITY = (
+    "gemini",
     "openrouter",
     "groq",
-    "gemini",
     "openai",
 )
 
@@ -103,6 +103,10 @@ class ProviderHealth:
         self.last_error_type = None
 
     def record_failure(self, error_type: str):
+        # 404 Model Not Found is a specific model slug error, not an infrastructure outage
+        if error_type == "NOT_FOUND":
+            return
+
         self.consecutive_failures += 1
         self.last_error_type = error_type
         
@@ -218,20 +222,20 @@ class ProviderManager:
         if route_category == "SAFETY_CRITICAL":
             return ["groq", "gemini", "openai", "openrouter"]
             
-        # 2. Greetings/Casual -> OpenRouter
+        # 2. Greetings/Casual -> Gemini / OpenRouter
         if route_category == "FAST_SOCIAL":
-            return ["openrouter", "groq", "gemini", "openai"]
+            return ["gemini", "openrouter", "groq", "openai"]
             
         # 3. Heavy reasoning -> Gemini or OpenAI
         if route_category == "DEEP_PERSONAL":
             return ["gemini", "openai", "groq", "openrouter"]
             
-        # 4. Very long conversations -> OpenRouter
+        # 4. Very long conversations -> Gemini / OpenRouter
         if history_len > 15:
-            return ["openrouter", "gemini", "openai", "groq"]
+            return ["gemini", "openrouter", "openai", "groq"]
             
-        # Default: OpenRouter -> Groq -> Gemini -> OpenAI
-        return ["openrouter", "groq", "gemini", "openai"]
+        # Default: Gemini -> OpenRouter -> Groq -> OpenAI
+        return ["gemini", "openrouter", "groq", "openai"]
 
     def classify_error(self, exc: Exception) -> str:
         err_str = str(exc).lower()
@@ -248,6 +252,8 @@ class ProviderManager:
             
         if isinstance(exc, APIStatusError):
             status = exc.status_code
+            if status == 404:
+                return "NOT_FOUND"
             if status in (401, 403):
                 return "AUTH_ERROR"
             if status == 429:
@@ -257,6 +263,8 @@ class ProviderManager:
             if status in (500, 502, 503):
                 return "SERVER_ERROR"
 
+        if "404" in err_str or "not found" in err_str or "unavailable for free" in err_str or "no endpoints found" in err_str:
+            return "NOT_FOUND"
         if "429" in err_str or "rate limit" in err_str or "quota" in err_str or "resource_exhausted" in err_str:
             return "RATE_LIMIT"
         if "401" in err_str or "403" in err_str or "unauthorized" in err_str or "invalid api key" in err_str:
@@ -284,21 +292,21 @@ class ProviderManager:
         return True
 
     def get_safe_local_fallback(self, messages: list) -> str:
-        return "I'm having a temporary connection issue. Let me try that again."
+        return "hey — my brain lagged for a second 😭 say that again?"
 
     async def _ping_provider(self, provider: str) -> bool:
-        """Background health check: ping a provider with a minimal token budget."""
+        """Background health check: ping a provider with a sufficient token budget."""
         configs = self._get_provider_config(provider)
         if not configs:
             return False
         config = configs[0]
         client = self._get_client(provider, config["api_key"], config["base_url"])
         try:
-            async with asyncio.timeout(5.0):
+            async with asyncio.timeout(6.0):
                 response = await client.chat.completions.create(
                     model=config["model"],
                     messages=[{"role": "user", "content": "ping"}],
-                    max_tokens=5,
+                    max_tokens=50,
                     temperature=0.1
                 )
                 content = response.choices[0].message.content

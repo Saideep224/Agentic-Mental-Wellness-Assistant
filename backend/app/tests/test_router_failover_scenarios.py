@@ -147,8 +147,7 @@ class RouterFailoverScenariosTestCase(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(self.router, "_get_client", return_value=failing_client):
             res = await self.router.generate([{"role": "user", "content": "feeling so stressed out"}])
-            # Should fall back to the uniform fallback message
-            self.assertEqual(res, "I'm having a temporary connection issue. Let me try that again.")
+            self.assertEqual(res, "hey — my brain lagged for a second 😭 say that again?")
 
 if __name__ == "__main__":
     unittest.main()
